@@ -9,6 +9,26 @@ const bleManager = new BleManager();
 const HR_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
 const HR_CHAR_UUID = '00002a37-0000-1000-8000-00805f9b34fb';
 
+// 1. MUST BE OUTSIDE THE COMPONENT: Register the background task
+notifee.registerForegroundService((notification) => {
+  return new Promise((resolve) => {
+    console.log("Foreground service is running...");
+    
+    // THE JS HEARTBEAT: Force the JS thread to stay awake by doing meaningless 
+    // math every 2 seconds. Android cannot pause the thread if it's actively looping.
+    const intervalId = setInterval(() => {
+      let stayAwake = Math.random() * Math.random();
+      // We don't need to log this, we just need the CPU to process it.
+    }, 2000);
+
+    // This promise technically never resolves, but if it did, we'd clear the interval
+    notification.onPress = () => {
+        clearInterval(intervalId);
+        resolve();
+    };
+  });
+});
+
 // --- DATABASE SETUP ---
 // Open the database and create a fresh table for our 4 data points
 const db = SQLite.openDatabaseSync('biobrain.db');
