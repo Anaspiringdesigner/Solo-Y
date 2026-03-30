@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "bio-brain-v3",
+    "slug": "bio-brain-v3",
+    "version": "1.0.0",
+    "scheme": "bio-brain-v3",
+    "plugins": [
+      [
+        "@config-plugins/react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow Bio-Brain to stay connected to your Polar H10"
+        }
+      ],
+      "expo-router"
+    ],
+    "android": {
+      "package": "com.biobrain.v3",
+      "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_CONNECTED_DEVICE",
+        "WAKE_LOCK"
+      ]
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
