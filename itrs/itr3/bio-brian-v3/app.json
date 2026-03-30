@@ -9,7 +9,10 @@
         "@config-plugins/react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["peripheral", "central"],
+          "modes": [
+            "peripheral",
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Allow Bio-Brain to stay connected to your Polar H10"
         }
       ],
@@ -20,11 +23,20 @@
       "permissions": [
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_CONNECTED_DEVICE",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b45a462a-7534-4cc4-ad64-f36a7df3d5e1"
+      }
     }
   }
 }
