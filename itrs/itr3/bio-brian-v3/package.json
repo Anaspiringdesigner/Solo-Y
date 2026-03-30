@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "eas-build-pre-install": "echo \"legacy-peer-deps=true" > .npmrc"
+    "eas-build-pre-install": "echo \"legacy-peer-deps=true\" > .npmrc"
   },
   "dependencies": {
     "@config-plugins/react-native-ble-plx": "^7.0.0",
