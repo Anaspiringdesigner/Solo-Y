@@ -16,14 +16,25 @@
           "bluetoothAlwaysPermission": "Allow Bio-Brain to stay connected to your Polar H10"
         }
       ],
-      "expo-router"
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Bio-Brain to use location to keep the Bluetooth connection alive in the background.",
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ]
     ],
     "android": {
       "package": "com.biobrain.v3",
       "permissions": [
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_CONNECTED_DEVICE",
+        "FOREGROUND_SERVICE_LOCATION",
         "WAKE_LOCK",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT"

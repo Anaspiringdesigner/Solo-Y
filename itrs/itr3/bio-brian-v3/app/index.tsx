@@ -42,13 +42,6 @@ db.execSync(`
   );
 `);
 
-// --- BACKGROUND SERVICE SETUP ---
-notifee.registerForegroundService((notification) => {
-  return new Promise(() => {
-    console.log("Foreground service is running...");
-  });
-});
-
 export default function App() {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [heartRate, setHeartRate] = useState(0);
@@ -58,7 +51,7 @@ export default function App() {
   useEffect(() => {
     requestPermissions();
     return () => {
-      bleManager.destroy();
+      // bleManager.destroy() is removed so Hot Reloads don't kill the Bluetooth engine
       stopForegroundService();
     };
   }, []);
@@ -234,12 +227,17 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {logData.map((row, index) => (
-          <View key={index} style={styles.dataRow}>
-            <Text style={styles.rowText}>HR: {row.heart_rate} | HRV: {row.hrv}ms</Text>
-            <Text style={styles.rowLabel}>Label: {row.label}</Text>
-          </View>
-        ))}
+        {/* Loop through the fetched data and display it with proper formatting */}
+        {logData.map((row, index) => {
+          const timeString = new Date(row.timestamp).toLocaleTimeString();
+          
+          return (
+            <View key={index} style={styles.dataRow}>
+              <Text style={styles.rowText}>[{timeString}] HR: {row.heart_rate} | HRV: {row.hrv}ms</Text>
+              <Text style={styles.rowLabel}>Label: {row.label}</Text>
+            </View>
+          );
+        })}
       </View>
 
     </View>
