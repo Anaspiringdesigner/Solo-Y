@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["PolarBleModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.polarble.PolarBleModule"]
+  }
+}
