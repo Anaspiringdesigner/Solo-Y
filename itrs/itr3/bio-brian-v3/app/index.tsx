@@ -51,8 +51,22 @@ export default function App() {
       const peripheral = await device.connect();
       setConnectedDevice(peripheral);
       setConnectionStatus(`Connected to ${device.name}`);
+      
+      // 1. Discover services
       await peripheral.discoverAllServicesAndCharacteristics();
       
+      // 2. THE BOND TRIGGER:
+      // We try to read a standard system characteristic. 
+      // This forces Android 16 to realize it needs a security bond.
+      try {
+        console.log("Triggering security bond...");
+        // This is the 'Battery Level' characteristic - most devices allow a bond trigger here
+        await peripheral.readCharacteristicForService('0000180f-0000-1000-8000-00805f9b34fb', '00002a19-0000-1000-8000-00805f9b34fb');
+      } catch (bondError) {
+        console.log("Bond trigger sent (error is normal here if not yet paired)");
+      }
+
+      // 3. Start Heart Rate Monitor
       peripheral.monitorCharacteristicForService(
         HR_SERVICE_UUID,
         HR_CHAR_UUID,
