@@ -1,5 +1,9 @@
-// Reexport the native module. On web, it will be resolved to PolarBleModule.web.ts
-// and on native platforms to PolarBleModule.ts
-export { default } from './src/PolarBleModule';
-export { default as PolarBleView } from './src/PolarBleView';
-export * from  './src/PolarBle.types';
+import { requireNativeModule } from 'expo-modules-core';
+
+// Grab the Kotlin module we just named "PolarBle"
+const PolarBle = requireNativeModule('PolarBle');
+
+// Export our ping function
+export function ping(): string {
+  return PolarBle.ping();
+}
