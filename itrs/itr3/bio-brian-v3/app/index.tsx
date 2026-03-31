@@ -1,179 +1,206 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, PermissionsAndroid, Platform, ScrollView } from 'react-native';
-import { BleManager } from 'react-native-ble-plx';
+import { BleManager, Device } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
+import * as SQLite from 'expo-sqlite';
 
 const bleManager = new BleManager();
 
 const HR_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
 const HR_CHAR_UUID = '00002a37-0000-1000-8000-00805f9b34fb';
 
-// --- POLAR MEASUREMENT DATA (PMD) ---
-const PMD_SERVICE_UUID = 'fb005c80-02e7-f387-1cad-8acd2d8df0c8';
-const PMD_CONTROL_POINT_UUID = 'fb005c81-02e7-f387-1cad-8acd2d8df0c8';
-// THE DATA PIPE: This is where the file chunks will be streamed
-const PMD_DATA_UUID = 'fb005c82-02e7-f387-1cad-8acd2d8df0c8';
-
 export default function App() {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
-  const [connectedDevice, setConnectedDevice] = useState<any>(null);
   const [heartRate, setHeartRate] = useState(0);
-  const [downloadStatus, setDownloadStatus] = useState('Waiting...');
+  const [history, setHistory] = useState<any[]>([]);
+  const [isDbReady, setIsDbReady] = useState(false);
+  
+  // Using a ref for the DB to ensure the interval can always see the latest instance
+  const dbRef = useRef<SQLite.SQLiteDatabase | null>(null);
+  const latestHR = useRef(0);
+  const latestRR = useRef(0);
+  const logInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    requestPermissions();
+    const prepare = async () => {
+      await setupDatabase();
+      await requestPermissions();
+    };
+    prepare();
+
+    return () => {
+      if (logInterval.current) clearInterval(logInterval.current);
+      bleManager.stopDeviceScan();
+    };
   }, []);
+
+  // Separate effect to start the clock only when DB is actually ready
+  useEffect(() => {
+    if (isDbReady) {
+      console.log("Starting 1Hz Clock...");
+      logInterval.current = setInterval(() => {
+        if (latestHR.current > 0) {
+          saveSnapShot();
+        }
+      }, 1000);
+    }
+    return () => {
+      if (logInterval.current) clearInterval(logInterval.current);
+    };
+  }, [isDbReady]);
+
+  const setupDatabase = async () => {
+    try {
+      const database = await SQLite.openDatabaseAsync('BioBrain.db');
+      await database.execAsync(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS heart_data (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, 
+          timestamp TEXT, 
+          heart_rate INTEGER, 
+          rr_value INTEGER
+        );
+      `);
+      dbRef.current = database;
+      setIsDbReady(true);
+      console.log("Database initialized successfully.");
+    } catch (e) {
+      console.error("Database initialization failed:", e);
+    }
+  };
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
       await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ]);
     }
   };
 
+  const saveSnapShot = async () => {
+    // Crucial Guard: prevents NullPointerException
+    if (!dbRef.current) return;
+
+    const hr = latestHR.current;
+    const rr = latestRR.current;
+    const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+
+    try {
+      await dbRef.current.runAsync(
+        'INSERT INTO heart_data (timestamp, heart_rate, rr_value) VALUES (?, ?, ?)',
+        [timeStr, hr, rr]
+      );
+    } catch (e) {
+      console.error("Snapshot Save Error:", e);
+    }
+  };
+
+  const fetchLastFive = async () => {
+    if (!dbRef.current) return;
+    try {
+      const allRows: any[] = await dbRef.current.getAllAsync('SELECT * FROM heart_data ORDER BY id DESC LIMIT 5');
+      setHistory(allRows);
+    } catch (e) {
+      console.error("Fetch Error:", e);
+    }
+  };
+
+  const connectToDevice = async (device: Device) => {
+    try {
+      const peripheral = await device.connect();
+      setConnectionStatus(`Connected: ${device.name}`);
+      await peripheral.discoverAllServicesAndCharacteristics();
+      
+      peripheral.monitorCharacteristicForService(HR_SERVICE_UUID, HR_CHAR_UUID, (error, char) => {
+        if (error || !char?.value) return;
+
+        const buffer = Buffer.from(char.value, 'base64');
+        const flags = buffer.readUInt8(0);
+        const is16Bit = (flags & 0x01) !== 0;
+        const currentHR = is16Bit ? buffer.readUInt16LE(1) : buffer.readUInt8(1);
+        
+        latestHR.current = currentHR;
+        setHeartRate(currentHR);
+
+        let offset = is16Bit ? 3 : 2;
+        if ((flags & 0x08) !== 0) offset += 2;
+
+        while (offset + 1 < buffer.length) {
+          latestRR.current = buffer.readUInt16LE(offset);
+          offset += 2;
+        }
+      });
+    } catch (e) {
+      setConnectionStatus('Connect Error');
+    }
+  };
+
   const scanAndConnect = () => {
-    setConnectionStatus('Scanning for Polar H10...');
-    
+    bleManager.stopDeviceScan();
+    setConnectionStatus('Scanning...');
     bleManager.startDeviceScan(null, null, (error, device) => {
-      if (error) return;
-      if (device && device.name && device.name.includes('Polar H10')) {
+      if (device?.name?.includes('Polar H10')) {
         bleManager.stopDeviceScan();
-        setConnectionStatus('Connecting...');
         connectToDevice(device);
       }
     });
   };
 
-  const connectToDevice = async (device: any) => {
-    try {
-      const peripheral = await device.connect();
-      setConnectedDevice(peripheral);
-      setConnectionStatus(`Connected to ${device.name}`);
-      
-      // 1. Discover services
-      await peripheral.discoverAllServicesAndCharacteristics();
-      
-      // 2. THE BOND TRIGGER:
-      // We try to read a standard system characteristic. 
-      // This forces Android 16 to realize it needs a security bond.
-      try {
-        console.log("Triggering security bond...");
-        // This is the 'Battery Level' characteristic - most devices allow a bond trigger here
-        await peripheral.readCharacteristicForService('0000180f-0000-1000-8000-00805f9b34fb', '00002a19-0000-1000-8000-00805f9b34fb');
-      } catch (bondError) {
-        console.log("Bond trigger sent (error is normal here if not yet paired)");
-      }
-
-      // 3. Start Heart Rate Monitor
-      peripheral.monitorCharacteristicForService(
-        HR_SERVICE_UUID,
-        HR_CHAR_UUID,
-        (error: any, characteristic: any) => {
-          if (error) return;
-          if (characteristic?.value) {
-            const buffer = Buffer.from(characteristic.value, 'base64');
-            const flags = buffer.readUInt8(0);
-            const is16BitHR = (flags & 0x01) !== 0;
-            setHeartRate(is16BitHR ? buffer.readUInt16LE(1) : buffer.readUInt8(1));
-          }
-        }
-      );
-    } catch (error) {
-      setConnectionStatus('Connection Failed.');
-    }
-  };
-
-  const triggerOfflineRecording = async () => {
-    if (!connectedDevice) return alert("Connect first!");
-    try {
-      const command = Buffer.from([0x0A, 0x01]).toString('base64'); 
-      await connectedDevice.writeCharacteristicWithResponseForService(PMD_SERVICE_UUID, PMD_CONTROL_POINT_UUID, command);
-      alert("Recording Started!");
-    } catch (error) {
-      alert("Failed to start recording.");
-    }
-  };
-
-  // --- NEW: STOP & PREP FOR DOWNLOAD ---
-  const stopRecordingAndListen = async () => {
-    if (!connectedDevice) return alert("Connect first!");
-    try {
-      setDownloadStatus('Stopping recording & opening data pipe...');
-
-      // 1. Open the Data Pipe so we can listen for the file chunks
-      connectedDevice.monitorCharacteristicForService(
-        PMD_SERVICE_UUID,
-        PMD_DATA_UUID,
-        (error: any, characteristic: any) => {
-          if (error) {
-            console.error("Data Pipe Error:", error);
-            return;
-          }
-          if (characteristic?.value) {
-            // This is the raw binary matrix code hitting your app!
-            console.log("RAW PACKET RECEIVED:", characteristic.value);
-            setDownloadStatus('Receiving binary chunks... Check console!');
-          }
-        }
-      );
-
-      // 2. Send the Stop Command (0x0A, 0x00) to the Control Point
-      const stopCommand = Buffer.from([0x0A, 0x00]).toString('base64'); 
-      await connectedDevice.writeCharacteristicWithResponseForService(
-        PMD_SERVICE_UUID, 
-        PMD_CONTROL_POINT_UUID, 
-        stopCommand
-      );
-
-      alert("Recording Stopped. The strap is preparing the file.");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to stop recording.");
-    }
-  };
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>🧠 Bio-Brain (Hardware Mode)</Text>
+      <Text style={styles.header}>🧪 Bio-Brain 1Hz Engine</Text>
       
       <View style={styles.statusBox}>
-        <Text style={styles.label}>Status: {connectionStatus}</Text>
-        <Text style={styles.dataText}>Live BPM: {heartRate}</Text>
+        <Text style={styles.dataText}>{heartRate} BPM</Text>
+        <Text style={styles.label}>{connectionStatus}</Text>
+        <Text style={isDbReady ? styles.dbActive : styles.dbInactive}>
+          DB Status: {isDbReady ? 'Ready' : 'Initializing...'}
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.button} onPress={scanAndConnect}>
-        <Text style={styles.buttonText}>Pair Polar H10</Text>
+        <Text style={styles.buttonText}>Connect Sensor</Text>
       </TouchableOpacity>
 
-      <View style={styles.hardwareSection}>
-        <Text style={styles.subHeader}>⚙️ Internal Memory Vault</Text>
+      <View style={styles.historySection}>
+        <TouchableOpacity style={styles.historyButton} onPress={fetchLastFive}>
+          <Text style={styles.buttonText}>Refresh History</Text>
+        </TouchableOpacity>
         
-        <TouchableOpacity style={styles.hardwareButton} onPress={triggerOfflineRecording}>
-          <Text style={styles.buttonText}>1. Start Offline Recording</Text>
-        </TouchableOpacity>
+        <View style={styles.tableHeader}>
+          <Text style={styles.colHeader}>Time</Text>
+          <Text style={styles.colHeader}>HR</Text>
+          <Text style={styles.colHeader}>RR</Text>
+        </View>
 
-        <TouchableOpacity style={[styles.hardwareButton, { backgroundColor: '#e74c3c', marginTop: 15 }]} onPress={stopRecordingAndListen}>
-          <Text style={styles.buttonText}>2. Stop & Open Data Pipe</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.terminalText}>Download Status: {downloadStatus}</Text>
+        {history.map((item) => (
+          <View key={item.id} style={styles.historyRow}>
+            <Text style={styles.cell}>{item.timestamp}</Text>
+            <Text style={[styles.cell, { color: '#e74c3c', fontWeight: 'bold' }]}>{item.heart_rate}</Text>
+            <Text style={styles.cell}>{item.rr_value}</Text>
+          </View>
+        ))}
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: '#1a1a1a', alignItems: 'center', padding: 20, paddingBottom: 50 },
-  header: { fontSize: 26, fontWeight: 'bold', marginBottom: 20, color: '#fff', marginTop: 40 },
-  statusBox: { backgroundColor: '#333', padding: 20, borderRadius: 15, width: '100%', alignItems: 'center', marginBottom: 20 },
-  label: { fontSize: 16, color: '#aaa', marginBottom: 10, fontWeight: 'bold' },
-  dataText: { fontSize: 32, fontWeight: 'bold', color: '#e74c3c', marginVertical: 5 },
-  button: { backgroundColor: '#2980b9', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 25, marginBottom: 30 },
+  container: { flexGrow: 1, backgroundColor: '#121212', padding: 20, alignItems: 'center' },
+  header: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginTop: 40, marginBottom: 20 },
+  statusBox: { backgroundColor: '#1e1e1e', padding: 25, borderRadius: 20, width: '100%', alignItems: 'center', marginBottom: 20 },
+  label: { fontSize: 14, color: '#888', marginTop: 10 },
+  dbActive: { fontSize: 12, color: '#2ecc71', marginTop: 5 },
+  dbInactive: { fontSize: 12, color: '#f1c40f', marginTop: 5 },
+  dataText: { fontSize: 52, fontWeight: 'bold', color: '#e74c3c' },
+  button: { backgroundColor: '#2980b9', padding: 15, width: '100%', borderRadius: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  hardwareSection: { width: '100%', alignItems: 'center', backgroundColor: '#2c3e50', padding: 20, borderRadius: 15 },
-  subHeader: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 20 },
-  hardwareButton: { backgroundColor: '#8e44ad', paddingVertical: 15, paddingHorizontal: 30, borderRadius: 10, width: '100%', alignItems: 'center' },
-  terminalText: { color: '#2ecc71', marginTop: 20, fontSize: 14, fontFamily: 'monospace', textAlign: 'center' },
+  historySection: { width: '100%', marginTop: 30 },
+  historyButton: { backgroundColor: '#27ae60', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 15 },
+  tableHeader: { flexDirection: 'row', paddingHorizontal: 10, marginBottom: 10 },
+  colHeader: { color: '#888', flex: 1, textAlign: 'center', fontSize: 12 },
+  historyRow: { flexDirection: 'row', backgroundColor: '#1e1e1e', padding: 12, borderRadius: 8, marginBottom: 5 },
+  cell: { color: '#fff', flex: 1, textAlign: 'center', fontSize: 14 }
 });
