@@ -2,35 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
-import notifee, { AndroidImportance } from '@notifee/react-native';
 import * as SQLite from 'expo-sqlite';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 const bleManager = new BleManager();
 const HR_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
 const HR_CHAR_UUID = '00002a37-0000-1000-8000-00805f9b34fb';
 
-// 1. MUST BE OUTSIDE THE COMPONENT: Register the background task
-notifee.registerForegroundService((notification) => {
-  return new Promise((resolve) => {
-    console.log("Foreground service is running...");
-    
-    // THE JS HEARTBEAT: Force the JS thread to stay awake by doing meaningless 
-    // math every 2 seconds. Android cannot pause the thread if it's actively looping.
-    const intervalId = setInterval(() => {
-      let stayAwake = Math.random() * Math.random();
-      // We don't need to log this, we just need the CPU to process it.
-    }, 2000);
+// --- THE NUCLEAR OPTION: GPS GOD MODE ---
+const LOCATION_TASK_NAME = 'background-location-task';
 
-    // This promise technically never resolves, but if it did, we'd clear the interval
-    notification.onPress = () => {
-        clearInterval(intervalId);
-        resolve();
-    };
-  });
+TaskManager.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
+  if (error) {
+    console.error("GPS Task Error:", error);
+    return;
+  }
+  if (data) {
+    // This is the true heartbeat. By receiving GPS updates in the background,
+    // Android is forced to keep our entire JavaScript thread (and Bluetooth) completely awake!
+    console.log("🛡️ God Mode Ping: Thread kept alive by GPS.");
+  }
 });
 
 // --- DATABASE SETUP ---
-// Open the database and create a fresh table for our 4 data points
 const db = SQLite.openDatabaseSync('biobrain.db');
 db.execSync(`
   CREATE TABLE IF NOT EXISTS bio_data (
@@ -46,28 +42,34 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [heartRate, setHeartRate] = useState(0);
   const [latestRR, setLatestRR] = useState(0);
-  const [logData, setLogData] = useState<any[]>([]); // Holds our DB rows for the UI
+  const [logData, setLogData] = useState<any[]>([]);
 
   useEffect(() => {
     requestPermissions();
     return () => {
-      // bleManager.destroy() is removed so Hot Reloads don't kill the Bluetooth engine
-      stopForegroundService();
+      stopGodMode();
     };
   }, []);
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
+      // 1. Bluetooth Permissions
       await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
       ]);
+
+      // 2. GPS God Mode Permissions (Must be requested sequentially)
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus === 'granted') {
+        await Location.requestBackgroundPermissionsAsync();
+      }
     }
   };
 
-  const startForegroundService = async () => {
+  const startGodMode = async () => {
+    // 1. Show the ongoing notification
     const channelId = await notifee.createChannel({
       id: 'bio-brain-tracker',
       name: 'Bio-Brain HRV Tracker',
@@ -76,17 +78,25 @@ export default function App() {
 
     await notifee.displayNotification({
       title: '🧠 Bio-Brain Active',
-      body: 'Monitoring HRV and Heart Rate...',
-      android: {
-        channelId,
-        asForegroundService: true,
-        ongoing: true,
-      },
+      body: 'Tracking HRV & maintaining God Mode...',
+      android: { channelId, asForegroundService: true, ongoing: true },
+    });
+
+    // 2. Start the background GPS tracker to shield the thread
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: Location.Accuracy.Low, // We don't need exact GPS, just the ping
+      timeInterval: 15000, // Ping every 15 seconds
+      distanceInterval: 0,
+      showsBackgroundLocationIndicator: false,
     });
   };
 
-  const stopForegroundService = async () => {
+  const stopGodMode = async () => {
     await notifee.stopForegroundService();
+    const hasStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    if (hasStarted) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+    }
   };
 
   const scanAndConnect = () => {
@@ -107,46 +117,35 @@ export default function App() {
     });
   };
 
-  // --- FIXED: Single connectToDevice function with Auto-Reconnect ---
   const connectToDevice = async (device: any) => {
     try {
       const connectedDevice = await device.connect();
       setConnectionStatus(`Connected to ${device.name}`);
       await connectedDevice.discoverAllServicesAndCharacteristics();
       
-      await startForegroundService();
+      await startGodMode();
 
-      // The Auto-Reconnect Listener
       bleManager.onDeviceDisconnected(device.id, (error, disconnectedDevice) => {
         console.warn("Device disconnected! Attempting to reconnect...");
         setConnectionStatus('Connection lost. Reconnecting...');
-        stopForegroundService();
+        stopGodMode();
         
-        setTimeout(() => {
-          scanAndConnect();
-        }, 3000);
+        setTimeout(() => { scanAndConnect(); }, 3000);
       });
 
       connectedDevice.monitorCharacteristicForService(
         HR_SERVICE_UUID,
         HR_CHAR_UUID,
         (error, characteristic) => {
-          if (error) {
-            console.error("Stream Error:", error);
-            return;
-          }
+          if (error) return;
           if (characteristic?.value) {
             parseHeartRateData(characteristic.value);
           }
         }
       );
     } catch (error) {
-      console.error("Connection Failed:", error);
       setConnectionStatus('Connection Failed. Retrying...');
-      
-      setTimeout(() => {
-        scanAndConnect();
-      }, 5000);
+      setTimeout(() => { scanAndConnect(); }, 5000);
     }
   };
 
@@ -159,7 +158,6 @@ export default function App() {
     setHeartRate(hrValue);
 
     const rrIntervalPresent = (flags & 0x10) !== 0;
-    
     if (rrIntervalPresent) {
       let offset = is16BitHR ? 3 : 2;
       while (offset < buffer.length) {
@@ -167,19 +165,16 @@ export default function App() {
         const rrInMs = Math.round((rrValue / 1024.0) * 1000.0); 
         setLatestRR(rrInMs);
         
-        // --- SAVE TO DATABASE ---
         const timestamp = Date.now();
         db.runSync(
           'INSERT INTO bio_data (timestamp, hrv, heart_rate, label) VALUES (?, ?, ?, ?)',
           [timestamp, rrInMs, hrValue, 'unlabeled']
         );
-
         offset += 2;
       }
     }
   };
 
-  // --- DATABASE VAULT FUNCTIONS ---
   const fetchDatabaseLogs = () => {
     try {
       const rows = db.getAllSync('SELECT * FROM bio_data ORDER BY timestamp DESC LIMIT 5');
@@ -193,15 +188,12 @@ export default function App() {
     try {
       db.execSync('DELETE FROM bio_data');
       setLogData([]);
-      console.log("Database cleared!");
-    } catch (error) {
-      console.error("Failed to clear database:", error);
-    }
+    } catch (error) {}
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>🧠 Bio-Brain V3</Text>
+      <Text style={styles.header}>🧠 Bio-Brain V3 (God Mode)</Text>
       
       <View style={styles.statusBox}>
         <Text style={styles.label}>Status: {connectionStatus}</Text>
@@ -213,7 +205,6 @@ export default function App() {
         <Text style={styles.buttonText}>Pair & Run in Background</Text>
       </TouchableOpacity>
 
-      {/* --- DATABASE VAULT UI --- */}
       <View style={styles.dbSection}>
         <Text style={styles.subHeader}>🗄️ Local Database Vault</Text>
         
@@ -227,10 +218,8 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* Loop through the fetched data and display it with proper formatting */}
         {logData.map((row, index) => {
           const timeString = new Date(row.timestamp).toLocaleTimeString();
-          
           return (
             <View key={index} style={styles.dataRow}>
               <Text style={styles.rowText}>[{timeString}] HR: {row.heart_rate} | HRV: {row.hrv}ms</Text>
@@ -239,7 +228,6 @@ export default function App() {
           );
         })}
       </View>
-
     </View>
   );
 }
@@ -250,11 +238,9 @@ const styles = StyleSheet.create({
   statusBox: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '100%', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, marginBottom: 20 },
   label: { fontSize: 16, color: '#666', marginBottom: 10, fontWeight: 'bold' },
   dataText: { fontSize: 32, fontWeight: 'bold', color: '#e74c3c', marginVertical: 5 },
-  button: { backgroundColor: '#2ecc71', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 25 },
+  button: { backgroundColor: '#2ecc71', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 25, marginBottom: 20 },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  
-  // New Styles for Database Vault
-  dbSection: { marginTop: 30, width: '100%', alignItems: 'center' },
+  dbSection: { width: '100%', alignItems: 'center' },
   subHeader: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 15 },
   row: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   dbButton: { backgroundColor: '#9b59b6', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 10, width: '48%', alignItems: 'center' },
