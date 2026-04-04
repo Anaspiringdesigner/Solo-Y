@@ -1,10 +1,10 @@
-# active_learning_lstm_hr_hrv_br_v2.py
+# active_learning_lstm_hr_hrv_br_v3_no_leakage.py
 # Python 3.10+
 # pip install numpy pandas scikit-learn torch
 
 import random
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -33,8 +33,8 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 class Config:
     # Data simulation
     total_minutes: int = 24 * 60
-    sample_period_sec: int = 5  # one sample every 5 seconds
-    n_classes: int = 6          # <-- updated to 6 classes
+    sample_period_sec: int = 5
+    n_classes: int = 6
 
     # Windowing
     window_minutes: int = 5
@@ -67,46 +67,38 @@ class Config:
 
 CFG = Config()
 
-# Internal class indices: 0..5
-# External states in your rule: 1..6
 STATE_NAMES = {
-    0: "Baseline / Sleep",          # ext 1
-    1: "Panic / Procrastination",   # ext 2
-    2: "Meaningful Focus",          # ext 3
-    3: "Inattention / Wandering",   # ext 4
-    4: "Rigid Hyperfocus",          # ext 5
-    5: "Intervention Needed",       # ext 6
+    0: "Baseline / Sleep",
+    1: "Panic / Procrastination",
+    2: "Meaningful Focus",
+    3: "Inattention / Wandering",
+    4: "Rigid Hyperfocus",
+    5: "Intervention Needed",
 }
 
-
 # ----------------------------
-# 2) Synthetic data generator (for demo/testing)
-#    Replace with real sensor ingestion in production.
+# 2) Synthetic data generator
 # ----------------------------
 
 def simulate_day_dataframe(cfg: Config) -> pd.DataFrame:
     n = int((cfg.total_minutes * 60) / cfg.sample_period_sec)
     times = pd.date_range("2026-01-01", periods=n, freq=f"{cfg.sample_period_sec}s")
 
-    # Hidden synthetic states (internal 0..5)
-    # This is only to simulate "ground-truth" for demo.
     states = np.zeros(n, dtype=int)
     current = 0
     i = 0
-    probs = np.array([0.28, 0.15, 0.20, 0.15, 0.12, 0.10])  # class priors
+    probs = np.array([0.28, 0.15, 0.20, 0.15, 0.12, 0.10])
     while i < n:
-        seg_len = np.random.randint(60, 360)  # 5 to 30 min in 5-sec samples
+        seg_len = np.random.randint(60, 360)
         if np.random.rand() < 0.40:
             current = int(np.random.choice(cfg.n_classes, p=probs))
         states[i:i + seg_len] = current
         i += seg_len
     states = states[:n]
 
-    # Means per class (synthetic)
-    # [Baseline, Panic, Meaningful, Wandering, Hyperfocus, Intervention]
-    hr_means  = [62, 95, 78, 70, 86, 100]
+    hr_means =  [62, 95, 78, 70, 86, 100]
     hrv_means = [58, 24, 40, 52, 30, 70]
-    br_means  = [12, 20, 15, 13, 17, 11]
+    br_means =  [12, 20, 15, 13, 17, 11]
 
     hr = np.zeros(n, dtype=np.float32)
     hrv = np.zeros(n, dtype=np.float32)
@@ -133,68 +125,40 @@ def simulate_day_dataframe(cfg: Config) -> pd.DataFrame:
         "true_state": states
     })
 
-
 # ----------------------------
-# 3) Your mathematical logic
+# 3) Your mathematical rule logic
 # ----------------------------
 
 def compute_deltas(x_hr: np.ndarray, x_hrv: np.ndarray) -> Tuple[float, float]:
-    """
-    Compute hr_delta and hrv_delta for a window.
-    Definition used here:
-      delta = (second_half_mean - first_half_mean) / (abs(first_half_mean) + 1e-6)
-
-    If your research defines delta differently (e.g., baseline-referenced),
-    replace this function only.
-    """
     mid = len(x_hr) // 2
-
     hr_first = float(np.mean(x_hr[:mid]))
     hr_second = float(np.mean(x_hr[mid:]))
-
     hrv_first = float(np.mean(x_hrv[:mid]))
     hrv_second = float(np.mean(x_hrv[mid:]))
 
     hr_delta = (hr_second - hr_first) / (abs(hr_first) + 1e-6)
     hrv_delta = (hrv_second - hrv_first) / (abs(hrv_first) + 1e-6)
-
     return hr_delta, hrv_delta
 
 
 def rule_classifier_window(x_hr: np.ndarray, x_hrv: np.ndarray, x_br: np.ndarray) -> Tuple[int, float]:
-    """
-    Implements your exact logic:
-        if hrv_delta > 0.30: state=6
-        elif hr_delta > 0.15 and hrv_delta < -0.20: state=2
-        elif 0.05 < hr_delta <= 0.15 and hrv_delta <= -0.15: state=5
-        elif 0.02 < hr_delta <= 0.10 and hrv_delta >= -0.10: state=3
-        elif hr_delta <= 0.02 and hrv_delta > 0.05: state=4
-        else: state=1
-
-    Returns:
-      - internal class index 0..5 (PyTorch compatible)
-      - confidence 0..1
-    """
     hr_delta, hrv_delta = compute_deltas(x_hr, x_hrv)
 
-    # external 1..6
     if hrv_delta > 0.30:
-        ext_state = 6  # Intervention Needed
+        ext_state = 6
     elif hr_delta > 0.15 and hrv_delta < -0.20:
-        ext_state = 2  # Panic / Procrastination
+        ext_state = 2
     elif 0.05 < hr_delta <= 0.15 and hrv_delta <= -0.15:
-        ext_state = 5  # Rigid Hyperfocus
+        ext_state = 5
     elif 0.02 < hr_delta <= 0.10 and hrv_delta >= -0.10:
-        ext_state = 3  # Meaningful Focus
+        ext_state = 3
     elif hr_delta <= 0.02 and hrv_delta > 0.05:
-        ext_state = 4  # Inattention / Wandering
+        ext_state = 4
     else:
-        ext_state = 1  # Baseline / Sleep
+        ext_state = 1
 
-    # convert external -> internal index
     pred_idx = ext_state - 1  # 1..6 -> 0..5
 
-    # Optional confidence heuristic
     conf = 0.60
     conf += min(0.20, abs(hr_delta) * 0.5)
     conf += min(0.20, abs(hrv_delta) * 0.5)
@@ -202,29 +166,12 @@ def rule_classifier_window(x_hr: np.ndarray, x_hrv: np.ndarray, x_br: np.ndarray
 
     return pred_idx, conf
 
-
 # ----------------------------
-# 4) Windowing + normalization
+# 4) Windowing (RAW, no scaling here)
 # ----------------------------
 
-def robust_scale_per_channel(x: np.ndarray) -> np.ndarray:
-    # x shape [N, T, C]
-    x_scaled = x.copy()
-    c = x.shape[2]
-    for ch in range(c):
-        vals = x[:, :, ch].reshape(-1)
-        med = np.median(vals)
-        q1 = np.percentile(vals, 25)
-        q3 = np.percentile(vals, 75)
-        iqr = q3 - q1
-        if iqr < 1e-6:
-            iqr = 1.0
-        x_scaled[:, :, ch] = (x[:, :, ch] - med) / iqr
-    return x_scaled
-
-
-def make_windows(df: pd.DataFrame, cfg: Config):
-    spm = 60 // cfg.sample_period_sec  # samples per minute
+def make_windows_raw(df: pd.DataFrame, cfg: Config):
+    spm = 60 // cfg.sample_period_sec
     win = cfg.window_minutes * spm
     stride = cfg.stride_minutes * spm
 
@@ -245,7 +192,6 @@ def make_windows(df: pd.DataFrame, cfg: Config):
         seq = np.stack([x_hr, x_hrv, x_br], axis=-1).astype(np.float32)
         X_list.append(seq)
 
-        # true label for this window = majority true state
         y = np.bincount(arr_state[start:end], minlength=cfg.n_classes).argmax()
         y_true.append(int(y))
 
@@ -255,17 +201,51 @@ def make_windows(df: pd.DataFrame, cfg: Config):
 
         meta_idx.append((start, end))
 
-    X = np.array(X_list, dtype=np.float32)     # [N,T,3]
-    y_true = np.array(y_true, dtype=np.int64)  # [N]
-    y_rule = np.array(y_rule, dtype=np.int64)  # [N]
+    X_raw = np.array(X_list, dtype=np.float32)
+    y_true = np.array(y_true, dtype=np.int64)
+    y_rule = np.array(y_rule, dtype=np.int64)
     y_rule_conf = np.array(y_rule_conf, dtype=np.float32)
 
-    X = robust_scale_per_channel(X)
-    return X, y_true, y_rule, y_rule_conf, meta_idx
-
+    return X_raw, y_true, y_rule, y_rule_conf, meta_idx
 
 # ----------------------------
-# 5) Dataset
+# 5) Train-only robust scaler (NO LEAKAGE)
+# ----------------------------
+
+def fit_robust_scaler(X_train_raw: np.ndarray) -> Dict[str, np.ndarray]:
+    """
+    Fit robust scaler per channel on TRAIN windows only.
+    X_train_raw shape: [N, T, C]
+    """
+    C = X_train_raw.shape[2]
+    med = np.zeros(C, dtype=np.float32)
+    iqr = np.ones(C, dtype=np.float32)
+
+    for ch in range(C):
+        vals = X_train_raw[:, :, ch].reshape(-1)
+        m = np.median(vals)
+        q1 = np.percentile(vals, 25)
+        q3 = np.percentile(vals, 75)
+        scale = q3 - q1
+        if scale < 1e-6:
+            scale = 1.0
+
+        med[ch] = float(m)
+        iqr[ch] = float(scale)
+
+    return {"median": med, "iqr": iqr}
+
+
+def transform_robust_scaler(X_raw: np.ndarray, scaler: Dict[str, np.ndarray]) -> np.ndarray:
+    X = X_raw.copy()
+    med = scaler["median"]
+    iqr = scaler["iqr"]
+    for ch in range(X.shape[2]):
+        X[:, :, ch] = (X[:, :, ch] - med[ch]) / iqr[ch]
+    return X
+
+# ----------------------------
+# 6) Dataset
 # ----------------------------
 
 class SeqDataset(Dataset):
@@ -282,9 +262,8 @@ class SeqDataset(Dataset):
             return self.X[idx], self.y[idx]
         return self.X[idx], self.y[idx], self.w[idx]
 
-
 # ----------------------------
-# 6) LSTM model
+# 7) LSTM model
 # ----------------------------
 
 class LSTMClassifier(nn.Module):
@@ -301,15 +280,14 @@ class LSTMClassifier(nn.Module):
         self.fc = nn.Linear(hidden_dim, n_classes)
 
     def forward(self, x):
-        out, _ = self.lstm(x)     # [B,T,H]
-        h_last = out[:, -1, :]    # [B,H]
+        out, _ = self.lstm(x)
+        h_last = out[:, -1, :]
         z = self.drop(h_last)
-        logits = self.fc(z)       # [B,C]
+        logits = self.fc(z)
         return logits
 
-
 # ----------------------------
-# 7) Train/Eval helpers
+# 8) Train/Eval helpers
 # ----------------------------
 
 def train_epoch(model, loader, optimizer, criterion, weighted=False):
@@ -373,9 +351,8 @@ def evaluate(model, X: np.ndarray, y: np.ndarray, name="Eval"):
 def entropy_from_probs(p: np.ndarray, eps=1e-9):
     return -np.sum(p * np.log(p + eps), axis=1)
 
-
 # ----------------------------
-# 8) Active learning query policy
+# 9) Active learning query policy
 # ----------------------------
 
 def select_queries_active(
@@ -400,9 +377,8 @@ def select_queries_active(
     chosen_local = order[:query_k]
     return idx_unl[chosen_local]
 
-
 # ----------------------------
-# 9) Fusion of rule + model
+# 10) Fusion
 # ----------------------------
 
 def fusion_predict(
@@ -412,7 +388,6 @@ def fusion_predict(
     alpha: float
 ):
     n, c = probs_model.shape
-
     probs_rule = np.zeros((n, c), dtype=np.float32)
     probs_rule[np.arange(n), y_rule] = conf_rule
     rem = 1.0 - conf_rule
@@ -421,28 +396,32 @@ def fusion_predict(
     probs = alpha * probs_model + (1.0 - alpha) * probs_rule
     return probs.argmax(axis=1)
 
-
 # ----------------------------
-# 10) Main
+# 11) Main
 # ----------------------------
 
 def main():
     print("Device:", DEVICE)
 
-    # A) Data
+    # A) Build raw windows
     df = simulate_day_dataframe(CFG)
+    X_raw, y_true, y_rule, y_rule_conf, meta_idx = make_windows_raw(df, CFG)
+    n = len(X_raw)
+    print(f"Total windows: {n}, window shape: {X_raw.shape[1:]}")
 
-    # B) Windowing
-    X, y_true, y_rule, y_rule_conf, meta_idx = make_windows(df, CFG)
-    n = len(X)
-    print(f"Total windows: {n}, window shape: {X.shape[1:]}")
-
-    # C) Train/test split
+    # B) Split indices first (IMPORTANT: before scaling)
     idx_all = np.arange(n)
     idx_train, idx_test = train_test_split(
         idx_all, test_size=0.2, random_state=SEED, stratify=y_true
     )
 
+    # C) Fit scaler ONLY on train raw windows
+    scaler = fit_robust_scaler(X_raw[idx_train])
+
+    # D) Transform all windows with train-fitted scaler
+    X = transform_robust_scaler(X_raw, scaler)
+
+    # E) Active learning pools (train side only)
     idx_pool = idx_train.copy()
     np.random.shuffle(idx_pool)
 
@@ -450,11 +429,11 @@ def main():
     idx_labeled = idx_pool[:init_k].copy()
     idx_unlabeled = idx_pool[init_k:].copy()
 
-    # Simulated user labels (replace with app labels)
+    # Simulated user labels (replace with app labels in production)
     y_user = -1 * np.ones(n, dtype=np.int64)
     y_user[idx_labeled] = y_true[idx_labeled]
 
-    # D) Model
+    # F) Model setup
     model = LSTMClassifier(
         input_dim=CFG.input_dim,
         hidden_dim=CFG.hidden_dim,
@@ -466,7 +445,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
     criterion = nn.CrossEntropyLoss()
 
-    # E) Pretrain on weak rule labels
+    # G) Weak-label pretraining on rule labels
     print("\nPretraining on rule labels...")
     w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
     ds_pre = SeqDataset(X[idx_train], y_rule[idx_train], weights=w_rule)
@@ -479,10 +458,10 @@ def main():
 
     evaluate(model, X[idx_test], y_true[idx_test], name="After Pretrain (Model only)")
 
-    # F) Active learning rounds
+    # H) Active learning rounds
     print("\nActive learning...")
     for r in range(CFG.active_rounds):
-        # train on user-labeled data
+        # Train on current user-labeled set
         tr_idx = idx_labeled.copy()
         ds_gold = SeqDataset(X[tr_idx], y_user[tr_idx])
         dl_gold = DataLoader(ds_gold, batch_size=CFG.batch_size, shuffle=True)
@@ -490,11 +469,12 @@ def main():
         for _ in range(CFG.finetune_epochs):
             _ = train_epoch(model, dl_gold, optimizer, criterion, weighted=False)
 
-        # evaluate
+        # Evaluate model-only
         probs_test = predict_proba(model, X[idx_test])
         yhat_model = probs_test.argmax(axis=1)
         f1_model = f1_score(y_true[idx_test], yhat_model, average="macro")
 
+        # Evaluate fused
         frac_labeled = len(idx_labeled) / max(1, len(idx_train))
         alpha = CFG.alpha_start + (CFG.alpha_end - CFG.alpha_start) * frac_labeled
         alpha = float(np.clip(alpha, 0.0, 1.0))
@@ -502,12 +482,16 @@ def main():
         yhat_fused = fusion_predict(probs_test, y_rule[idx_test], y_rule_conf[idx_test], alpha)
         f1_fused = f1_score(y_true[idx_test], yhat_fused, average="macro")
 
-        print(f"Round {r+1}/{CFG.active_rounds} | labeled={len(idx_labeled)} | model_f1={f1_model:.4f} | fused_f1={f1_fused:.4f} | alpha={alpha:.2f}")
+        print(
+            f"Round {r+1}/{CFG.active_rounds} | labeled={len(idx_labeled)} "
+            f"| model_f1={f1_model:.4f} | fused_f1={f1_fused:.4f} | alpha={alpha:.2f}"
+        )
 
+        # Stop criteria
         if len(idx_unlabeled) == 0 or len(idx_labeled) >= CFG.max_user_labels:
             break
 
-        # query selection
+        # Select windows to query user
         probs_unl = predict_proba(model, X[idx_unlabeled])
         ask_idx = select_queries_active(
             probs_unl=probs_unl,
@@ -517,15 +501,15 @@ def main():
             uncertainty_threshold=CFG.uncertainty_threshold
         )
 
-        # simulate user labels (replace with UI labels)
+        # Simulated user labeling (replace with UI labels)
         y_user[ask_idx] = y_true[ask_idx]
 
-        # move asked samples from unlabeled to labeled
+        # Move asked from unlabeled -> labeled
         keep_mask = ~np.isin(idx_unlabeled, ask_idx)
         idx_unlabeled = idx_unlabeled[keep_mask]
         idx_labeled = np.concatenate([idx_labeled, ask_idx])
 
-    # G) Final reports
+    # I) Final reports
     print("\n=== Final Model-only ===")
     evaluate(model, X[idx_test], y_true[idx_test], name="Final Model-only")
 
