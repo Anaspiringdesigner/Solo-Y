@@ -3,6 +3,7 @@
 # pip install numpy pandas scikit-learn torch
 
 import os
+import copy
 import random
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict
@@ -36,9 +37,9 @@ class Config:
     # segmentation for fragmented chunks
     max_gap_sec_for_same_segment: int = 10
 
-    # windowing (CHANGED: smaller windows)
-    window_seconds: int = 120   # CHANGED from 300
-    stride_seconds: int = 30    # CHANGED from 60
+    # windowing
+    window_seconds: int = 120
+    stride_seconds: int = 30
 
     # model
     n_classes: int = 6
@@ -51,8 +52,14 @@ class Config:
     batch_size: int = 64
     lr: float = 1e-3
     weight_decay: float = 1e-5
-    pretrain_epochs: int = 6
-    finetune_epochs: int = 3
+
+    pretrain_epochs: int = 1000          # you can set large now; early stopping will cut it
+    finetune_epochs: int = 1000          # same here
+
+    # Early stopping (NEW)
+    pretrain_patience: int = 10
+    finetune_patience: int = 6
+    min_delta: float = 1e-4
 
     # active learning
     initial_label_fraction: float = 0.10
@@ -78,7 +85,7 @@ STATE_NAMES = {
 }
 
 # ============================================================
-# 2) Diagnostics helpers (NEW)
+# 2) Diagnostics helpers
 # ============================================================
 def print_class_distribution(y: np.ndarray, title: str):
     print(f"\n{title}")
@@ -94,9 +101,6 @@ def print_class_distribution(y: np.ndarray, title: str):
 
 
 def compute_class_weights(y: np.ndarray, n_classes: int) -> torch.Tensor:
-    """
-    Inverse-frequency class weights with smoothing.
-    """
     counts = np.bincount(y, minlength=n_classes).astype(np.float32)
     counts = np.maximum(counts, 1.0)
     weights = counts.sum() / counts
@@ -129,7 +133,6 @@ def load_merged_csv(csv_path: str) -> pd.DataFrame:
 
     df = df.dropna(subset=["timestamp", "hr"]).copy()
 
-    # physiological clipping
     df.loc[(df["hr"] < 30) | (df["hr"] > 220), "hr"] = np.nan
     df.loc[(df["hrv"] < 1) | (df["hrv"] > 250), "hrv"] = np.nan
     df.loc[(df["br"] < 4) | (df["br"] > 60), "br"] = np.nan
@@ -143,38 +146,32 @@ def load_merged_csv(csv_path: str) -> pd.DataFrame:
 # ============================================================
 def derive_hrv_br_if_missing(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy().sort_values("timestamp").reset_index(drop=True)
-
-    # regular 1-second grid
     d = d.set_index("timestamp").resample("1s").mean(numeric_only=True)
 
-    # interpolate HR short gaps
     d["hr"] = d["hr"].interpolate(limit=10, limit_direction="both")
 
-    # estimate HRV if mostly missing
     if d["hrv"].isna().mean() > 0.5:
         hr_std_60 = d["hr"].rolling(window=60, min_periods=10).std()
         est_hrv = (hr_std_60 * 12.0).clip(5, 120)
         d["hrv"] = d["hrv"].fillna(est_hrv)
 
-    # estimate BR if mostly missing
     if d["br"].isna().mean() > 0.5:
         hr_smooth = d["hr"].rolling(window=30, min_periods=5).mean()
         hr_min = hr_smooth.quantile(0.05)
         hr_max = hr_smooth.quantile(0.95)
         denom = max(1e-6, hr_max - hr_min)
-        br_est = 10 + (hr_smooth - hr_min) * (10 / denom)  # approx 10..20
+        br_est = 10 + (hr_smooth - hr_min) * (10 / denom)
         br_est = br_est.clip(8, 24)
         d["br"] = d["br"].fillna(br_est)
 
     d["hrv"] = d["hrv"].interpolate(limit=20, limit_direction="both")
     d["br"] = d["br"].interpolate(limit=20, limit_direction="both")
 
-    d = d.dropna(subset=["hr", "hrv", "br"]).copy()
-    d = d.reset_index()
+    d = d.dropna(subset=["hr", "hrv", "br"]).copy().reset_index()
     return d
 
 # ============================================================
-# 5) Segment fragmented chunks by time gaps
+# 5) Segment by time gaps
 # ============================================================
 def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
     d = df.sort_values("timestamp").reset_index(drop=True).copy()
@@ -183,7 +180,7 @@ def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
     return d
 
 # ============================================================
-# 6) Your mathematical rule logic
+# 6) Rule logic
 # ============================================================
 def compute_deltas(x_hr: np.ndarray, x_hrv: np.ndarray) -> Tuple[float, float]:
     mid = len(x_hr) // 2
@@ -191,7 +188,6 @@ def compute_deltas(x_hr: np.ndarray, x_hrv: np.ndarray) -> Tuple[float, float]:
     hr_second = float(np.mean(x_hr[mid:]))
     hrv_first = float(np.mean(x_hrv[:mid]))
     hrv_second = float(np.mean(x_hrv[mid:]))
-
     hr_delta = (hr_second - hr_first) / (abs(hr_first) + 1e-6)
     hrv_delta = (hrv_second - hrv_first) / (abs(hrv_first) + 1e-6)
     return hr_delta, hrv_delta
@@ -201,20 +197,19 @@ def rule_classifier_window(x_hr: np.ndarray, x_hrv: np.ndarray, x_br: np.ndarray
     hr_delta, hrv_delta = compute_deltas(x_hr, x_hrv)
 
     if hrv_delta > 0.30:
-        ext_state = 6  # Intervention Needed
+        ext_state = 6
     elif hr_delta > 0.15 and hrv_delta < -0.20:
-        ext_state = 2  # Panic / Procrastination
+        ext_state = 2
     elif 0.05 < hr_delta <= 0.15 and hrv_delta <= -0.15:
-        ext_state = 5  # Rigid Hyperfocus
+        ext_state = 5
     elif 0.02 < hr_delta <= 0.10 and hrv_delta >= -0.10:
-        ext_state = 3  # Meaningful Focus
+        ext_state = 3
     elif hr_delta <= 0.02 and hrv_delta > 0.05:
-        ext_state = 4  # Inattention / Wandering
+        ext_state = 4
     else:
-        ext_state = 1  # Baseline / Sleep
+        ext_state = 1
 
-    pred_idx = ext_state - 1  # 1..6 -> 0..5
-
+    pred_idx = ext_state - 1
     conf = 0.60
     conf += min(0.20, abs(hr_delta) * 0.5)
     conf += min(0.20, abs(hrv_delta) * 0.5)
@@ -227,7 +222,6 @@ def rule_classifier_window(x_hr: np.ndarray, x_hrv: np.ndarray, x_br: np.ndarray
 def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
     win = cfg.window_seconds
     stride = cfg.stride_seconds
-
     X_list, y_rule, y_rule_conf, meta = [], [], [], []
 
     for seg_id, g in df.groupby("segment_id"):
@@ -259,7 +253,7 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
             })
 
     if not X_list:
-        raise ValueError("No windows created. Reduce window_seconds or inspect data continuity.")
+        raise ValueError("No windows created. Reduce window_seconds or inspect continuity.")
 
     X_raw = np.array(X_list, dtype=np.float32)
     y_rule = np.array(y_rule, dtype=np.int64)
@@ -267,7 +261,7 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
     return X_raw, y_rule, y_rule_conf, meta
 
 # ============================================================
-# 8) Train-only robust scaling (no leakage)
+# 8) Train-only robust scaling
 # ============================================================
 def fit_robust_scaler(X_train_raw: np.ndarray) -> Dict[str, np.ndarray]:
     C = X_train_raw.shape[2]
@@ -358,6 +352,65 @@ def train_epoch(model, loader, optimizer, criterion, weighted=False):
 
 
 @torch.no_grad()
+def eval_loss(model, loader, criterion, weighted=False):
+    model.eval()
+    total, n = 0.0, 0
+    for batch in loader:
+        if weighted:
+            xb, yb, wb = batch
+            xb, yb, wb = xb.to(DEVICE), yb.to(DEVICE), wb.to(DEVICE)
+            logits = model(xb)
+            ce = nn.functional.cross_entropy(logits, yb, reduction="none")
+            loss = (ce * wb).mean()
+        else:
+            xb, yb = batch
+            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
+            logits = model(xb)
+            loss = criterion(logits, yb)
+
+        bs = xb.size(0)
+        total += float(loss.item()) * bs
+        n += bs
+    return total / max(1, n)
+
+
+def fit_with_early_stopping(
+    model,
+    train_loader,
+    val_loader,
+    optimizer,
+    criterion,
+    max_epochs: int,
+    patience: int,
+    min_delta: float,
+    weighted: bool = False,
+    tag: str = "train"
+):
+    best_val = float("inf")
+    best_state = copy.deepcopy(model.state_dict())
+    wait = 0
+
+    for ep in range(1, max_epochs + 1):
+        tr = train_epoch(model, train_loader, optimizer, criterion, weighted=weighted)
+        vl = eval_loss(model, val_loader, criterion, weighted=weighted)
+
+        print(f"  [{tag}] epoch {ep}/{max_epochs} | train_loss={tr:.4f} | val_loss={vl:.4f}")
+
+        if vl < (best_val - min_delta):
+            best_val = vl
+            best_state = copy.deepcopy(model.state_dict())
+            wait = 0
+        else:
+            wait += 1
+            if wait >= patience:
+                print(f"  [{tag}] Early stopping at epoch {ep}. Best val_loss={best_val:.4f}")
+                break
+
+    model.load_state_dict(best_state)
+    return best_val
+
+
+@torch.no_grad()
 def predict_proba(model, X: np.ndarray, batch_size=256) -> np.ndarray:
     model.eval()
     ds = SeqDataset(X, np.zeros(len(X), dtype=np.int64))
@@ -374,7 +427,7 @@ def entropy_from_probs(p: np.ndarray, eps=1e-9):
     return -np.sum(p * np.log(p + eps), axis=1)
 
 # ============================================================
-# 11) Rare-class-aware active query selector (CHANGED)
+# 11) Active query selector
 # ============================================================
 def select_queries_active(
     probs_unl: np.ndarray,
@@ -390,7 +443,6 @@ def select_queries_active(
     uncertain = (maxp < uncertainty_threshold)
     disagree = (yhat != y_rule_unl)
 
-    # CHANGED: rare class bonus
     pred_counts = np.bincount(yhat, minlength=CFG.n_classes).astype(np.float32)
     pred_counts = np.maximum(pred_counts, 1.0)
     rare_bonus = 1.0 / pred_counts[yhat]
@@ -424,27 +476,25 @@ def main():
     df_raw = load_merged_csv(CFG.csv_path)
     print("Rows loaded:", len(df_raw))
 
-    # B) Fill missing channels + resample
+    # B) Fill channels + resample
     df_filled = derive_hrv_br_if_missing(df_raw)
     print("Rows after fill/resample:", len(df_filled))
 
-    # C) Segment fragmented data
+    # C) Segment
     df_seg = add_segment_ids(df_filled, CFG.max_gap_sec_for_same_segment)
     print("Segments:", df_seg["segment_id"].nunique())
 
-    # D) Windowing + rule labels
+    # D) Windowing
     X_raw, y_rule, y_rule_conf, meta = make_windows_from_segments(df_seg, CFG)
     n = len(X_raw)
     print("Windows created:", n)
-
-    # NEW: rule distribution diagnostics
     print_class_distribution(y_rule, "Rule-label distribution on all windows:")
 
-    # E) Split
+    # E) Train/test split
     idx_all = np.arange(n)
     idx_train, idx_test = train_test_split(idx_all, test_size=0.2, random_state=SEED)
 
-    # F) Train-only normalization
+    # F) Train-only scaling
     scaler = fit_robust_scaler(X_raw[idx_train])
     X = transform_robust_scaler(X_raw, scaler)
 
@@ -455,11 +505,10 @@ def main():
     idx_labeled = idx_pool[:init_k].copy()
     idx_unlabeled = idx_pool[init_k:].copy()
 
-    # Placeholder user labels (replace with real UI labels)
     y_user = -1 * np.ones(n, dtype=np.int64)
-    y_user[idx_labeled] = y_rule[idx_labeled]  # bootstrap from rules
+    y_user[idx_labeled] = y_rule[idx_labeled]  # bootstrap placeholder
 
-    # H) Model
+    # H) Model + optimizer
     model = LSTMClassifier(
         input_dim=CFG.input_dim,
         hidden_dim=CFG.hidden_dim,
@@ -467,39 +516,69 @@ def main():
         n_classes=CFG.n_classes,
         dropout=CFG.dropout,
     ).to(DEVICE)
-
     optimizer = optim.Adam(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
-    criterion_pre = nn.CrossEntropyLoss()
 
-    # I) Weak pretraining
-    print("\nPretraining on rule labels...")
+    # I) Pretraining with early stopping
+    print("\nPretraining on rule labels with early stopping...")
     w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
-    ds_pre = SeqDataset(X[idx_train], y_rule[idx_train], w_rule)
-    dl_pre = DataLoader(ds_pre, batch_size=CFG.batch_size, shuffle=True)
 
-    for ep in range(CFG.pretrain_epochs):
-        loss = train_epoch(model, dl_pre, optimizer, criterion_pre, weighted=True)
-        print(f"  pretrain {ep+1}/{CFG.pretrain_epochs} loss={loss:.4f}")
+    tr_idx_pre, val_idx_pre = train_test_split(idx_train, test_size=0.2, random_state=SEED)
+    ds_pre_tr = SeqDataset(X[tr_idx_pre], y_rule[tr_idx_pre], w_rule[np.isin(idx_train, tr_idx_pre)])
+    ds_pre_va = SeqDataset(X[val_idx_pre], y_rule[val_idx_pre], w_rule[np.isin(idx_train, val_idx_pre)])
 
-    # J) Active learning rounds
+    dl_pre_tr = DataLoader(ds_pre_tr, batch_size=CFG.batch_size, shuffle=True)
+    dl_pre_va = DataLoader(ds_pre_va, batch_size=CFG.batch_size, shuffle=False)
+
+    criterion_pre = nn.CrossEntropyLoss()
+    _ = fit_with_early_stopping(
+        model=model,
+        train_loader=dl_pre_tr,
+        val_loader=dl_pre_va,
+        optimizer=optimizer,
+        criterion=criterion_pre,
+        max_epochs=CFG.pretrain_epochs,
+        patience=CFG.pretrain_patience,
+        min_delta=CFG.min_delta,
+        weighted=True,
+        tag="pretrain"
+    )
+
+    # J) Active learning rounds with finetune early stopping
     print("\nActive learning rounds...")
     for r in range(CFG.active_rounds):
         tr_idx = idx_labeled[y_user[idx_labeled] >= 0]
-        if len(tr_idx) == 0:
+        if len(tr_idx) < 20:
+            print("Not enough labeled windows to finetune. Stopping.")
             break
 
-        # CHANGED: class-weighted loss on current labeled set
-        y_labeled_now = y_user[tr_idx]
-        class_w = compute_class_weights(y_labeled_now, CFG.n_classes)
+        # split labeled set into finetune train/val
+        tr_ft, va_ft = train_test_split(tr_idx, test_size=0.2, random_state=SEED + r)
+
+        y_tr_ft = y_user[tr_ft]
+        class_w = compute_class_weights(y_tr_ft, CFG.n_classes)
         criterion_gold = nn.CrossEntropyLoss(weight=class_w)
 
-        ds_gold = SeqDataset(X[tr_idx], y_labeled_now)
-        dl_gold = DataLoader(ds_gold, batch_size=CFG.batch_size, shuffle=True)
+        ds_ft_tr = SeqDataset(X[tr_ft], y_user[tr_ft])
+        ds_ft_va = SeqDataset(X[va_ft], y_user[va_ft])
 
-        for _ in range(CFG.finetune_epochs):
-            _ = train_epoch(model, dl_gold, optimizer, criterion_gold, weighted=False)
+        dl_ft_tr = DataLoader(ds_ft_tr, batch_size=CFG.batch_size, shuffle=True)
+        dl_ft_va = DataLoader(ds_ft_va, batch_size=CFG.batch_size, shuffle=False)
+
+        _ = fit_with_early_stopping(
+            model=model,
+            train_loader=dl_ft_tr,
+            val_loader=dl_ft_va,
+            optimizer=optimizer,
+            criterion=criterion_gold,
+            max_epochs=CFG.finetune_epochs,
+            patience=CFG.finetune_patience,
+            min_delta=CFG.min_delta,
+            weighted=False,
+            tag=f"finetune-r{r+1}"
+        )
 
         if len(idx_unlabeled) == 0 or len(idx_labeled) >= CFG.max_user_labels:
+            print("Stopping active loop: label budget or pool exhausted.")
             break
 
         probs_unl = predict_proba(model, X[idx_unlabeled])
@@ -511,7 +590,7 @@ def main():
             uncertainty_threshold=CFG.uncertainty_threshold
         )
 
-        # TODO: replace with actual user labels from app UI
+        # TODO: replace with real UI labels
         y_user[ask_idx] = y_rule[ask_idx]
 
         keep = ~np.isin(idx_unlabeled, ask_idx)
