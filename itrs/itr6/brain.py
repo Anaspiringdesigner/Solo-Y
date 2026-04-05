@@ -1,12 +1,12 @@
 # brain.py
-# Python 3.13+ | TensorFlow 2.x / Keras
-# pip install numpy pandas scikit-learn tensorflow
+# Python 3.13+ | TensorFlow 2.x / Keras + FastAPI
+# pip install numpy pandas scikit-learn tensorflow fastapi uvicorn
 
 import os
 import json
 import random
 from dataclasses import dataclass
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,10 @@ from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uvicorn
 
 # ============================================================
 # 0) Reproducibility
@@ -40,13 +44,13 @@ class Config:
     hidden_dim: int   = 64
     dropout:    float = 0.2
 
-    batch_size:       int   = 64
-    lr:               float = 1e-3
-    pretrain_epochs:  int   = 1000
-    finetune_epochs:  int   = 1000
-    pretrain_patience: int  = 10
-    finetune_patience: int  = 6
-    min_delta:        float = 1e-4
+    batch_size:        int   = 64
+    lr:                float = 1e-3
+    pretrain_epochs:   int   = 1000
+    finetune_epochs:   int   = 1000
+    pretrain_patience: int   = 10
+    finetune_patience: int   = 6
+    min_delta:         float = 1e-4
 
     initial_label_fraction: float = 0.10
     active_rounds:          int   = 8
@@ -172,7 +176,7 @@ def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
 # 6) Rule logic
 # ============================================================
 def compute_deltas(
-    x_hr: np.ndarray,
+    x_hr:  np.ndarray,
     x_hrv: np.ndarray,
 ) -> Tuple[float, float]:
     mid        = len(x_hr) // 2
@@ -237,20 +241,20 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
             x_hrv = hrv[s:e]
             x_br  = br[s:e]
 
-            seq      = np.stack([x_hr, x_hrv, x_br], axis=-1)
-            r, conf  = rule_classifier_window(x_hr, x_hrv, x_br)
+            seq     = np.stack([x_hr, x_hrv, x_br], axis=-1)
+            r, conf = rule_classifier_window(x_hr, x_hrv, x_br)
 
             X_list.append(seq)
             y_rule.append(r)
             y_rule_conf.append(conf)
             meta.append({
                 "segment_id": int(seg_id),
-                "start_time": pd.Timestamp(ts[s]),
-                "end_time":   pd.Timestamp(ts[e - 1]),
+                "start_time": pd.Timestamp(ts[s]).isoformat(),
+                "end_time":   pd.Timestamp(ts[e - 1]).isoformat(),
             })
 
     if not X_list:
-        raise ValueError("No windows created. Reduce window_seconds or check data continuity.")
+        raise ValueError("No windows created.")
 
     X_raw       = np.array(X_list,      dtype=np.float32)
     y_rule      = np.array(y_rule,      dtype=np.int64)
@@ -357,52 +361,151 @@ def fusion_predict(
 
 
 # ============================================================
-# 12) Export to TFLite  ← one step, no ONNX needed
+# 12) Global app state (shared between training + API)
 # ============================================================
-def export_to_tflite(
-    model:       keras.Model,
-    scaler:      Dict[str, np.ndarray],
-    path_tflite: str = "brain_model.tflite",
-    path_scaler: str = "scaler.json",
-):
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+class AppState:
+    model:         Optional[keras.Model]   = None
+    scaler:        Optional[Dict]          = None
+    X:             Optional[np.ndarray]    = None
+    y_rule:        Optional[np.ndarray]    = None
+    y_rule_conf:   Optional[np.ndarray]    = None
+    meta:          Optional[List]          = None
+    idx_train:     Optional[np.ndarray]    = None
+    idx_test:      Optional[np.ndarray]    = None
+    idx_labeled:   Optional[np.ndarray]    = None
+    idx_unlabeled: Optional[np.ndarray]    = None
+    y_user:        Optional[np.ndarray]    = None
+    uncertain_windows: List[Dict]          = []
+    labels:        Dict[int, int]          = {}
+    trained:       bool                    = False
 
-    # Required for LSTM ops
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS,
-        tf.lite.OpsSet.SELECT_TF_OPS,
-    ]
-    converter._experimental_lower_tensor_list_ops = False
 
-    tflite_model = converter.convert()
+STATE = AppState()
 
-    with open(path_tflite, "wb") as f:
-        f.write(tflite_model)
-    print(f"TFLite saved → {path_tflite} ({len(tflite_model) / 1024:.1f} KB)")
+# ============================================================
+# 13) FastAPI app
+# ============================================================
+api = FastAPI(title="Brain API")
 
-    with open(path_scaler, "w") as f:
-        json.dump(
-            {
-                "median": scaler["median"].tolist(),
-                "iqr":    scaler["iqr"].tolist(),
-            },
-            f,
-            indent=2,
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class LabelPayload(BaseModel):
+    window_id: int
+    label:     int
+
+
+@api.get("/status")
+def status():
+    return {
+        "trained":          STATE.trained,
+        "uncertain_count":  len(STATE.uncertain_windows),
+        "labeled_count":    len(STATE.labels),
+    }
+
+
+@api.get("/windows")
+def get_windows():
+    """Return all uncertain windows for the Flutter app to display."""
+    return {"windows": STATE.uncertain_windows}
+
+
+@api.post("/label")
+def submit_label(payload: LabelPayload):
+    """Receive a label from the Flutter app."""
+    STATE.labels[payload.window_id] = payload.label
+
+    # Write label back into y_user
+    if STATE.y_user is not None:
+        STATE.y_user[payload.window_id] = payload.label
+
+    return {"ok": True, "labeled_so_far": len(STATE.labels)}
+
+
+@api.post("/retrain")
+def retrain():
+    """Trigger a finetune round with current labels."""
+    if STATE.model is None:
+        return {"ok": False, "reason": "Model not trained yet"}
+
+    labeled_ids = [wid for wid, lbl in STATE.labels.items()]
+    if len(labeled_ids) < 20:
+        return {"ok": False, "reason": "Need at least 20 labels to retrain"}
+
+    tr_idx = np.array(labeled_ids)
+    tr_ft, va_ft = train_test_split(tr_idx, test_size=0.2, random_state=SEED)
+
+    class_w  = compute_class_weights(STATE.y_user[tr_ft], CFG.n_classes)
+    callbacks = [
+        keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=CFG.finetune_patience,
+            min_delta=CFG.min_delta,
+            restore_best_weights=True,
+            verbose=0,
         )
-    print(f"Scaler saved → {path_scaler}")
+    ]
+
+    STATE.model.fit(
+        STATE.X[tr_ft],
+        STATE.y_user[tr_ft],
+        validation_data=(STATE.X[va_ft], STATE.y_user[va_ft]),
+        epochs=CFG.finetune_epochs,
+        batch_size=CFG.batch_size,
+        class_weight=class_w,
+        callbacks=callbacks,
+        verbose=0,
+    )
+
+    # Refresh uncertain windows after retraining
+    _refresh_uncertain_windows()
+
+    return {
+        "ok":              True,
+        "labeled":         len(STATE.labels),
+        "uncertain_left":  len(STATE.uncertain_windows),
+    }
+
+
+def _refresh_uncertain_windows():
+    """Re-run inference and update uncertain window list."""
+    if STATE.model is None or STATE.X is None:
+        return
+
+    probs   = predict_proba(STATE.model, STATE.X)
+    maxp    = probs.max(axis=1)
+    uncertain_idx = np.where((maxp >= 0.35) & (maxp <= 0.65))[0]
+
+    STATE.uncertain_windows = [
+        {
+            "id":           int(i),
+            "start_time":   STATE.meta[i]["start_time"],
+            "end_time":     STATE.meta[i]["end_time"],
+            "probabilities": probs[i].tolist(),
+            "model_guess":  int(probs[i].argmax()),
+        }
+        for i in uncertain_idx
+        if int(i) not in STATE.labels  # skip already labeled
+    ]
+
 
 # ============================================================
-# 13) Main
+# 14) Training pipeline
 # ============================================================
-def main():
-    print("TensorFlow version:", tf.__version__)
+def run_training():
+    print("TensorFlow:", tf.__version__)
     print("Reading CSV:", os.path.abspath(CFG.csv_path))
 
     # A) Load
     df_raw = load_merged_csv(CFG.csv_path)
     print("Rows loaded:", len(df_raw))
 
-    # B) Fill channels + resample
+    # B) Fill
     df_filled = derive_hrv_br_if_missing(df_raw)
     print("Rows after fill/resample:", len(df_filled))
 
@@ -410,17 +513,17 @@ def main():
     df_seg = add_segment_ids(df_filled, CFG.max_gap_sec_for_same_segment)
     print("Segments:", df_seg["segment_id"].nunique())
 
-    # D) Windowing
+    # D) Windows
     X_raw, y_rule, y_rule_conf, meta = make_windows_from_segments(df_seg, CFG)
     n = len(X_raw)
     print("Windows created:", n)
-    print_class_distribution(y_rule, "Rule-label distribution on all windows:")
+    print_class_distribution(y_rule, "Rule-label distribution:")
 
-    # E) Train / test split
-    idx_all               = np.arange(n)
-    idx_train, idx_test   = train_test_split(idx_all, test_size=0.2, random_state=SEED)
+    # E) Split
+    idx_all             = np.arange(n)
+    idx_train, idx_test = train_test_split(idx_all, test_size=0.2, random_state=SEED)
 
-    # F) Scaling
+    # F) Scale
     scaler = fit_robust_scaler(X_raw[idx_train])
     X      = transform_robust_scaler(X_raw, scaler)
 
@@ -434,7 +537,7 @@ def main():
     y_user                  = -1 * np.ones(n, dtype=np.int64)
     y_user[idx_labeled]     = y_rule[idx_labeled]
 
-    # H) Build model
+    # H) Build + compile
     model = build_model(CFG)
     model.summary()
     model.compile(
@@ -443,22 +546,12 @@ def main():
         metrics=["accuracy"],
     )
 
-    # I) Pretrain on rule labels
-    print("\nPretraining on rule labels...")
-    w_rule        = 0.25 + 0.75 * y_rule_conf[idx_train]
+    # I) Pretrain
+    print("\nPretraining...")
+    w_rule              = 0.25 + 0.75 * y_rule_conf[idx_train]
     tr_idx_pre, val_idx_pre = train_test_split(
         idx_train, test_size=0.2, random_state=SEED
     )
-
-    pretrain_callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor="val_loss",
-            patience=CFG.pretrain_patience,
-            min_delta=CFG.min_delta,
-            restore_best_weights=True,
-            verbose=1,
-        )
-    ]
 
     model.fit(
         X[tr_idx_pre],
@@ -467,95 +560,42 @@ def main():
         validation_data=(X[val_idx_pre], y_rule[val_idx_pre]),
         epochs=CFG.pretrain_epochs,
         batch_size=CFG.batch_size,
-        callbacks=pretrain_callbacks,
-        verbose=1,
-    )
-
-    # J) Active learning rounds
-    print("\nActive learning rounds...")
-    for r in range(CFG.active_rounds):
-        tr_idx = idx_labeled[y_user[idx_labeled] >= 0]
-        if len(tr_idx) < 20:
-            print("Not enough labeled windows to finetune. Stopping.")
-            break
-
-        tr_ft, va_ft = train_test_split(
-            tr_idx, test_size=0.2, random_state=SEED + r
-        )
-
-        class_w = compute_class_weights(y_user[tr_ft], CFG.n_classes)
-
-        finetune_callbacks = [
+        callbacks=[
             keras.callbacks.EarlyStopping(
                 monitor="val_loss",
-                patience=CFG.finetune_patience,
+                patience=CFG.pretrain_patience,
                 min_delta=CFG.min_delta,
                 restore_best_weights=True,
                 verbose=1,
             )
-        ]
-
-        model.fit(
-            X[tr_ft],
-            y_user[tr_ft],
-            validation_data=(X[va_ft], y_user[va_ft]),
-            epochs=CFG.finetune_epochs,
-            batch_size=CFG.batch_size,
-            class_weight=class_w,
-            callbacks=finetune_callbacks,
-            verbose=1,
-        )
-
-        if len(idx_unlabeled) == 0 or len(idx_labeled) >= CFG.max_user_labels:
-            print("Stopping active loop: label budget or pool exhausted.")
-            break
-
-        probs_unl = predict_proba(model, X[idx_unlabeled])
-        ask_idx   = select_queries_active(
-            probs_unl=probs_unl,
-            y_rule_unl=y_rule[idx_unlabeled],
-            idx_unl=idx_unlabeled,
-            query_k=min(CFG.query_size_per_round, len(idx_unlabeled)),
-            uncertainty_threshold=CFG.uncertainty_threshold,
-        )
-
-        # TODO: replace with real UI labels
-        y_user[ask_idx] = y_rule[ask_idx]
-
-        keep          = ~np.isin(idx_unlabeled, ask_idx)
-        idx_unlabeled = idx_unlabeled[keep]
-        idx_labeled   = np.concatenate([idx_labeled, ask_idx])
-
-        print(f"Round {r+1}/{CFG.active_rounds} | labeled={len(idx_labeled)}")
-        print_class_distribution(
-            y_user[idx_labeled],
-            f"Labeled-set distribution after round {r+1}:"
-        )
-
-    # K) Final inference
-    probs_test   = predict_proba(model, X[idx_test])
-    yhat_model   = probs_test.argmax(axis=1)
-
-    frac_labeled = len(idx_labeled) / max(1, len(idx_train))
-    alpha        = CFG.alpha_start + (CFG.alpha_end - CFG.alpha_start) * frac_labeled
-    alpha        = float(np.clip(alpha, 0.0, 1.0))
-    yhat_fused   = fusion_predict(
-        probs_test, y_rule[idx_test], y_rule_conf[idx_test], alpha
+        ],
+        verbose=1,
     )
 
-    print_class_distribution(yhat_model, "Prediction distribution (model-only):")
-    print_class_distribution(yhat_fused, "Prediction distribution (fused):")
+    # J) Save to global state
+    STATE.model         = model
+    STATE.scaler        = scaler
+    STATE.X             = X
+    STATE.y_rule        = y_rule
+    STATE.y_rule_conf   = y_rule_conf
+    STATE.meta          = meta
+    STATE.idx_train     = idx_train
+    STATE.idx_test      = idx_test
+    STATE.idx_labeled   = idx_labeled
+    STATE.idx_unlabeled = idx_unlabeled
+    STATE.y_user        = y_user
+    STATE.trained       = True
 
-    print("\nSample prompt windows:")
-    for i in range(min(5, len(meta))):
-        print(f"  {meta[i]['start_time']} -> {meta[i]['end_time']}")
-
-    # L) Export — one clean step
-    export_to_tflite(model, scaler)
-
-    print("\nDone.")
+    # K) Initial uncertain windows
+    _refresh_uncertain_windows()
+    print(f"\nUncertain windows ready for labeling: {len(STATE.uncertain_windows)}")
+    print("\nTraining done. API is running at http://localhost:8000")
 
 
 # ============================================================
+# 15) Entry point
+# ============================================================
 if __name__ == "__main__":
-    main()
+    # Train first, then serve
+    run_training()
+    uvicorn.run(api, host="0.0.0.0", port=8000)
