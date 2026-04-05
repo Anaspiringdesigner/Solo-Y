@@ -11,6 +11,9 @@ from typing import Tuple, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import RobustScaler
+from sklearn.decomposition import PCA
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -39,6 +42,11 @@ class Config:
     window_seconds: int = 120
     stride_seconds: int = 30
 
+    # Grouping
+    group_window_minutes:  int = 15        # group windows into ~15 min blocks
+    max_groups_per_round:  int = 50        # show at most 50 groups at a time
+    group_similarity_threshold: float = 0.85  # cosine sim to merge into group
+
     n_classes:  int   = 6
     input_dim:  int   = 3
     hidden_dim: int   = 64
@@ -47,19 +55,16 @@ class Config:
     batch_size:        int   = 64
     lr:                float = 1e-3
     pretrain_epochs:   int   = 1000
-    finetune_epochs:   int   = 1000
+    finetune_epochs:   int   = 500
     pretrain_patience: int   = 10
     finetune_patience: int   = 6
     min_delta:         float = 1e-4
 
-    initial_label_fraction: float = 0.10
-    active_rounds:          int   = 8
-    query_size_per_round:   int   = 40
-    max_user_labels:        int   = 500
-    uncertainty_threshold:  float = 0.55
+    uncertainty_low:  float = 0.35
+    uncertainty_high: float = 0.65
 
-    alpha_start: float = 0.35
-    alpha_end:   float = 0.85
+    # Active learning clustering
+    n_clusters: int = 6   # start with n_classes clusters, model will refine
 
 
 CFG = Config()
@@ -173,7 +178,7 @@ def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
 
 
 # ============================================================
-# 6) Rule logic
+# 6) Rule logic (warm-start only, not used for active learning)
 # ============================================================
 def compute_deltas(
     x_hr:  np.ndarray,
@@ -293,7 +298,128 @@ def transform_robust_scaler(
 
 
 # ============================================================
-# 9) Keras LSTM model
+# 9) Extract flat features for clustering
+#    (mean, std, min, max, trend per channel)
+# ============================================================
+def extract_features(X: np.ndarray) -> np.ndarray:
+    """
+    Extract statistical features from raw windows for clustering.
+    Shape: (n_windows, n_features)
+    """
+    n, t, c = X.shape
+    feats = []
+    for i in range(n):
+        row = []
+        for ch in range(c):
+            sig = X[i, :, ch]
+            row += [
+                float(np.mean(sig)),
+                float(np.std(sig)),
+                float(np.min(sig)),
+                float(np.max(sig)),
+                float(np.polyfit(np.arange(t), sig, 1)[0]),  # linear trend
+                float(np.percentile(sig, 25)),
+                float(np.percentile(sig, 75)),
+            ]
+        feats.append(row)
+    return np.array(feats, dtype=np.float32)
+
+
+# ============================================================
+# 10) Group similar windows into 15-min blocks
+# ============================================================
+def group_windows_by_similarity(
+    uncertain_idx: np.ndarray,
+    features:      np.ndarray,
+    meta:          List[Dict],
+    probs:         np.ndarray,
+    max_groups:    int,
+    group_minutes: int,
+) -> List[Dict]:
+    """
+    Groups uncertain windows into blocks based on:
+    1. Temporal proximity (~15 min blocks)
+    2. Feature similarity (KMeans on features)
+
+    Returns a list of group dicts for the Flutter UI.
+    """
+    if len(uncertain_idx) == 0:
+        return []
+
+    feat_sub = features[uncertain_idx]
+
+    # Normalize features
+    scaler   = RobustScaler()
+    feat_norm = scaler.fit_transform(feat_sub)
+
+    # Reduce dims for clustering
+    n_components = min(6, feat_norm.shape[1], feat_norm.shape[0] - 1)
+    pca          = PCA(n_components=n_components, random_state=SEED)
+    feat_pca     = pca.fit_transform(feat_norm)
+
+    # KMeans clustering — find natural groups
+    n_clusters = min(max_groups, len(uncertain_idx))
+    km         = KMeans(n_clusters=n_clusters, random_state=SEED, n_init=10)
+    cluster_ids = km.fit_predict(feat_pca)
+
+    # Build groups
+    groups = []
+    for cid in range(n_clusters):
+        mask      = cluster_ids == cid
+        local_idx = np.where(mask)[0]
+        global_idx = uncertain_idx[local_idx]
+
+        if len(global_idx) == 0:
+            continue
+
+        # Sort by time
+        start_times = [meta[i]["start_time"] for i in global_idx]
+        sorted_order = np.argsort(start_times)
+        global_idx   = global_idx[sorted_order]
+
+        # Representative window = closest to cluster center
+        center      = km.cluster_centers_[cid]
+        dists       = np.linalg.norm(feat_pca[local_idx] - center, axis=1)
+        rep_local   = local_idx[np.argmin(dists)]
+        rep_global  = uncertain_idx[rep_local]
+
+        # Aggregate probabilities (mean of cluster)
+        cluster_probs = probs[global_idx].mean(axis=0).tolist()
+        model_guess   = int(np.argmax(cluster_probs))
+
+        # Time span of the group
+        group_start = meta[global_idx[0]]["start_time"]
+        group_end   = meta[global_idx[-1]]["end_time"]
+
+        # Duration in minutes
+        try:
+            t0  = pd.Timestamp(group_start)
+            t1  = pd.Timestamp(group_end)
+            dur = round((t1 - t0).total_seconds() / 60, 1)
+        except Exception:
+            dur = 0.0
+
+        groups.append({
+            "id":             int(rep_global),       # representative window id
+            "window_ids":     [int(i) for i in global_idx],
+            "start_time":     group_start,
+            "end_time":       group_end,
+            "duration_min":   dur,
+            "window_count":   len(global_idx),
+            "probabilities":  cluster_probs,
+            "model_guess":    model_guess,
+            "cluster_id":     int(cid),
+        })
+
+    # Sort groups by start time
+    groups.sort(key=lambda g: g["start_time"])
+
+    print(f"  Grouped {len(uncertain_idx)} uncertain windows → {len(groups)} groups")
+    return groups
+
+
+# ============================================================
+# 11) Keras LSTM model
 # ============================================================
 def build_model(cfg: Config) -> keras.Model:
     inputs = keras.Input(shape=(cfg.window_seconds, cfg.input_dim), name="input")
@@ -305,7 +431,7 @@ def build_model(cfg: Config) -> keras.Model:
 
 
 # ============================================================
-# 10) Predict helpers
+# 12) Predict helpers
 # ============================================================
 def predict_proba(model: keras.Model, X: np.ndarray, batch_size=256) -> np.ndarray:
     return model.predict(X, batch_size=batch_size, verbose=0)
@@ -316,74 +442,27 @@ def entropy_from_probs(p: np.ndarray, eps=1e-9) -> np.ndarray:
 
 
 # ============================================================
-# 11) Active query selector
-# ============================================================
-def select_queries_active(
-    probs_unl:             np.ndarray,
-    y_rule_unl:            np.ndarray,
-    idx_unl:               np.ndarray,
-    query_k:               int,
-    uncertainty_threshold: float,
-) -> np.ndarray:
-    yhat = probs_unl.argmax(axis=1)
-    maxp = probs_unl.max(axis=1)
-    ent  = entropy_from_probs(probs_unl)
-
-    uncertain = (maxp < uncertainty_threshold).astype(np.float32)
-    disagree  = (yhat != y_rule_unl).astype(np.float32)
-
-    pred_counts = np.bincount(yhat, minlength=CFG.n_classes).astype(np.float32)
-    pred_counts = np.maximum(pred_counts, 1.0)
-    rare_bonus  = 1.0 / pred_counts[yhat]
-
-    score  = ent
-    score += 0.40 * uncertain
-    score += 0.35 * disagree
-    score += 0.25 * rare_bonus
-
-    chosen_local = np.argsort(-score)[:query_k]
-    return idx_unl[chosen_local]
-
-
-def fusion_predict(
-    probs_model: np.ndarray,
-    y_rule:      np.ndarray,
-    conf_rule:   np.ndarray,
-    alpha:       float,
-) -> np.ndarray:
-    n, c       = probs_model.shape
-    probs_rule = np.zeros((n, c), dtype=np.float32)
-    probs_rule[np.arange(n), y_rule] = conf_rule
-    rem        = 1.0 - conf_rule
-    probs_rule += rem[:, None] / c
-    probs      = alpha * probs_model + (1 - alpha) * probs_rule
-    return probs.argmax(axis=1)
-
-
-# ============================================================
-# 12) Global app state (shared between training + API)
+# 13) Global app state
 # ============================================================
 class AppState:
-    model:         Optional[keras.Model]   = None
-    scaler:        Optional[Dict]          = None
-    X:             Optional[np.ndarray]    = None
-    y_rule:        Optional[np.ndarray]    = None
-    y_rule_conf:   Optional[np.ndarray]    = None
-    meta:          Optional[List]          = None
-    idx_train:     Optional[np.ndarray]    = None
-    idx_test:      Optional[np.ndarray]    = None
-    idx_labeled:   Optional[np.ndarray]    = None
-    idx_unlabeled: Optional[np.ndarray]    = None
-    y_user:        Optional[np.ndarray]    = None
-    uncertain_windows: List[Dict]          = []
-    labels:        Dict[int, int]          = {}
-    trained:       bool                    = False
+    model:              Optional[keras.Model] = None
+    scaler:             Optional[Dict]        = None
+    features:           Optional[np.ndarray]  = None   # flat features for clustering
+    X:                  Optional[np.ndarray]  = None
+    y_rule:             Optional[np.ndarray]  = None
+    y_rule_conf:        Optional[np.ndarray]  = None
+    meta:               Optional[List]        = None
+    y_user:             Optional[np.ndarray]  = None
+    uncertain_windows:  List[Dict]            = []     # grouped windows
+    labels:             Dict[int, int]        = {}     # window_id → label
+    trained:            bool                  = False
 
 
 STATE = AppState()
 
+
 # ============================================================
-# 13) FastAPI app
+# 14) FastAPI app
 # ============================================================
 api = FastAPI(title="Brain API")
 
@@ -396,106 +475,158 @@ api.add_middleware(
 
 
 class LabelPayload(BaseModel):
-    window_id: int
+    window_id: int   # representative window id of the group
     label:     int
 
 
 @api.get("/status")
 def status():
     return {
-        "trained":          STATE.trained,
-        "uncertain_count":  len(STATE.uncertain_windows),
-        "labeled_count":    len(STATE.labels),
+        "trained":         STATE.trained,
+        "uncertain_count": len(STATE.uncertain_windows),
+        "labeled_count":   len(STATE.labels),
     }
 
 
 @api.get("/windows")
 def get_windows():
-    """Return all uncertain windows for the Flutter app to display."""
+    """Return grouped uncertain windows for the Flutter UI."""
     return {"windows": STATE.uncertain_windows}
 
 
 @api.post("/label")
 def submit_label(payload: LabelPayload):
-    """Receive a label from the Flutter app."""
-    STATE.labels[payload.window_id] = payload.label
+    """
+    Receive a label for a group.
+    Applies the label to ALL windows in that group.
+    """
+    # Find the group this window_id belongs to
+    group = next(
+        (g for g in STATE.uncertain_windows if g["id"] == payload.window_id),
+        None,
+    )
 
-    # Write label back into y_user
-    if STATE.y_user is not None:
-        STATE.y_user[payload.window_id] = payload.label
+    if group is None:
+        # Fallback: label just the single window
+        STATE.labels[payload.window_id] = payload.label
+        if STATE.y_user is not None:
+            STATE.y_user[payload.window_id] = payload.label
+        return {"ok": True, "labeled_windows": 1, "labeled_groups": len(STATE.labels)}
 
-    return {"ok": True, "labeled_so_far": len(STATE.labels)}
+    # Apply label to all windows in the group
+    for wid in group["window_ids"]:
+        STATE.labels[wid] = payload.label
+        if STATE.y_user is not None:
+            STATE.y_user[wid] = payload.label
+
+    return {
+        "ok":             True,
+        "labeled_windows": len(group["window_ids"]),
+        "labeled_groups":  len(STATE.labels),
+    }
 
 
 @api.post("/retrain")
 def retrain():
-    """Trigger a finetune round with current labels."""
+    """
+    Trigger a finetune round with current labels.
+    Model learns from YOUR labels, not the rules.
+    """
     if STATE.model is None:
         return {"ok": False, "reason": "Model not trained yet"}
 
-    labeled_ids = [wid for wid, lbl in STATE.labels.items()]
-    if len(labeled_ids) < 20:
-        return {"ok": False, "reason": "Need at least 20 labels to retrain"}
+    # Collect all labeled window indices
+    labeled_ids = [wid for wid, lbl in STATE.labels.items()
+                   if STATE.y_user is not None and STATE.y_user[wid] >= 0]
+
+    if len(labeled_ids) < 10:
+        return {"ok": False, "reason": f"Need at least 10 labels, have {len(labeled_ids)}"}
 
     tr_idx = np.array(labeled_ids)
+
+    if len(tr_idx) < 4:
+        return {"ok": False, "reason": "Not enough labeled data to split"}
+
     tr_ft, va_ft = train_test_split(tr_idx, test_size=0.2, random_state=SEED)
 
-    class_w  = compute_class_weights(STATE.y_user[tr_ft], CFG.n_classes)
-    callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor="val_loss",
-            patience=CFG.finetune_patience,
-            min_delta=CFG.min_delta,
-            restore_best_weights=True,
-            verbose=0,
-        )
-    ]
+    y_tr = STATE.y_user[tr_ft]
+    y_va = STATE.y_user[va_ft]
+
+    class_w = compute_class_weights(y_tr, CFG.n_classes)
 
     STATE.model.fit(
         STATE.X[tr_ft],
-        STATE.y_user[tr_ft],
-        validation_data=(STATE.X[va_ft], STATE.y_user[va_ft]),
+        y_tr,
+        validation_data=(STATE.X[va_ft], y_va),
         epochs=CFG.finetune_epochs,
         batch_size=CFG.batch_size,
         class_weight=class_w,
-        callbacks=callbacks,
+        callbacks=[
+            keras.callbacks.EarlyStopping(
+                monitor="val_loss",
+                patience=CFG.finetune_patience,
+                min_delta=CFG.min_delta,
+                restore_best_weights=True,
+                verbose=0,
+            )
+        ],
         verbose=0,
     )
 
-    # Refresh uncertain windows after retraining
+    print(f"Retrained on {len(tr_ft)} windows ({len(STATE.labels)} unique windows labeled)")
+
+    # Refresh uncertain window groups
     _refresh_uncertain_windows()
 
     return {
-        "ok":              True,
-        "labeled":         len(STATE.labels),
+        "ok":             True,
+        "labeled_windows": len(STATE.labels),
         "uncertain_left":  len(STATE.uncertain_windows),
     }
 
 
 def _refresh_uncertain_windows():
-    """Re-run inference and update uncertain window list."""
+    """
+    Re-run inference → find uncertain windows →
+    cluster them into groups → update STATE.
+    """
     if STATE.model is None or STATE.X is None:
         return
 
-    probs   = predict_proba(STATE.model, STATE.X)
-    maxp    = probs.max(axis=1)
-    uncertain_idx = np.where((maxp >= 0.35) & (maxp <= 0.65))[0]
+    probs         = predict_proba(STATE.model, STATE.X)
+    maxp          = probs.max(axis=1)
 
-    STATE.uncertain_windows = [
-        {
-            "id":           int(i),
-            "start_time":   STATE.meta[i]["start_time"],
-            "end_time":     STATE.meta[i]["end_time"],
-            "probabilities": probs[i].tolist(),
-            "model_guess":  int(probs[i].argmax()),
-        }
-        for i in uncertain_idx
-        if int(i) not in STATE.labels  # skip already labeled
-    ]
+    # Uncertain = model is not confident
+    uncertain_idx = np.where(
+        (maxp >= CFG.uncertainty_low) & (maxp <= CFG.uncertainty_high)
+    )[0]
+
+    # Exclude already labeled windows
+    labeled_set   = set(STATE.labels.keys())
+    uncertain_idx = np.array(
+        [i for i in uncertain_idx if i not in labeled_set],
+        dtype=np.int64,
+    )
+
+    print(f"  Uncertain windows (unlabeled): {len(uncertain_idx)}")
+
+    if len(uncertain_idx) == 0:
+        STATE.uncertain_windows = []
+        return
+
+    # Group into ~15-min blocks by similarity
+    STATE.uncertain_windows = group_windows_by_similarity(
+        uncertain_idx  = uncertain_idx,
+        features       = STATE.features,
+        meta           = STATE.meta,
+        probs          = probs,
+        max_groups     = CFG.max_groups_per_round,
+        group_minutes  = CFG.group_window_minutes,
+    )
 
 
 # ============================================================
-# 14) Training pipeline
+# 15) Training pipeline
 # ============================================================
 def run_training():
     print("TensorFlow:", tf.__version__)
@@ -517,25 +648,21 @@ def run_training():
     X_raw, y_rule, y_rule_conf, meta = make_windows_from_segments(df_seg, CFG)
     n = len(X_raw)
     print("Windows created:", n)
-    print_class_distribution(y_rule, "Rule-label distribution:")
+    print_class_distribution(y_rule, "Rule-label distribution (warm-start only):")
 
-    # E) Split
+    # E) Scale
     idx_all             = np.arange(n)
     idx_train, idx_test = train_test_split(idx_all, test_size=0.2, random_state=SEED)
+    scaler              = fit_robust_scaler(X_raw[idx_train])
+    X                   = transform_robust_scaler(X_raw, scaler)
 
-    # F) Scale
-    scaler = fit_robust_scaler(X_raw[idx_train])
-    X      = transform_robust_scaler(X_raw, scaler)
+    # F) Extract flat features for clustering
+    print("Extracting features for clustering...")
+    features = extract_features(X)
+    print(f"  Feature shape: {features.shape}")
 
-    # G) Active pools
-    idx_pool      = idx_train.copy()
-    np.random.shuffle(idx_pool)
-    init_k        = max(10, int(len(idx_pool) * CFG.initial_label_fraction))
-    idx_labeled   = idx_pool[:init_k].copy()
-    idx_unlabeled = idx_pool[init_k:].copy()
-
-    y_user                  = -1 * np.ones(n, dtype=np.int64)
-    y_user[idx_labeled]     = y_rule[idx_labeled]
+    # G) y_user starts as -1 (unknown), model will learn from YOUR labels
+    y_user = -1 * np.ones(n, dtype=np.int64)
 
     # H) Build + compile
     model = build_model(CFG)
@@ -546,9 +673,10 @@ def run_training():
         metrics=["accuracy"],
     )
 
-    # I) Pretrain
-    print("\nPretraining...")
-    w_rule              = 0.25 + 0.75 * y_rule_conf[idx_train]
+    # I) Warm-start pretrain on rule labels
+    #    This gives the model a starting point, but YOUR labels will override it
+    print("\nWarm-start pretraining on rule labels...")
+    w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
     tr_idx_pre, val_idx_pre = train_test_split(
         idx_train, test_size=0.2, random_state=SEED
     )
@@ -573,29 +701,26 @@ def run_training():
     )
 
     # J) Save to global state
-    STATE.model         = model
-    STATE.scaler        = scaler
-    STATE.X             = X
-    STATE.y_rule        = y_rule
-    STATE.y_rule_conf   = y_rule_conf
-    STATE.meta          = meta
-    STATE.idx_train     = idx_train
-    STATE.idx_test      = idx_test
-    STATE.idx_labeled   = idx_labeled
-    STATE.idx_unlabeled = idx_unlabeled
-    STATE.y_user        = y_user
-    STATE.trained       = True
+    STATE.model       = model
+    STATE.scaler      = scaler
+    STATE.features    = features
+    STATE.X           = X
+    STATE.y_rule      = y_rule
+    STATE.y_rule_conf = y_rule_conf
+    STATE.meta        = meta
+    STATE.y_user      = y_user
+    STATE.trained     = True
 
-    # K) Initial uncertain windows
+    # K) Initial uncertain window groups
+    print("\nFinding initial uncertain window groups...")
     _refresh_uncertain_windows()
-    print(f"\nUncertain windows ready for labeling: {len(STATE.uncertain_windows)}")
+    print(f"Groups ready for labeling: {len(STATE.uncertain_windows)}")
     print("\nTraining done. API is running at http://localhost:8000")
 
 
 # ============================================================
-# 15) Entry point
+# 16) Entry point
 # ============================================================
 if __name__ == "__main__":
-    # Train first, then serve
     run_training()
     uvicorn.run(api, host="0.0.0.0", port=8000)

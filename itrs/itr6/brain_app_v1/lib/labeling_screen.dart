@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-// ── Change this to your PC's local IP if running on a phone ──
 const String kBaseUrl = 'http://127.0.0.1:8000';
 
 const List<String> kStateNames = [
@@ -15,15 +14,14 @@ const List<String> kStateNames = [
 ];
 
 const List<Color> kStateColors = [
-  Color(0xFF607D8B), // 0 grey-blue
-  Color(0xFFE53935), // 1 red
-  Color(0xFF43A047), // 2 green
-  Color(0xFFFFB300), // 3 amber
-  Color(0xFF8E24AA), // 4 purple
-  Color(0xFFFF5722), // 5 deep orange
+  Color(0xFF607D8B),
+  Color(0xFFE53935),
+  Color(0xFF43A047),
+  Color(0xFFFFB300),
+  Color(0xFF8E24AA),
+  Color(0xFFFF5722),
 ];
 
-// ─────────────────────────────────────────────
 class LabelingScreen extends StatefulWidget {
   const LabelingScreen({super.key});
 
@@ -32,7 +30,6 @@ class LabelingScreen extends StatefulWidget {
 }
 
 class _LabelingScreenState extends State<LabelingScreen> {
-  // ── state ──
   List<Map<String, dynamic>> _windows = [];
   int _cursor = 0;
   int _labeledCount = 0;
@@ -45,8 +42,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
     super.initState();
     _fetchWindows();
   }
-
-  // ── API calls ──────────────────────────────
 
   Future<void> _fetchWindows() async {
     setState(() => _loading = true);
@@ -84,7 +79,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
         _statusMsg = '$_labeledCount labeled';
       });
 
-      // Auto-retrain every 20 labels
       if (_labeledCount > 0 && _labeledCount % 20 == 0) {
         await _retrain();
       }
@@ -104,7 +98,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         if (data['ok'] == true) {
-          // Refresh windows after retraining
           await _fetchWindows();
           setState(() {
             _statusMsg =
@@ -121,8 +114,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
     }
   }
 
-  // ── helpers ───────────────────────────────
-
   String _formatTime(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
@@ -134,7 +125,14 @@ class _LabelingScreenState extends State<LabelingScreen> {
     }
   }
 
-  // ── build ─────────────────────────────────
+  String _formatDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +145,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          // Progress chip
           Center(
             child: Container(
               margin: const EdgeInsets.only(right: 8),
@@ -163,7 +160,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
               ),
             ),
           ),
-          // Refresh
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white70),
             onPressed: _fetchWindows,
@@ -178,8 +174,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
               : _buildBody(),
     );
   }
-
-  // ── retraining overlay ────────────────────
 
   Widget _buildRetrainingOverlay() {
     return Center(
@@ -197,8 +191,6 @@ class _LabelingScreenState extends State<LabelingScreen> {
       ),
     );
   }
-
-  // ── main body ─────────────────────────────
 
   Widget _buildBody() {
     if (_windows.isEmpty) {
@@ -267,13 +259,11 @@ class _LabelingScreenState extends State<LabelingScreen> {
     final windowId = win['id'] as int;
     final startTime = _formatTime(win['start_time'] as String);
     final endTime = _formatTime(win['end_time'] as String);
+    final date = _formatDate(win['start_time'] as String);
 
     return Column(
       children: [
-        // ── status bar ──
         _buildStatusBar(),
-
-        // ── progress bar ──
         LinearProgressIndicator(
           value: _cursor / _windows.length,
           backgroundColor: const Color(0xFF21262D),
@@ -281,55 +271,64 @@ class _LabelingScreenState extends State<LabelingScreen> {
               const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
           minHeight: 3,
         ),
-
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── time card ──
-                _buildTimeCard(startTime, endTime, windowId),
-                const SizedBox(height: 16),
-
-                // ── probability bars ──
-                _buildProbCard(probs, modelGuess),
-                const SizedBox(height: 20),
-
-                // ── label prompt ──
-                const Text(
-                  'What was this actually?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // ── label buttons ──...List.generate(6, (i) => _buildLabelButton(i, modelGuess, windowId)),
-
-                const SizedBox(height: 12),
-
-                // ── skip button ──
-                Center(
-                  child: TextButton(
-                    onPressed: () => setState(() => _cursor++),
-                    child: const Text(
-                      'Skip (model is correct)',
-                      style: TextStyle(color: Colors.white38),
-                    ),
-                  ),
-                ),
-              ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: _buildTimeCard(date, startTime, endTime, windowId),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildProbCard(probs, modelGuess),
+        ),
+        const SizedBox(height: 16),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'What was this actually?',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 2.2,
+                children: List.generate(
+                  6,
+                  (i) => _buildLabelButton(i, modelGuess, windowId),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: () => setState(() => _cursor++),
+                  child: const Text(
+                    'Skip (model is correct)',
+                    style: TextStyle(color: Colors.white38),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ],
     );
   }
-
-  // ── sub-widgets ───────────────────────────
 
   Widget _buildStatusBar() {
     return Container(
@@ -343,7 +342,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
     );
   }
 
-  Widget _buildTimeCard(String start, String end, int id) {
+  Widget _buildTimeCard(String date, String start, String end, int id) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -353,12 +352,25 @@ class _LabelingScreenState extends State<LabelingScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.access_time, color: Colors.white38, size: 18),
+          const Icon(Icons.calendar_today, color: Colors.white38, size: 16),
           const SizedBox(width: 8),
-          Text(
-            '$start  →  $end',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w600),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                date,
+                style: const TextStyle(
+                    color: Colors.white54, fontSize: 11),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$start  →  $end',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15),
+              ),
+            ],
           ),
           const Spacer(),
           Text(
@@ -393,52 +405,47 @@ class _LabelingScreenState extends State<LabelingScreen> {
             final isGuess = i == modelGuess;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 160,
-                        child: Text(
-                          kStateNames[i],
-                          style: TextStyle(
-                            color: isGuess
-                                ? kStateColors[i]
-                                : Colors.white54,
-                            fontSize: 11,
-                            fontWeight: isGuess
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                  SizedBox(
+                    width: 160,
+                    child: Text(
+                      kStateNames[i],
+                      style: TextStyle(
+                        color:
+                            isGuess ? kStateColors[i] : Colors.white54,
+                        fontSize: 11,
+                        fontWeight: isGuess
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: pct,
+                        minHeight: 8,
+                        backgroundColor: const Color(0xFF21262D),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isGuess
+                              ? kStateColors[i]
+                              : kStateColors[i].withOpacity(0.35),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: pct,
-                            minHeight: 8,
-                            backgroundColor: const Color(0xFF21262D),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              isGuess
-                                  ? kStateColors[i]
-                                  : kStateColors[i].withOpacity(0.35),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${(pct * 100).toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          color: isGuess ? Colors.white : Colors.white38,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(pct * 100).toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      color:
+                          isGuess ? Colors.white : Colors.white38,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -451,59 +458,61 @@ class _LabelingScreenState extends State<LabelingScreen> {
 
   Widget _buildLabelButton(int label, int modelGuess, int windowId) {
     final isGuess = label == modelGuess;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isGuess
-                ? kStateColors[label].withOpacity(0.25)
-                : const Color(0xFF21262D),
-            side: BorderSide(
-              color: isGuess
-                  ? kStateColors[label]
-                  : const Color(0xFF30363D),
-              width: isGuess ? 1.5 : 1,
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+    return GestureDetector(
+      onTap: () => _submitLabel(windowId, label),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isGuess
+              ? kStateColors[label].withOpacity(0.2)
+              : const Color(0xFF21262D),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isGuess
+                ? kStateColors[label]
+                : const Color(0xFF30363D),
+            width: isGuess ? 2 : 1,
           ),
-          onPressed: () => _submitLabel(windowId, label),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: kStateColors[label],
-                  shape: BoxShape.circle,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: kStateColors[label],
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                kStateNames[label],
-                style: TextStyle(
-                  color: isGuess ? Colors.white : Colors.white70,
-                  fontWeight: isGuess
-                      ? FontWeight.bold
-                      : FontWeight.normal,
-                ),
-              ),
-              if (isGuess)...[
-                const SizedBox(width: 8),
-                const Text(
-                  '← model guess',
-                  style:
-                      TextStyle(color: Colors.white38, fontSize: 11),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    kStateNames[label],
+                    style: TextStyle(
+                      color: isGuess ? Colors.white : Colors.white70,
+                      fontWeight: isGuess
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
+            ),
+            if (isGuess)...[
+              const SizedBox(height: 4),
+              const Text(
+                '← model guess',
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
   }
-} 
+}
