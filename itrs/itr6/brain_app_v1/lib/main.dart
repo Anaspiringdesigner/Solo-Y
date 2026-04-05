@@ -1,10 +1,20 @@
-// main.dart
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
 
+// ============================================================
+// 0) Entry point
+// ============================================================
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const BrainApp());
 }
 
+// ============================================================
+// 1) App root
+// ============================================================
 class BrainApp extends StatelessWidget {
   const BrainApp({super.key});
 
@@ -20,9 +30,8 @@ class BrainApp extends StatelessWidget {
 }
 
 // ============================================================
-// DATA MODELS
+// 2) Constants
 // ============================================================
-
 const Map<int, String> stateNames = {
   0: 'Baseline / Sleep',
   1: 'Panic / Procrastination',
@@ -50,12 +59,14 @@ const Map<int, IconData> stateIcons = {
   5: Icons.sos,
 };
 
-/// One uncertain window that needs a label
+// ============================================================
+// 3) Data models
+// ============================================================
 class WindowItem {
   final int id;
   final DateTime startTime;
   final DateTime endTime;
-  final List<double> probabilities; // length 6, softmax output
+  final List<double> probabilities;
   int? userLabel;
 
   WindowItem({
@@ -66,48 +77,159 @@ class WindowItem {
     this.userLabel,
   });
 
-  double get maxProb =>
-      probabilities.reduce((a, b) => a > b ? a : b);
+  double get maxProb => probabilities.reduce((a, b) => a > b ? a : b);
+  int get modelGuess => probabilities.indexOf(maxProb);
 
-  int get modelGuess =>
-      probabilities.indexOf(maxProb);
+  bool get isUncertain => maxProb >= 0.35 && maxProb <= 0.65;
 }
 
 // ============================================================
-// MOCK DATA  (replace with real model output later)
+// 4) Robust scaler (mirrors brain.py)
 // ============================================================
+class RobustScaler {
+  final List<double> median;
+  final List<double> iqr;
 
-List<WindowItem> generateMockWindows() {
-  final base = DateTime(2025, 4, 5, 9, 0, 0);
-  final mockProbs = [
-    [0.18, 0.42, 0.15, 0.10, 0.08, 0.07], // uncertain ✓
-    [0.05, 0.03, 0.85, 0.04, 0.02, 0.01], // confident ✗
-    [0.20, 0.20, 0.20, 0.20, 0.10, 0.10], // very uncertain ✓
-    [0.10, 0.55, 0.12, 0.10, 0.08, 0.05], // borderline ✓
-    [0.02, 0.01, 0.01, 0.94, 0.01, 0.01], // confident ✗
-    [0.22, 0.18, 0.30, 0.15, 0.10, 0.05], // uncertain ✓
-    [0.15, 0.38, 0.20, 0.12, 0.10, 0.05], // uncertain ✓
-    [0.01, 0.02, 0.01, 0.01, 0.94, 0.01], // confident ✗
-    [0.17, 0.17, 0.17, 0.17, 0.16, 0.16], // max uncertain ✓
-    [0.60, 0.10, 0.10, 0.10, 0.05, 0.05], // borderline ✗
-  ];
+  const RobustScaler({required this.median, required this.iqr});
 
-  return List.generate(mockProbs.length, (i) {
-    final start = base.add(Duration(minutes: i * 30));
-    final end   = start.add(const Duration(minutes: 2));
-    return WindowItem(
-      id:           i,
-      startTime:    start,
-      endTime:      end,
-      probabilities: List<double>.from(mockProbs[i]),
+  factory RobustScaler.fromJson(Map<String, dynamic> json) => RobustScaler(
+        median: List<double>.from(json['median']),
+        iqr: List<double>.from(json['iqr']),
+      );
+
+  List<double> transform(List<List<double>> window) {
+    final out = <double>[];
+    for (final row in window) {
+      for (int ch = 0; ch < 3; ch++) {
+        out.add((row[ch] - median[ch]) / iqr[ch]);
+      }
+    }
+    return out;
+  }
+}
+
+// ============================================================
+// 5) TFLite inference service
+// ============================================================
+class InferenceService {
+  static const int nClasses     = 6;
+  static const int windowSeconds = 120;
+  static const int inputDim     = 3;
+
+  Interpreter? _interpreter;
+  RobustScaler? _scaler;
+
+  bool get isReady => _interpreter != null && _scaler != null;
+
+  Future<void> init() async {
+    // Load scaler
+    final scalerJson = await rootBundle.loadString('assets/scaler.json');
+    _scaler = RobustScaler.fromJson(jsonDecode(scalerJson));
+
+    // Load TFLite model
+    _interpreter = await Interpreter.fromAsset('assets/brain_model.tflite');
+
+    print('InferenceService ready.');
+  }
+
+  void dispose() {
+    _interpreter?.close();
+    _interpreter = null;
+  }
+
+  // Run one window [windowSeconds][inputDim] through the model
+  List<double> runWindow(List<List<double>> rawWindow) {
+    assert(isReady, 'Call init() first');
+
+    // Scale
+    final flat = _scaler!.transform(rawWindow);
+
+    // Reshape to [1, 120, 3]
+    final input = List.generate(
+      1,
+      (_) => List.generate(
+        windowSeconds,
+        (t) => List.generate(
+          inputDim,
+          (c) => flat[t * inputDim + c],
+        ),
+      ),
     );
+
+    // Output buffer [1, 6]
+    final output = List.generate(
+      1,
+      (_) => List<double>.filled(nClasses, 0.0),
+    );
+
+    _interpreter!.run(input, output);
+
+    // Already softmax from Keras — return as-is
+    return output[0];
+  }
+
+  // Run inference on a list of raw windows
+  List<WindowItem> inferWindows(List<_RawWindow> rawWindows) {
+    final results = <WindowItem>[];
+    for (int i = 0; i < rawWindows.length; i++) {
+      final rw    = rawWindows[i];
+      final probs = runWindow(rw.data);
+      results.add(WindowItem(
+        id:            i,
+        startTime:     rw.startTime,
+        endTime:       rw.endTime,
+        probabilities: probs,
+      ));
+    }
+    return results;
+  }
+}
+
+// ============================================================
+// 6) Raw window holder
+// ============================================================
+class _RawWindow {
+  final DateTime startTime;
+  final DateTime endTime;
+  final List<List<double>> data; // [120][3]
+
+  const _RawWindow({
+    required this.startTime,
+    required this.endTime,
+    required this.data,
   });
 }
 
 // ============================================================
-// LABELING SCREEN
+// 7) Mock data generator (replace with real CSV later)
 // ============================================================
+List<_RawWindow> generateMockRawWindows() {
+  final rng  = math.Random(42);
+  final base = DateTime(2025, 4, 5, 9, 0, 0);
+  final windows = <_RawWindow>[];
 
+  for (int i = 0; i < 20; i++) {
+    final start = base.add(Duration(minutes: i * 30));
+    final end   = start.add(const Duration(minutes: 2));
+
+    // Simulate 120 seconds of [hr, hrv, br]
+    final data = List.generate(
+      120,
+      (_) => [
+        60.0 + rng.nextDouble() * 40,  // hr: 60–100
+        30.0 + rng.nextDouble() * 50,  // hrv: 30–80
+        12.0 + rng.nextDouble() * 8,   // br: 12–20
+      ],
+    );
+
+    windows.add(_RawWindow(startTime: start, endTime: end, data: data));
+  }
+  return windows;
+}
+
+// ============================================================
+// 8) Labeling screen
+// ============================================================
 class LabelingScreen extends StatefulWidget {
   const LabelingScreen({super.key});
 
@@ -116,83 +238,228 @@ class LabelingScreen extends StatefulWidget {
 }
 
 class _LabelingScreenState extends State<LabelingScreen> {
-  late List<WindowItem> _allWindows;
-  late List<WindowItem> _uncertainWindows;
+  final _inference = InferenceService();
 
-  int _currentIndex = 0;
-  int _labeled      = 0;
-  bool _done        = false;
+  List<WindowItem> _uncertainWindows = [];
+  int  _currentIndex = 0;
+  int  _labeled      = 0;
+  bool _loading      = true;
+  bool _done         = false;
+  String? _error;
 
-  // Uncertainty band
-  static const double _lowThreshold  = 0.35;
-  static const double _highThreshold = 0.65;
+  // In-memory label store: windowId → label
+  final Map<int, int> _labels = {};
 
   @override
   void initState() {
     super.initState();
-    _allWindows = generateMockWindows();
-    _uncertainWindows = _allWindows.where((w) =>
-            w.maxProb >= _lowThreshold && w.maxProb <= _highThreshold).toList();
+    _initAndInfer();
+  }
+
+  @override
+  void dispose() {
+    _inference.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initAndInfer() async {
+    try {
+      await _inference.init();
+
+      // Generate mock windows — replace with real data later
+      final rawWindows = generateMockRawWindows();
+
+      // Run inference
+      final allWindows = _inference.inferWindows(rawWindows);
+
+      // Filter uncertain only (35%–65%)
+      final uncertain = allWindows.where((w) => w.isUncertain).toList();
+
+      setState(() {
+        _uncertainWindows = uncertain;
+        _loading          = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error   = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   WindowItem get _current => _uncertainWindows[_currentIndex];
 
-  String _formatTime(DateTime dt) {
-    final h   = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    return '$h:$min';
-  }
-
-  String _formatDuration(DateTime start, DateTime end) {
-    final diff = end.difference(start);
-    return '${diff.inMinutes} min';
-  }
-
   void _submitLabel(int label) {
     setState(() {
-      _current.userLabel = label;
+      _current.userLabel    = label;
+      _labels[_current.id]  = label;
       _labeled++;
-
-      if (_currentIndex < _uncertainWindows.length - 1) {
-        _currentIndex++;
-      } else {
-        _done = true;
-      }
+      _advance();
     });
   }
 
   void _skip() {
     setState(() {
-      if (_currentIndex < _uncertainWindows.length - 1) {
-        _currentIndex++;
-      } else {
-        _done = true;
-      }
+      _advance();
     });
   }
 
+  void _advance() {
+    if (_currentIndex < _uncertainWindows.length - 1) {
+      _currentIndex++;
+    } else {
+      _done = true;
+    }
+  }
+
+  String _formatTime(DateTime dt) =>
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+  String _dateString(DateTime dt) {
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day}';
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    if (_uncertainWindows.isEmpty) {
-      return const _EmptyState(
-        message: 'No uncertain windows found.\nModel is confident on all data.',
-      );
-    }
+    if (_loading) return _buildLoading();
+    if (_error != null) return _buildError();
+    if (_uncertainWindows.isEmpty) return _buildEmpty();
+    if (_done) return _buildDone();
+    return _buildLabeler();
+  }
 
-    if (_done) {
-      return _DoneScreen(
-        total:   _uncertainWindows.length,
-        labeled: _labeled,
-        windows: _uncertainWindows,
-      );
-    }
+  // ── Loading ────────────────────────────────────────────────────────────
 
+  Widget _buildLoading() {
+    return const Scaffold(
+      backgroundColor: Color(0xFF0F0F0F),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading model...', style: TextStyle(color: Colors.white54)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Error ──────────────────────────────────────────────────────────────
+
+  Widget _buildError() {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
-      appBar: _buildAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Error: $_error',
+            style: const TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Empty ──────────────────────────────────────────────────────────────
+
+  Widget _buildEmpty() {
+    return const Scaffold(
+      backgroundColor: Color(0xFF0F0F0F),
+      body: Center(
+        child: Text(
+          'No uncertain windows found.\nModel is confident on all data.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white54, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
+  // ── Done ───────────────────────────────────────────────────────────────
+
+  Widget _buildDone() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(
+                Icons.check_circle_outline,
+                color: Color(0xFF43A047),
+                size: 72,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Labeling Complete',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'You labeled $_labeled of ${_uncertainWindows.length} uncertain windows.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 15),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Labels stored in memory: ${_labels.length}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white38, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Main labeler ───────────────────────────────────────────────────────
+
+  Widget _buildLabeler() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F0F0F),
+        elevation: 0,
+        title: const Text(
+          'Label Your Data',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                '${_currentIndex + 1} / ${_uncertainWindows.length}',
+                style: const TextStyle(color: Colors.white54, fontSize: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          _buildProgressBar(),
+          // Progress bar
+          LinearProgressIndicator(
+            value: (_currentIndex + 1) / _uncertainWindows.length,
+            backgroundColor: Colors.white12,
+            color: const Color(0xFF43A047),
+            minHeight: 3,
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -203,13 +470,27 @@ class _LabelingScreenState extends State<LabelingScreen> {
                   const SizedBox(height: 20),
                   _buildModelGuessCard(),
                   const SizedBox(height: 20),
-                  _buildProbabilityBar(),
+                  _buildProbabilityBars(),
                   const SizedBox(height: 28),
-                  _buildQuestion(),
+                  const Text(
+                    'What were you doing\nduring this time?',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      height: 1.3,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   _buildLabelGrid(),
                   const SizedBox(height: 16),
-                  _buildSkipButton(),
+                  TextButton(
+                    onPressed: _skip,
+                    child: const Text(
+                      "I don't remember — skip",
+                      style: TextStyle(color: Colors.white30, fontSize: 13),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -219,52 +500,13 @@ class _LabelingScreenState extends State<LabelingScreen> {
     );
   }
 
-  // ── App bar ─────────────────────────────────────────────────────────────
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: const Color(0xFF0F0F0F),
-      elevation: 0,
-      title: const Text(
-        'Label Your Data',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: Center(
-            child: Text(
-              '${_currentIndex + 1} / ${_uncertainWindows.length}',
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Progress bar ─────────────────────────────────────────────────────────
-
-  Widget _buildProgressBar() {
-    final progress = (_currentIndex + 1) / _uncertainWindows.length;
-    return LinearProgressIndicator(
-      value:            progress,
-      backgroundColor:  Colors.white12,
-      color:            const Color(0xFF43A047),
-      minHeight:        3,
-    );
-  }
-
-  // ── Time card ────────────────────────────────────────────────────────────
+  // ── Time card ──────────────────────────────────────────────────────────
 
   Widget _buildTimeCard() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color:        const Color(0xFF1A1A2E),
+        color: const Color(0xFF1A1A2E),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white10),
       ),
@@ -273,53 +515,42 @@ class _LabelingScreenState extends State<LabelingScreen> {
         children: [
           _TimeBlock(
             label: 'FROM',
-            time:  _formatTime(_current.startTime),
-            date:  _dateString(_current.startTime),
+            time: _formatTime(_current.startTime),
+            date: _dateString(_current.startTime),
           ),
           Column(
             children: [
-              const Icon(Icons.arrow_forward,
-                  color: Colors.white38, size: 20),
+              const Icon(Icons.arrow_forward, color: Colors.white38, size: 20),
               const SizedBox(height: 4),
               Text(
-                _formatDuration(_current.startTime, _current.endTime),
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 12),
+                '${_current.endTime.difference(_current.startTime).inMinutes} min',
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ],
           ),
           _TimeBlock(
             label: 'TO',
-            time:  _formatTime(_current.endTime),
-            date:  _dateString(_current.endTime),
+            time: _formatTime(_current.endTime),
+            date: _dateString(_current.endTime),
           ),
         ],
       ),
     );
   }
 
-  String _dateString(DateTime dt) {
-    const months = [
-      'Jan','Feb','Mar','Apr','May','Jun',
-      'Jul','Aug','Sep','Oct','Nov','Dec'
-    ];
-    return '${months[dt.month - 1]} ${dt.day}';
-  }
-
-  // ── Model guess card ─────────────────────────────────────────────────────
+  // ── Model guess card ───────────────────────────────────────────────────
 
   Widget _buildModelGuessCard() {
     final guess      = _current.modelGuess;
     final guessColor = stateColors[guess]!;
-    final guessName  = stateNames[guess]!;
     final pct        = (_current.maxProb * 100).toStringAsFixed(0);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color:        guessColor.withOpacity(0.12),
+        color: guessColor.withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: guessColor.withOpacity(0.4)),
+        border: Border.all(color: guessColor.withOpacity(0.4)),
       ),
       child: Row(
         children: [
@@ -331,34 +562,32 @@ class _LabelingScreenState extends State<LabelingScreen> {
               children: [
                 const Text(
                   "Model's best guess",
-                  style: TextStyle(
-                      color: Colors.white38, fontSize: 11),
+                  style: TextStyle(color: Colors.white38, fontSize: 11),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  guessName,
+                  stateNames[guess]!,
                   style: TextStyle(
-                    color:      guessColor,
+                    color: guessColor,
                     fontWeight: FontWeight.w600,
-                    fontSize:   15,
+                    fontSize: 15,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color:        guessColor.withOpacity(0.2),
+              color: guessColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               '$pct%',
               style: TextStyle(
-                color:      guessColor,
+                color: guessColor,
                 fontWeight: FontWeight.bold,
-                fontSize:   14,
+                fontSize: 14,
               ),
             ),
           ),
@@ -367,16 +596,15 @@ class _LabelingScreenState extends State<LabelingScreen> {
     );
   }
 
-  // ── Probability bar ───────────────────────────────────────────────────────
+  // ── Probability bars ───────────────────────────────────────────────────
 
-  Widget _buildProbabilityBar() {
+  Widget _buildProbabilityBars() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Probability breakdown',
-          style: TextStyle(
-              color: Colors.white38, fontSize: 12),
+          style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
         const SizedBox(height: 8),...List.generate(6, (i) {
           final p     = _current.probabilities[i];
@@ -399,9 +627,9 @@ class _LabelingScreenState extends State<LabelingScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value:           p,
-                      minHeight:       8,
-                      color:           color,
+                      value: p,
+                      minHeight: 8,
+                      color: color,
                       backgroundColor: Colors.white10,
                     ),
                   ),
@@ -424,59 +652,31 @@ class _LabelingScreenState extends State<LabelingScreen> {
     );
   }
 
-  // ── Question ──────────────────────────────────────────────────────────────
-
-  Widget _buildQuestion() {
-    return const Text(
-      'What were you doing\nduring this time?',
-      style: TextStyle(
-        fontSize:   22,
-        fontWeight: FontWeight.bold,
-        color:      Colors.white,
-        height:     1.3,
-      ),
-    );
-  }
-
-  // ── Label grid ────────────────────────────────────────────────────────────
+  // ── Label grid ─────────────────────────────────────────────────────────
 
   Widget _buildLabelGrid() {
     return GridView.count(
-      crossAxisCount:   2,
-      shrinkWrap:       true,
-      physics:          const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       crossAxisSpacing: 12,
-      mainAxisSpacing:  12,
+      mainAxisSpacing: 12,
       childAspectRatio: 2.4,
       children: List.generate(6, (i) {
         return _LabelButton(
-          label:    i,
-          name:     stateNames[i]!,
-          color:    stateColors[i]!,
-          icon:     stateIcons[i]!,
-          onTap:    () => _submitLabel(i),
+          name:  stateNames[i]!,
+          color: stateColors[i]!,
+          icon:  stateIcons[i]!,
+          onTap: () => _submitLabel(i),
         );
       }),
-    );
-  }
-
-  // ── Skip button ───────────────────────────────────────────────────────────
-
-  Widget _buildSkipButton() {
-    return TextButton(
-      onPressed: _skip,
-      child: const Text(
-        "I don't remember — skip",
-        style: TextStyle(color: Colors.white30, fontSize: 13),
-      ),
     );
   }
 }
 
 // ============================================================
-// REUSABLE WIDGETS
+// 9) Reusable widgets
 // ============================================================
-
 class _TimeBlock extends StatelessWidget {
   final String label;
   final String time;
@@ -492,35 +692,40 @@ class _TimeBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white38, fontSize: 11,
-                letterSpacing: 1.5)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 11,
+            letterSpacing: 1.5,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(time,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                fontFeatures: [FontFeature.tabularFigures()])),
+        Text(
+          time,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text(date,
-            style: const TextStyle(
-                color: Colors.white38, fontSize: 12)),
+        Text(
+          date,
+          style: const TextStyle(color: Colors.white38, fontSize: 12),
+        ),
       ],
     );
   }
 }
 
 class _LabelButton extends StatelessWidget {
-  final int      label;
   final String   name;
   final Color    color;
   final IconData icon;
   final VoidCallback onTap;
 
   const _LabelButton({
-    required this.label,
     required this.name,
     required this.color,
     required this.icon,
@@ -530,18 +735,17 @@ class _LabelButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color:        color.withOpacity(0.12),
+      color: color.withOpacity(0.12),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap:        onTap,
+        onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: color.withOpacity(0.35)),
           ),
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               Icon(icon, color: color, size: 18),
@@ -550,119 +754,16 @@ class _LabelButton extends StatelessWidget {
                 child: Text(
                   name,
                   style: TextStyle(
-                    color:      color,
-                    fontSize:   12,
+                    color: color,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
-                  maxLines:  2,
-                  overflow:  TextOverflow.ellipsis,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// DONE SCREEN
-// ============================================================
-
-class _DoneScreen extends StatelessWidget {
-  final int              total;
-  final int              labeled;
-  final List<WindowItem> windows;
-
-  const _DoneScreen({
-    required this.total,
-    required this.labeled,
-    required this.windows,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.check_circle_outline,
-                  color: Color(0xFF43A047), size: 72),
-              const SizedBox(height: 24),
-              const Text(
-                'Labeling Complete',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 26, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'You labeled $labeled of $total uncertain windows.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 15),
-              ),
-              const SizedBox(height: 40),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF43A047),
-                  padding: const EdgeInsets.all(16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                icon:    const Icon(Icons.download),
-                label:   const Text('Export Labels as CSV',
-                    style: TextStyle(fontSize: 16)),
-                onPressed: () => _exportCsv(context),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _exportCsv(BuildContext context) {
-    // TODO: wire up file_picker / share_plus to write to disk
-    final labeled = windows.where((w) => w.userLabel != null);
-    final rows    = labeled.map((w) =>
-        '${w.startTime.toIso8601String()},'
-        '${w.endTime.toIso8601String()},'
-        '${w.userLabel},'
-        '${stateNames[w.userLabel!]}');
-
-    final csv = 'start_time,end_time,label,label_name\n${rows.join('\n')}';
-    debugPrint(csv); // replace with actual file write
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Labels exported (check console for now)')),
-    );
-  }
-}
-
-// ============================================================
-// EMPTY STATE
-// ============================================================
-
-class _EmptyState extends StatelessWidget {
-  final String message;
-  const _EmptyState({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: Center(
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white54, fontSize: 16),
         ),
       ),
     );
