@@ -43,9 +43,9 @@ class Config:
     stride_seconds: int = 30
 
     # Grouping
-    group_window_minutes:  int = 15        # group windows into ~15 min blocks
-    max_groups_per_round:  int = 50        # show at most 50 groups at a time
-    group_similarity_threshold: float = 0.85  # cosine sim to merge into group
+    group_window_minutes:       int   = 15
+    max_groups_per_round:       int   = 50
+    group_similarity_threshold: float = 0.85
 
     n_classes:  int   = 6
     input_dim:  int   = 3
@@ -63,8 +63,7 @@ class Config:
     uncertainty_low:  float = 0.35
     uncertainty_high: float = 0.65
 
-    # Active learning clustering
-    n_clusters: int = 6   # start with n_classes clusters, model will refine
+    n_clusters: int = 6
 
 
 CFG = Config()
@@ -178,7 +177,7 @@ def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
 
 
 # ============================================================
-# 6) Rule logic (warm-start only, not used for active learning)
+# 6) Rule logic (warm-start only)
 # ============================================================
 def compute_deltas(
     x_hr:  np.ndarray,
@@ -299,13 +298,8 @@ def transform_robust_scaler(
 
 # ============================================================
 # 9) Extract flat features for clustering
-#    (mean, std, min, max, trend per channel)
 # ============================================================
 def extract_features(X: np.ndarray) -> np.ndarray:
-    """
-    Extract statistical features from raw windows for clustering.
-    Shape: (n_windows, n_features)
-    """
     n, t, c = X.shape
     feats = []
     for i in range(n):
@@ -317,7 +311,7 @@ def extract_features(X: np.ndarray) -> np.ndarray:
                 float(np.std(sig)),
                 float(np.min(sig)),
                 float(np.max(sig)),
-                float(np.polyfit(np.arange(t), sig, 1)[0]),  # linear trend
+                float(np.polyfit(np.arange(t), sig, 1)[0]),
                 float(np.percentile(sig, 25)),
                 float(np.percentile(sig, 75)),
             ]
@@ -326,7 +320,7 @@ def extract_features(X: np.ndarray) -> np.ndarray:
 
 
 # ============================================================
-# 10) Group similar windows into 15-min blocks
+# 10) Group similar windows — time proximity FIRST
 # ============================================================
 def group_windows_by_similarity(
     uncertain_idx: np.ndarray,
@@ -338,84 +332,139 @@ def group_windows_by_similarity(
 ) -> List[Dict]:
     """
     Groups uncertain windows into blocks based on:
-    1. Temporal proximity (~15 min blocks)
-    2. Feature similarity (KMeans on features)
-
-    Returns a list of group dicts for the Flutter UI.
+    1. Temporal proximity FIRST — windows > group_minutes apart are NEVER merged
+    2. Feature similarity WITHIN each time block (KMeans)
     """
     if len(uncertain_idx) == 0:
         return []
 
-    feat_sub = features[uncertain_idx]
+    # ── Step 1: Sort by time and split into temporal blocks ──
+    start_times  = [pd.Timestamp(meta[i]["start_time"]) for i in uncertain_idx]
+    sort_order   = np.argsort(start_times)
+    sorted_idx   = uncertain_idx[sort_order]
+    sorted_times = [start_times[i] for i in sort_order]
 
-    # Normalize features
-    scaler   = RobustScaler()
-    feat_norm = scaler.fit_transform(feat_sub)
+    time_blocks = []
+    current_block = [sorted_idx[0]]
+    for k in range(1, len(sorted_idx)):
+        gap_minutes = (sorted_times[k] - sorted_times[k - 1]).total_seconds() / 60
+        if gap_minutes > group_minutes:
+            time_blocks.append(current_block)
+            current_block = [sorted_idx[k]]
+        else:
+            current_block.append(sorted_idx[k])
+    time_blocks.append(current_block)
 
-    # Reduce dims for clustering
-    n_components = min(6, feat_norm.shape[1], feat_norm.shape[0] - 1)
-    pca          = PCA(n_components=n_components, random_state=SEED)
-    feat_pca     = pca.fit_transform(feat_norm)
+    print(f"  Time blocks (gap > {group_minutes}min): {len(time_blocks)}")
 
-    # KMeans clustering — find natural groups
-    n_clusters = min(max_groups, len(uncertain_idx))
-    km         = KMeans(n_clusters=n_clusters, random_state=SEED, n_init=10)
-    cluster_ids = km.fit_predict(feat_pca)
+    # ── Step 2: Within each time block, cluster by similarity ──
+    all_groups = []
+    group_id   = 0
 
-    # Build groups
-    groups = []
-    for cid in range(n_clusters):
-        mask      = cluster_ids == cid
-        local_idx = np.where(mask)[0]
-        global_idx = uncertain_idx[local_idx]
+    for block in time_blocks:
+        block_idx = np.array(block)
 
-        if len(global_idx) == 0:
+        if len(block_idx) == 1:
+            i         = block_idx[0]
+            avg_probs = probs[i].tolist()
+            all_groups.append({
+                "id":            int(i),
+                "window_ids":    [int(i)],
+                "start_time":    meta[i]["start_time"],
+                "end_time":      meta[i]["end_time"],
+                "duration_min":  0.0,
+                "window_count":  1,
+                "probabilities": avg_probs,
+                "model_guess":   int(np.argmax(avg_probs)),
+                "cluster_id":    group_id,
+            })
+            group_id += 1
             continue
 
-        # Sort by time
-        start_times = [meta[i]["start_time"] for i in global_idx]
-        sorted_order = np.argsort(start_times)
-        global_idx   = global_idx[sorted_order]
+        feat_sub = features[block_idx]
 
-        # Representative window = closest to cluster center
-        center      = km.cluster_centers_[cid]
-        dists       = np.linalg.norm(feat_pca[local_idx] - center, axis=1)
-        rep_local   = local_idx[np.argmin(dists)]
-        rep_global  = uncertain_idx[rep_local]
-
-        # Aggregate probabilities (mean of cluster)
-        cluster_probs = probs[global_idx].mean(axis=0).tolist()
-        model_guess   = int(np.argmax(cluster_probs))
-
-        # Time span of the group
-        group_start = meta[global_idx[0]]["start_time"]
-        group_end   = meta[global_idx[-1]]["end_time"]
-
-        # Duration in minutes
+        # Normalize
+        scaler = RobustScaler()
         try:
-            t0  = pd.Timestamp(group_start)
-            t1  = pd.Timestamp(group_end)
-            dur = round((t1 - t0).total_seconds() / 60, 1)
+            feat_norm = scaler.fit_transform(feat_sub)
         except Exception:
-            dur = 0.0
+            feat_norm = feat_sub
 
-        groups.append({
-            "id":             int(rep_global),       # representative window id
-            "window_ids":     [int(i) for i in global_idx],
-            "start_time":     group_start,
-            "end_time":       group_end,
-            "duration_min":   dur,
-            "window_count":   len(global_idx),
-            "probabilities":  cluster_probs,
-            "model_guess":    model_guess,
-            "cluster_id":     int(cid),
-        })
+        # PCA
+        n_components = min(6, feat_norm.shape[1], feat_norm.shape[0] - 1)
+        if n_components < 1:
+            n_components = 1
+        try:
+            pca      = PCA(n_components=n_components, random_state=SEED)
+            feat_pca = pca.fit_transform(feat_norm)
+        except Exception:
+            feat_pca = feat_norm
 
-    # Sort groups by start time
-    groups.sort(key=lambda g: g["start_time"])
+        # KMeans — at most sqrt(block_size) clusters within a block
+        n_clusters = max(1, min(int(np.sqrt(len(block_idx))), len(block_idx)))
+        try:
+            km          = KMeans(n_clusters=n_clusters, random_state=SEED, n_init=10)
+            cluster_ids = km.fit_predict(feat_pca)
+        except Exception:
+            cluster_ids = np.zeros(len(block_idx), dtype=int)
 
-    print(f"  Grouped {len(uncertain_idx)} uncertain windows → {len(groups)} groups")
-    return groups
+        for cid in range(n_clusters):
+            mask       = cluster_ids == cid
+            local_idx  = np.where(mask)[0]
+            global_idx = block_idx[local_idx]
+
+            if len(global_idx) == 0:
+                continue
+
+            # Sort by time
+            g_times    = [pd.Timestamp(meta[i]["start_time"]) for i in global_idx]
+            sorted_g   = np.argsort(g_times)
+            global_idx = global_idx[sorted_g]
+
+            # Representative = closest to cluster center
+            center     = km.cluster_centers_[cid]
+            dists      = np.linalg.norm(feat_pca[local_idx] - center, axis=1)
+            rep_local  = local_idx[np.argmin(dists)]
+            rep_global = block_idx[rep_local]
+
+            # Aggregate probs
+            avg_probs   = probs[global_idx].mean(axis=0).tolist()
+            model_guess = int(np.argmax(avg_probs))
+
+            # Time span
+            group_start = meta[global_idx[0]]["start_time"]
+            group_end   = meta[global_idx[-1]]["end_time"]
+            try:
+                t0  = pd.Timestamp(group_start)
+                t1  = pd.Timestamp(group_end)
+                dur = round((t1 - t0).total_seconds() / 60, 1)
+            except Exception:
+                dur = 0.0
+
+            all_groups.append({
+                "id":            int(rep_global),
+                "window_ids":    [int(i) for i in global_idx],
+                "start_time":    group_start,
+                "end_time":      group_end,
+                "duration_min":  dur,
+                "window_count":  len(global_idx),
+                "probabilities": avg_probs,
+                "model_guess":   model_guess,
+                "cluster_id":    group_id,
+            })
+            group_id += 1
+
+    # Sort all groups by start time
+    all_groups.sort(key=lambda g: g["start_time"])
+
+    # Cap at max_groups — take the most uncertain ones
+    if len(all_groups) > max_groups:
+        all_groups.sort(key=lambda g: -max(g["probabilities"]))
+        all_groups = all_groups[:max_groups]
+        all_groups.sort(key=lambda g: g["start_time"])
+
+    print(f"  Grouped {len(uncertain_idx)} uncertain windows → {len(all_groups)} groups")
+    return all_groups
 
 
 # ============================================================
@@ -445,17 +494,17 @@ def entropy_from_probs(p: np.ndarray, eps=1e-9) -> np.ndarray:
 # 13) Global app state
 # ============================================================
 class AppState:
-    model:              Optional[keras.Model] = None
-    scaler:             Optional[Dict]        = None
-    features:           Optional[np.ndarray]  = None   # flat features for clustering
-    X:                  Optional[np.ndarray]  = None
-    y_rule:             Optional[np.ndarray]  = None
-    y_rule_conf:        Optional[np.ndarray]  = None
-    meta:               Optional[List]        = None
-    y_user:             Optional[np.ndarray]  = None
-    uncertain_windows:  List[Dict]            = []     # grouped windows
-    labels:             Dict[int, int]        = {}     # window_id → label
-    trained:            bool                  = False
+    model:             Optional[keras.Model] = None
+    scaler:            Optional[Dict]        = None
+    features:          Optional[np.ndarray]  = None
+    X:                 Optional[np.ndarray]  = None
+    y_rule:            Optional[np.ndarray]  = None
+    y_rule_conf:       Optional[np.ndarray]  = None
+    meta:              Optional[List]        = None
+    y_user:            Optional[np.ndarray]  = None
+    uncertain_windows: List[Dict]            = []
+    labels:            Dict[int, int]        = {}
+    trained:           bool                  = False
 
 
 STATE = AppState()
@@ -475,7 +524,7 @@ api.add_middleware(
 
 
 class LabelPayload(BaseModel):
-    window_id: int   # representative window id of the group
+    window_id: int
     label:     int
 
 
@@ -490,16 +539,11 @@ def status():
 
 @api.get("/windows")
 def get_windows():
-    """Return grouped uncertain windows for the Flutter UI."""
     return {"windows": STATE.uncertain_windows}
 
 
 @api.post("/label")
 def submit_label(payload: LabelPayload):
-    """
-    Receive a label for a group.
-    Applies the label to ALL windows in that group.
-    """
     # Find the group this window_id belongs to
     group = next(
         (g for g in STATE.uncertain_windows if g["id"] == payload.window_id),
@@ -507,20 +551,19 @@ def submit_label(payload: LabelPayload):
     )
 
     if group is None:
-        # Fallback: label just the single window
         STATE.labels[payload.window_id] = payload.label
         if STATE.y_user is not None:
             STATE.y_user[payload.window_id] = payload.label
         return {"ok": True, "labeled_windows": 1, "labeled_groups": len(STATE.labels)}
 
-    # Apply label to all windows in the group
+    # Apply label to ALL windows in the group
     for wid in group["window_ids"]:
         STATE.labels[wid] = payload.label
         if STATE.y_user is not None:
             STATE.y_user[wid] = payload.label
 
     return {
-        "ok":             True,
+        "ok":              True,
         "labeled_windows": len(group["window_ids"]),
         "labeled_groups":  len(STATE.labels),
     }
@@ -528,16 +571,13 @@ def submit_label(payload: LabelPayload):
 
 @api.post("/retrain")
 def retrain():
-    """
-    Trigger a finetune round with current labels.
-    Model learns from YOUR labels, not the rules.
-    """
     if STATE.model is None:
         return {"ok": False, "reason": "Model not trained yet"}
 
-    # Collect all labeled window indices
-    labeled_ids = [wid for wid, lbl in STATE.labels.items()
-                   if STATE.y_user is not None and STATE.y_user[wid] >= 0]
+    labeled_ids = [
+        wid for wid, lbl in STATE.labels.items()
+        if STATE.y_user is not None and STATE.y_user[wid] >= 0
+    ]
 
     if len(labeled_ids) < 10:
         return {"ok": False, "reason": f"Need at least 10 labels, have {len(labeled_ids)}"}
@@ -574,8 +614,6 @@ def retrain():
     )
 
     print(f"Retrained on {len(tr_ft)} windows ({len(STATE.labels)} unique windows labeled)")
-
-    # Refresh uncertain window groups
     _refresh_uncertain_windows()
 
     return {
@@ -586,22 +624,16 @@ def retrain():
 
 
 def _refresh_uncertain_windows():
-    """
-    Re-run inference → find uncertain windows →
-    cluster them into groups → update STATE.
-    """
     if STATE.model is None or STATE.X is None:
         return
 
     probs         = predict_proba(STATE.model, STATE.X)
     maxp          = probs.max(axis=1)
 
-    # Uncertain = model is not confident
     uncertain_idx = np.where(
         (maxp >= CFG.uncertainty_low) & (maxp <= CFG.uncertainty_high)
     )[0]
 
-    # Exclude already labeled windows
     labeled_set   = set(STATE.labels.keys())
     uncertain_idx = np.array(
         [i for i in uncertain_idx if i not in labeled_set],
@@ -614,14 +646,13 @@ def _refresh_uncertain_windows():
         STATE.uncertain_windows = []
         return
 
-    # Group into ~15-min blocks by similarity
     STATE.uncertain_windows = group_windows_by_similarity(
-        uncertain_idx  = uncertain_idx,
-        features       = STATE.features,
-        meta           = STATE.meta,
-        probs          = probs,
-        max_groups     = CFG.max_groups_per_round,
-        group_minutes  = CFG.group_window_minutes,
+        uncertain_idx = uncertain_idx,
+        features      = STATE.features,
+        meta          = STATE.meta,
+        probs         = probs,
+        max_groups    = CFG.max_groups_per_round,
+        group_minutes = CFG.group_window_minutes,
     )
 
 
@@ -661,7 +692,7 @@ def run_training():
     features = extract_features(X)
     print(f"  Feature shape: {features.shape}")
 
-    # G) y_user starts as -1 (unknown), model will learn from YOUR labels
+    # G) y_user starts as -1 (unknown)
     y_user = -1 * np.ones(n, dtype=np.int64)
 
     # H) Build + compile
@@ -674,7 +705,6 @@ def run_training():
     )
 
     # I) Warm-start pretrain on rule labels
-    #    This gives the model a starting point, but YOUR labels will override it
     print("\nWarm-start pretraining on rule labels...")
     w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
     tr_idx_pre, val_idx_pre = train_test_split(

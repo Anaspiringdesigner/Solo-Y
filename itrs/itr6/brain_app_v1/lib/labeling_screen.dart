@@ -54,7 +54,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
           _windows = list;
           _cursor = 0;
           _loading = false;
-          _statusMsg = '${list.length} uncertain windows loaded';
+          _statusMsg = '${list.length} uncertain groups loaded';
         });
       }
     } catch (e) {
@@ -101,7 +101,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
           await _fetchWindows();
           setState(() {
             _statusMsg =
-                'Retrained ✓  ${data['uncertain_left']} windows remaining';
+                'Retrained ✓  ${data['uncertain_left']} groups remaining';
           });
         } else {
           setState(() => _statusMsg = 'Retrain skipped: ${data['reason']}');
@@ -128,7 +128,9 @@ class _LabelingScreenState extends State<LabelingScreen> {
   String _formatDate(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
-      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      return '${dt.year}-'
+          '${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.day.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
@@ -202,12 +204,12 @@ class _LabelingScreenState extends State<LabelingScreen> {
                 color: Colors.greenAccent, size: 64),
             const SizedBox(height: 16),
             const Text(
-              'All windows labeled!',
+              'All groups labeled!',
               style: TextStyle(color: Colors.white, fontSize: 20),
             ),
             const SizedBox(height: 8),
             Text(
-              '$_labeledCount total labels submitted',
+              '$_labeledCount total groups submitted',
               style: const TextStyle(color: Colors.white54),
             ),
             const SizedBox(height: 24),
@@ -245,7 +247,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: _fetchWindows,
-              child: const Text('Fetch More Windows',
+              child: const Text('Fetch More Groups',
                   style: TextStyle(color: Colors.white54)),
             ),
           ],
@@ -253,13 +255,15 @@ class _LabelingScreenState extends State<LabelingScreen> {
       );
     }
 
-    final win = _windows[_cursor];
-    final probs = (win['probabilities'] as List).map((e) => (e as num).toDouble()).toList();
-    final modelGuess = win['model_guess'] as int;
-    final windowId = win['id'] as int;
-    final startTime = _formatTime(win['start_time'] as String);
-    final endTime = _formatTime(win['end_time'] as String);
-    final date = _formatDate(win['start_time'] as String);
+    final win          = _windows[_cursor];
+    final probs        = (win['probabilities'] as List).map((e) => (e as num).toDouble()).toList();
+    final modelGuess   = win['model_guess'] as int;
+    final windowId     = win['id'] as int;
+    final startTime    = _formatTime(win['start_time'] as String);
+    final endTime      = _formatTime(win['end_time'] as String);
+    final date         = _formatDate(win['start_time'] as String);
+    final windowCount  = win['window_count'] as int;
+    final durationMin  = (win['duration_min'] as num).toDouble();
 
     return Column(
       children: [
@@ -273,7 +277,14 @@ class _LabelingScreenState extends State<LabelingScreen> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: _buildTimeCard(date, startTime, endTime, windowId),
+          child: _buildTimeCard(
+            date,
+            startTime,
+            endTime,
+            windowId,
+            windowCount,
+            durationMin,
+          ),
         ),
         const SizedBox(height: 12),
         Padding(
@@ -342,7 +353,14 @@ class _LabelingScreenState extends State<LabelingScreen> {
     );
   }
 
-  Widget _buildTimeCard(String date, String start, String end, int id) {
+  Widget _buildTimeCard(
+    String date,
+    String start,
+    String end,
+    int id,
+    int windowCount,
+    double durationMin,
+  ) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -359,23 +377,33 @@ class _LabelingScreenState extends State<LabelingScreen> {
             children: [
               Text(
                 date,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 11),
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
               ),
               const SizedBox(height: 2),
               Text(
                 '$start  →  $end',
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
               ),
             ],
           ),
           const Spacer(),
-          Text(
-            '#$id',
-            style: const TextStyle(color: Colors.white24, fontSize: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '#$id',
+                style: const TextStyle(color: Colors.white24, fontSize: 12),
+              ),
+              Text(
+                '$windowCount windows · ${durationMin.toStringAsFixed(1)}m',
+                style:
+                    const TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            ],
           ),
         ],
       ),
@@ -396,12 +424,13 @@ class _LabelingScreenState extends State<LabelingScreen> {
           const Text(
             'Model confidence',
             style: TextStyle(
-                color: Colors.white54,
-                fontSize: 12,
-                fontWeight: FontWeight.bold),
+              color: Colors.white54,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 10),...List.generate(6, (i) {
-            final pct = probs[i];
+            final pct     = probs[i];
             final isGuess = i == modelGuess;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -412,8 +441,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
                     child: Text(
                       kStateNames[i],
                       style: TextStyle(
-                        color:
-                            isGuess ? kStateColors[i] : Colors.white54,
+                        color: isGuess ? kStateColors[i] : Colors.white54,
                         fontSize: 11,
                         fontWeight: isGuess
                             ? FontWeight.bold
@@ -442,8 +470,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
                   Text(
                     '${(pct * 100).toStringAsFixed(1)}%',
                     style: TextStyle(
-                      color:
-                          isGuess ? Colors.white : Colors.white38,
+                      color: isGuess ? Colors.white : Colors.white38,
                       fontSize: 11,
                     ),
                   ),
@@ -467,9 +494,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
               : const Color(0xFF21262D),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isGuess
-                ? kStateColors[label]
-                : const Color(0xFF30363D),
+            color: isGuess ? kStateColors[label] : const Color(0xFF30363D),
             width: isGuess ? 2 : 1,
           ),
         ),
