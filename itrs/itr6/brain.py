@@ -1,77 +1,61 @@
 # brain.py
-# Python 3.10+
-# pip install numpy pandas scikit-learn torch
+# Python 3.13+ | TensorFlow 2.x / Keras
+# pip install numpy pandas scikit-learn tensorflow
 
 import os
-import copy
-import random
 import json
+import random
 from dataclasses import dataclass
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
 # ============================================================
-# 0) Reproducibility + Device
+# 0) Reproducibility
 # ============================================================
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
-torch.manual_seed(SEED)
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+tf.random.set_seed(SEED)
 
 # ============================================================
 # 1) Config
 # ============================================================
 @dataclass
 class Config:
-    # single merged CSV path
-    csv_path: str = "C:/Projects/itrs/itr5/data/all_data.csv"
+    csv_path: str = "C:/Projects/itrs/itr6/data/all_data.csv"
 
-    # segmentation for fragmented chunks
     max_gap_sec_for_same_segment: int = 10
 
-    # windowing
     window_seconds: int = 120
     stride_seconds: int = 30
 
-    # model
-    n_classes: int = 6
-    input_dim: int = 3
-    hidden_dim: int = 64
-    num_layers: int = 1
-    dropout: float = 0.2
+    n_classes:  int   = 6
+    input_dim:  int   = 3
+    hidden_dim: int   = 64
+    dropout:    float = 0.2
 
-    # training
-    batch_size: int = 64
-    lr: float = 1e-3
-    weight_decay: float = 1e-5
+    batch_size:       int   = 64
+    lr:               float = 1e-3
+    pretrain_epochs:  int   = 1000
+    finetune_epochs:  int   = 1000
+    pretrain_patience: int  = 10
+    finetune_patience: int  = 6
+    min_delta:        float = 1e-4
 
-    pretrain_epochs: int = 1000
-    finetune_epochs: int = 1000
-
-    # early stopping
-    pretrain_patience: int = 10
-    finetune_patience: int = 6
-    min_delta: float = 1e-4
-
-    # active learning
     initial_label_fraction: float = 0.10
-    active_rounds: int = 8
-    query_size_per_round: int = 40
-    max_user_labels: int = 500
-    uncertainty_threshold: float = 0.55
+    active_rounds:          int   = 8
+    query_size_per_round:   int   = 40
+    max_user_labels:        int   = 500
+    uncertainty_threshold:  float = 0.55
 
-    # fusion
     alpha_start: float = 0.35
-    alpha_end: float = 0.85
+    alpha_end:   float = 0.85
 
 
 CFG = Config()
@@ -86,7 +70,7 @@ STATE_NAMES = {
 }
 
 # ============================================================
-# 2) Diagnostics helpers
+# 2) Diagnostic helpers
 # ============================================================
 def print_class_distribution(y: np.ndarray, title: str):
     print(f"\n{title}")
@@ -97,16 +81,16 @@ def print_class_distribution(y: np.ndarray, title: str):
     vals, cnt = np.unique(y, return_counts=True)
     for v, c in zip(vals, cnt):
         name = STATE_NAMES.get(int(v), str(v))
-        pct = 100.0 * c / max(1, total)
+        pct  = 100.0 * c / max(1, total)
         print(f"  {int(v)} ({name}): {c} ({pct:.2f}%)")
 
 
-def compute_class_weights(y: np.ndarray, n_classes: int) -> torch.Tensor:
-    counts = np.bincount(y, minlength=n_classes).astype(np.float32)
-    counts = np.maximum(counts, 1.0)
+def compute_class_weights(y: np.ndarray, n_classes: int) -> Dict[int, float]:
+    counts  = np.bincount(y, minlength=n_classes).astype(np.float32)
+    counts  = np.maximum(counts, 1.0)
     weights = counts.sum() / counts
     weights = weights / weights.mean()
-    return torch.tensor(weights, dtype=torch.float32, device=DEVICE)
+    return {i: float(weights[i]) for i in range(n_classes)}
 
 
 # ============================================================
@@ -119,7 +103,7 @@ def load_merged_csv(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
     required = {"timestamp", "hr"}
-    missing = required - set(df.columns)
+    missing  = required - set(df.columns)
     if missing:
         raise ValueError(f"CSV missing required columns: {missing}")
 
@@ -145,7 +129,7 @@ def load_merged_csv(csv_path: str) -> pd.DataFrame:
 
 
 # ============================================================
-# 4) Derive missing HRV/BR if needed
+# 4) Derive missing HRV / BR
 # ============================================================
 def derive_hrv_br_if_missing(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy().sort_values("timestamp").reset_index(drop=True)
@@ -187,21 +171,24 @@ def add_segment_ids(df: pd.DataFrame, max_gap_sec: int) -> pd.DataFrame:
 # ============================================================
 # 6) Rule logic
 # ============================================================
-def compute_deltas(x_hr: np.ndarray, x_hrv: np.ndarray) -> Tuple[float, float]:
-    mid       = len(x_hr) // 2
-    hr_first  = float(np.mean(x_hr[:mid]))
-    hr_second = float(np.mean(x_hr[mid:]))
+def compute_deltas(
+    x_hr: np.ndarray,
+    x_hrv: np.ndarray,
+) -> Tuple[float, float]:
+    mid        = len(x_hr) // 2
+    hr_first   = float(np.mean(x_hr[:mid]))
+    hr_second  = float(np.mean(x_hr[mid:]))
     hrv_first  = float(np.mean(x_hrv[:mid]))
     hrv_second = float(np.mean(x_hrv[mid:]))
-    hr_delta  = (hr_second  - hr_first)  / (abs(hr_first)  + 1e-6)
-    hrv_delta = (hrv_second - hrv_first) / (abs(hrv_first) + 1e-6)
+    hr_delta   = (hr_second  - hr_first)  / (abs(hr_first)  + 1e-6)
+    hrv_delta  = (hrv_second - hrv_first) / (abs(hrv_first) + 1e-6)
     return hr_delta, hrv_delta
 
 
 def rule_classifier_window(
-    x_hr: np.ndarray,
+    x_hr:  np.ndarray,
     x_hrv: np.ndarray,
-    x_br: np.ndarray,
+    x_br:  np.ndarray,
 ) -> Tuple[int, float]:
     hr_delta, hrv_delta = compute_deltas(x_hr, x_hrv)
 
@@ -219,10 +206,10 @@ def rule_classifier_window(
         ext_state = 1
 
     pred_idx = ext_state - 1
-    conf  = 0.60
-    conf += min(0.20, abs(hr_delta)  * 0.5)
-    conf += min(0.20, abs(hrv_delta) * 0.5)
-    conf  = float(np.clip(conf, 0.50, 0.95))
+    conf     = 0.60
+    conf    += min(0.20, abs(hr_delta)  * 0.5)
+    conf    += min(0.20, abs(hrv_delta) * 0.5)
+    conf     = float(np.clip(conf, 0.50, 0.95))
     return pred_idx, conf
 
 
@@ -250,8 +237,8 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
             x_hrv = hrv[s:e]
             x_br  = br[s:e]
 
-            seq  = np.stack([x_hr, x_hrv, x_br], axis=-1)
-            r, conf = rule_classifier_window(x_hr, x_hrv, x_br)
+            seq      = np.stack([x_hr, x_hrv, x_br], axis=-1)
+            r, conf  = rule_classifier_window(x_hr, x_hrv, x_br)
 
             X_list.append(seq)
             y_rule.append(r)
@@ -263,7 +250,7 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
             })
 
     if not X_list:
-        raise ValueError("No windows created. Reduce window_seconds or inspect continuity.")
+        raise ValueError("No windows created. Reduce window_seconds or check data continuity.")
 
     X_raw       = np.array(X_list,      dtype=np.float32)
     y_rule      = np.array(y_rule,      dtype=np.int64)
@@ -272,18 +259,18 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
 
 
 # ============================================================
-# 8) Train-only robust scaling
+# 8) Robust scaler
 # ============================================================
 def fit_robust_scaler(X_train_raw: np.ndarray) -> Dict[str, np.ndarray]:
     C   = X_train_raw.shape[2]
     med = np.zeros(C, dtype=np.float32)
     iqr = np.ones(C,  dtype=np.float32)
     for ch in range(C):
-        vals = X_train_raw[:, :, ch].reshape(-1)
-        m    = np.median(vals)
-        q1   = np.percentile(vals, 25)
-        q3   = np.percentile(vals, 75)
-        s    = q3 - q1
+        vals    = X_train_raw[:, :, ch].reshape(-1)
+        m       = np.median(vals)
+        q1      = np.percentile(vals, 25)
+        q3      = np.percentile(vals, 75)
+        s       = q3 - q1
         if s < 1e-6:
             s = 1.0
         med[ch] = float(m)
@@ -292,7 +279,7 @@ def fit_robust_scaler(X_train_raw: np.ndarray) -> Dict[str, np.ndarray]:
 
 
 def transform_robust_scaler(
-    X_raw: np.ndarray,
+    X_raw:  np.ndarray,
     scaler: Dict[str, np.ndarray],
 ) -> np.ndarray:
     X = X_raw.copy()
@@ -302,151 +289,25 @@ def transform_robust_scaler(
 
 
 # ============================================================
-# 9) Dataset + model
+# 9) Keras LSTM model
 # ============================================================
-class SeqDataset(Dataset):
-    def __init__(self, X: np.ndarray, y: np.ndarray, w: Optional[np.ndarray] = None):
-        self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long)
-        self.w = None if w is None else torch.tensor(w, dtype=torch.float32)
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, i):
-        if self.w is None:
-            return self.X[i], self.y[i]
-        return self.X[i], self.y[i], self.w[i]
-
-
-class LSTMClassifier(nn.Module):
-    def __init__(
-        self,
-        input_dim=3,
-        hidden_dim=64,
-        num_layers=1,
-        n_classes=6,
-        dropout=0.2,
-    ):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,
-        )
-        self.drop = nn.Dropout(dropout)
-        self.fc   = nn.Linear(hidden_dim, n_classes)
-
-    def forward(self, x):
-        out, _  = self.lstm(x)
-        h_last  = out[:, -1, :]
-        return self.fc(self.drop(h_last))
+def build_model(cfg: Config) -> keras.Model:
+    inputs = keras.Input(shape=(cfg.window_seconds, cfg.input_dim), name="input")
+    x      = layers.LSTM(cfg.hidden_dim, name="lstm")(inputs)
+    x      = layers.Dropout(cfg.dropout, name="dropout")(x)
+    output = layers.Dense(cfg.n_classes, activation="softmax", name="output")(x)
+    model  = keras.Model(inputs, output, name="BrainLSTM")
+    return model
 
 
 # ============================================================
-# 10) Train / inference helpers
+# 10) Predict helpers
 # ============================================================
-def train_epoch(model, loader, optimizer, criterion, weighted=False):
-    model.train()
-    total, n = 0.0, 0
-    for batch in loader:
-        optimizer.zero_grad()
-        if weighted:
-            xb, yb, wb = batch
-            xb, yb, wb = xb.to(DEVICE), yb.to(DEVICE), wb.to(DEVICE)
-            logits = model(xb)
-            ce     = nn.functional.cross_entropy(logits, yb, reduction="none")
-            loss   = (ce * wb).mean()
-        else:
-            xb, yb = batch
-            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
-            logits = model(xb)
-            loss   = criterion(logits, yb)
-
-        loss.backward()
-        optimizer.step()
-
-        bs     = xb.size(0)
-        total += float(loss.item()) * bs
-        n     += bs
-    return total / max(1, n)
+def predict_proba(model: keras.Model, X: np.ndarray, batch_size=256) -> np.ndarray:
+    return model.predict(X, batch_size=batch_size, verbose=0)
 
 
-@torch.no_grad()
-def eval_loss(model, loader, criterion, weighted=False):
-    model.eval()
-    total, n = 0.0, 0
-    for batch in loader:
-        if weighted:
-            xb, yb, wb = batch
-            xb, yb, wb = xb.to(DEVICE), yb.to(DEVICE), wb.to(DEVICE)
-            logits = model(xb)
-            ce     = nn.functional.cross_entropy(logits, yb, reduction="none")
-            loss   = (ce * wb).mean()
-        else:
-            xb, yb = batch
-            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
-            logits = model(xb)
-            loss   = criterion(logits, yb)
-
-        bs     = xb.size(0)
-        total += float(loss.item()) * bs
-        n     += bs
-    return total / max(1, n)
-
-
-def fit_with_early_stopping(
-    model,
-    train_loader,
-    val_loader,
-    optimizer,
-    criterion,
-    max_epochs: int,
-    patience: int,
-    min_delta: float,
-    weighted: bool = False,
-    tag: str = "train",
-):
-    best_val   = float("inf")
-    best_state = copy.deepcopy(model.state_dict())
-    wait       = 0
-
-    for ep in range(1, max_epochs + 1):
-        tr = train_epoch(model, train_loader, optimizer, criterion, weighted=weighted)
-        vl = eval_loss(model, val_loader, criterion, weighted=weighted)
-
-        print(f"  [{tag}] epoch {ep}/{max_epochs} | train_loss={tr:.4f} | val_loss={vl:.4f}")
-
-        if vl < (best_val - min_delta):
-            best_val   = vl
-            best_state = copy.deepcopy(model.state_dict())
-            wait       = 0
-        else:
-            wait += 1
-            if wait >= patience:
-                print(f"  [{tag}] Early stopping at epoch {ep}. Best val_loss={best_val:.4f}")
-                break
-
-    model.load_state_dict(best_state)
-    return best_val
-
-
-@torch.no_grad()
-def predict_proba(model, X: np.ndarray, batch_size=256) -> np.ndarray:
-    model.eval()
-    ds = SeqDataset(X, np.zeros(len(X), dtype=np.int64))
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
-    out = []
-    for xb, _ in dl:
-        xb = xb.to(DEVICE)
-        p  = torch.softmax(model(xb), dim=-1).cpu().numpy()
-        out.append(p)
-    return np.vstack(out)
-
-
-def entropy_from_probs(p: np.ndarray, eps=1e-9):
+def entropy_from_probs(p: np.ndarray, eps=1e-9) -> np.ndarray:
     return -np.sum(p * np.log(p + eps), axis=1)
 
 
@@ -454,33 +315,38 @@ def entropy_from_probs(p: np.ndarray, eps=1e-9):
 # 11) Active query selector
 # ============================================================
 def select_queries_active(
-    probs_unl: np.ndarray,
-    y_rule_unl: np.ndarray,
-    idx_unl: np.ndarray,
-    query_k: int,
+    probs_unl:             np.ndarray,
+    y_rule_unl:            np.ndarray,
+    idx_unl:               np.ndarray,
+    query_k:               int,
     uncertainty_threshold: float,
-):
+) -> np.ndarray:
     yhat = probs_unl.argmax(axis=1)
     maxp = probs_unl.max(axis=1)
     ent  = entropy_from_probs(probs_unl)
 
-    uncertain = (maxp < uncertainty_threshold)
-    disagree  = (yhat != y_rule_unl)
+    uncertain = (maxp < uncertainty_threshold).astype(np.float32)
+    disagree  = (yhat != y_rule_unl).astype(np.float32)
 
     pred_counts = np.bincount(yhat, minlength=CFG.n_classes).astype(np.float32)
     pred_counts = np.maximum(pred_counts, 1.0)
     rare_bonus  = 1.0 / pred_counts[yhat]
 
     score  = ent
-    score += 0.40 * uncertain.astype(np.float32)
-    score += 0.35 * disagree.astype(np.float32)
-    score += 0.25 * rare_bonus.astype(np.float32)
+    score += 0.40 * uncertain
+    score += 0.35 * disagree
+    score += 0.25 * rare_bonus
 
     chosen_local = np.argsort(-score)[:query_k]
     return idx_unl[chosen_local]
 
 
-def fusion_predict(probs_model, y_rule, conf_rule, alpha):
+def fusion_predict(
+    probs_model: np.ndarray,
+    y_rule:      np.ndarray,
+    conf_rule:   np.ndarray,
+    alpha:       float,
+) -> np.ndarray:
     n, c       = probs_model.shape
     probs_rule = np.zeros((n, c), dtype=np.float32)
     probs_rule[np.arange(n), y_rule] = conf_rule
@@ -491,32 +357,28 @@ def fusion_predict(probs_model, y_rule, conf_rule, alpha):
 
 
 # ============================================================
-# 12) Export
+# 12) Export to TFLite  ← one step, no ONNX needed
 # ============================================================
-def export_model_to_onnx(
-    model,
-    cfg,
-    scaler,
-    path_onnx: str   = "brain_model.onnx",
+def export_to_tflite(
+    model:       keras.Model,
+    scaler:      Dict[str, np.ndarray],
+    path_tflite: str = "brain_model.tflite",
     path_scaler: str = "scaler.json",
 ):
-    model.eval()
-    dummy = torch.randn(1, cfg.window_seconds, cfg.input_dim).to(DEVICE)
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
-    torch.onnx.export(
-        model,
-        dummy,
-        path_onnx,
-        input_names=["input"],
-        output_names=["logits"],
-        dynamic_axes={
-            "input":  {0: "batch_size"},
-            "logits": {0: "batch_size"},
-        },
-        opset_version=17,
-        do_constant_folding=True,
-    )
-    print(f"ONNX saved → {path_onnx}")
+    # Required for LSTM ops
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,
+        tf.lite.OpsSet.SELECT_TF_OPS,
+    ]
+    converter._experimental_lower_tensor_list_ops = False
+
+    tflite_model = converter.convert()
+
+    with open(path_tflite, "wb") as f:
+        f.write(tflite_model)
+    print(f"TFLite saved → {path_tflite} ({len(tflite_model) / 1024:.1f} KB)")
 
     with open(path_scaler, "w") as f:
         json.dump(
@@ -529,12 +391,11 @@ def export_model_to_onnx(
         )
     print(f"Scaler saved → {path_scaler}")
 
-
 # ============================================================
 # 13) Main
 # ============================================================
 def main():
-    print("Device:", DEVICE)
+    print("TensorFlow version:", tf.__version__)
     print("Reading CSV:", os.path.abspath(CFG.csv_path))
 
     # A) Load
@@ -555,57 +416,59 @@ def main():
     print("Windows created:", n)
     print_class_distribution(y_rule, "Rule-label distribution on all windows:")
 
-    # E) Train/test split
-    idx_all = np.arange(n)
-    idx_train, idx_test = train_test_split(idx_all, test_size=0.2, random_state=SEED)
+    # E) Train / test split
+    idx_all               = np.arange(n)
+    idx_train, idx_test   = train_test_split(idx_all, test_size=0.2, random_state=SEED)
 
-    # F) Train-only scaling
+    # F) Scaling
     scaler = fit_robust_scaler(X_raw[idx_train])
     X      = transform_robust_scaler(X_raw, scaler)
 
     # G) Active pools
-    idx_pool = idx_train.copy()
+    idx_pool      = idx_train.copy()
     np.random.shuffle(idx_pool)
     init_k        = max(10, int(len(idx_pool) * CFG.initial_label_fraction))
     idx_labeled   = idx_pool[:init_k].copy()
     idx_unlabeled = idx_pool[init_k:].copy()
 
-    y_user = -1 * np.ones(n, dtype=np.int64)
-    y_user[idx_labeled] = y_rule[idx_labeled]
+    y_user                  = -1 * np.ones(n, dtype=np.int64)
+    y_user[idx_labeled]     = y_rule[idx_labeled]
 
-    # H) Model + optimizer
-    model = LSTMClassifier(
-        input_dim=CFG.input_dim,
-        hidden_dim=CFG.hidden_dim,
-        num_layers=CFG.num_layers,
-        n_classes=CFG.n_classes,
-        dropout=CFG.dropout,
-    ).to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
+    # H) Build model
+    model = build_model(CFG)
+    model.summary()
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=CFG.lr),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
 
-    # I) Pretraining with early stopping
-    print("\nPretraining on rule labels with early stopping...")
-    w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
+    # I) Pretrain on rule labels
+    print("\nPretraining on rule labels...")
+    w_rule        = 0.25 + 0.75 * y_rule_conf[idx_train]
+    tr_idx_pre, val_idx_pre = train_test_split(
+        idx_train, test_size=0.2, random_state=SEED
+    )
 
-    tr_idx_pre, val_idx_pre = train_test_split(idx_train, test_size=0.2, random_state=SEED)
-    ds_pre_tr = SeqDataset(X[tr_idx_pre], y_rule[tr_idx_pre], w_rule[np.isin(idx_train, tr_idx_pre)])
-    ds_pre_va = SeqDataset(X[val_idx_pre], y_rule[val_idx_pre], w_rule[np.isin(idx_train, val_idx_pre)])
+    pretrain_callbacks = [
+        keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=CFG.pretrain_patience,
+            min_delta=CFG.min_delta,
+            restore_best_weights=True,
+            verbose=1,
+        )
+    ]
 
-    dl_pre_tr = DataLoader(ds_pre_tr, batch_size=CFG.batch_size, shuffle=True)
-    dl_pre_va = DataLoader(ds_pre_va, batch_size=CFG.batch_size, shuffle=False)
-
-    criterion_pre = nn.CrossEntropyLoss()
-    _ = fit_with_early_stopping(
-        model=model,
-        train_loader=dl_pre_tr,
-        val_loader=dl_pre_va,
-        optimizer=optimizer,
-        criterion=criterion_pre,
-        max_epochs=CFG.pretrain_epochs,
-        patience=CFG.pretrain_patience,
-        min_delta=CFG.min_delta,
-        weighted=True,
-        tag="pretrain",
+    model.fit(
+        X[tr_idx_pre],
+        y_rule[tr_idx_pre],
+        sample_weight=w_rule[np.isin(idx_train, tr_idx_pre)],
+        validation_data=(X[val_idx_pre], y_rule[val_idx_pre]),
+        epochs=CFG.pretrain_epochs,
+        batch_size=CFG.batch_size,
+        callbacks=pretrain_callbacks,
+        verbose=1,
     )
 
     # J) Active learning rounds
@@ -616,29 +479,31 @@ def main():
             print("Not enough labeled windows to finetune. Stopping.")
             break
 
-        tr_ft, va_ft = train_test_split(tr_idx, test_size=0.2, random_state=SEED + r)
+        tr_ft, va_ft = train_test_split(
+            tr_idx, test_size=0.2, random_state=SEED + r
+        )
 
-        y_tr_ft       = y_user[tr_ft]
-        class_w       = compute_class_weights(y_tr_ft, CFG.n_classes)
-        criterion_gold = nn.CrossEntropyLoss(weight=class_w)
+        class_w = compute_class_weights(y_user[tr_ft], CFG.n_classes)
 
-        ds_ft_tr = SeqDataset(X[tr_ft], y_user[tr_ft])
-        ds_ft_va = SeqDataset(X[va_ft], y_user[va_ft])
+        finetune_callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor="val_loss",
+                patience=CFG.finetune_patience,
+                min_delta=CFG.min_delta,
+                restore_best_weights=True,
+                verbose=1,
+            )
+        ]
 
-        dl_ft_tr = DataLoader(ds_ft_tr, batch_size=CFG.batch_size, shuffle=True)
-        dl_ft_va = DataLoader(ds_ft_va, batch_size=CFG.batch_size, shuffle=False)
-
-        _ = fit_with_early_stopping(
-            model=model,
-            train_loader=dl_ft_tr,
-            val_loader=dl_ft_va,
-            optimizer=optimizer,
-            criterion=criterion_gold,
-            max_epochs=CFG.finetune_epochs,
-            patience=CFG.finetune_patience,
-            min_delta=CFG.min_delta,
-            weighted=False,
-            tag=f"finetune-r{r+1}",
+        model.fit(
+            X[tr_ft],
+            y_user[tr_ft],
+            validation_data=(X[va_ft], y_user[va_ft]),
+            epochs=CFG.finetune_epochs,
+            batch_size=CFG.batch_size,
+            class_weight=class_w,
+            callbacks=finetune_callbacks,
+            verbose=1,
         )
 
         if len(idx_unlabeled) == 0 or len(idx_labeled) >= CFG.max_user_labels:
@@ -662,16 +527,21 @@ def main():
         idx_labeled   = np.concatenate([idx_labeled, ask_idx])
 
         print(f"Round {r+1}/{CFG.active_rounds} | labeled={len(idx_labeled)}")
-        print_class_distribution(y_user[idx_labeled], f"Labeled-set distribution after round {r+1}:")
+        print_class_distribution(
+            y_user[idx_labeled],
+            f"Labeled-set distribution after round {r+1}:"
+        )
 
-    # K) Final inference summary
-    probs_test  = predict_proba(model, X[idx_test])
-    yhat_model  = probs_test.argmax(axis=1)
+    # K) Final inference
+    probs_test   = predict_proba(model, X[idx_test])
+    yhat_model   = probs_test.argmax(axis=1)
 
     frac_labeled = len(idx_labeled) / max(1, len(idx_train))
     alpha        = CFG.alpha_start + (CFG.alpha_end - CFG.alpha_start) * frac_labeled
     alpha        = float(np.clip(alpha, 0.0, 1.0))
-    yhat_fused   = fusion_predict(probs_test, y_rule[idx_test], y_rule_conf[idx_test], alpha)
+    yhat_fused   = fusion_predict(
+        probs_test, y_rule[idx_test], y_rule_conf[idx_test], alpha
+    )
 
     print_class_distribution(yhat_model, "Prediction distribution (model-only):")
     print_class_distribution(yhat_fused, "Prediction distribution (fused):")
@@ -680,8 +550,8 @@ def main():
     for i in range(min(5, len(meta))):
         print(f"  {meta[i]['start_time']} -> {meta[i]['end_time']}")
 
-    # L) Export
-    export_model_to_onnx(model, CFG, scaler)
+    # L) Export — one clean step
+    export_to_tflite(model, scaler)
 
     print("\nDone.")
 
