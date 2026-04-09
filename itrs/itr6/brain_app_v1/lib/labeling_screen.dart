@@ -54,7 +54,7 @@ class _LabelingScreenState extends State<LabelingScreen> {
           _windows = list;
           _cursor = 0;
           _loading = false;
-          _statusMsg = '${list.length} uncertain groups loaded';
+          _statusMsg = '${list.length} groups loaded';
         });
       }
     } catch (e) {
@@ -104,7 +104,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
                 'Retrained ✓  ${data['uncertain_left']} groups remaining';
           });
         } else {
-          setState(() => _statusMsg = 'Retrain skipped: ${data['reason']}');
+          setState(
+              () => _statusMsg = 'Retrain skipped: ${data['reason']}');
         }
       }
     } catch (e) {
@@ -144,7 +145,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
         backgroundColor: const Color(0xFF161B22),
         title: const Text(
           'Brain Labeler',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style:
+              TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
           Center(
@@ -170,7 +172,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: Colors.greenAccent))
+              child:
+                  CircularProgressIndicator(color: Colors.greenAccent))
           : _retraining
               ? _buildRetrainingOverlay()
               : _buildBody(),
@@ -186,7 +189,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
           const SizedBox(height: 24),
           Text(
             _statusMsg,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+            style:
+                const TextStyle(color: Colors.white70, fontSize: 16),
             textAlign: TextAlign.center,
           ),
         ],
@@ -230,11 +234,13 @@ class _LabelingScreenState extends State<LabelingScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.done_all, color: Colors.greenAccent, size: 64),
+            const Icon(Icons.done_all,
+                color: Colors.greenAccent, size: 64),
             const SizedBox(height: 16),
             Text(
               'Session complete — $_labeledCount labeled',
-              style: const TextStyle(color: Colors.white, fontSize: 18),
+              style:
+                  const TextStyle(color: Colors.white, fontSize: 18),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -255,15 +261,18 @@ class _LabelingScreenState extends State<LabelingScreen> {
       );
     }
 
-    final win          = _windows[_cursor];
-    final probs        = (win['probabilities'] as List).map((e) => (e as num).toDouble()).toList();
-    final modelGuess   = win['model_guess'] as int;
-    final windowId     = win['id'] as int;
-    final startTime    = _formatTime(win['start_time'] as String);
-    final endTime      = _formatTime(win['end_time'] as String);
-    final date         = _formatDate(win['start_time'] as String);
-    final windowCount  = win['window_count'] as int;
-    final durationMin  = (win['duration_min'] as num).toDouble();
+    final win         = _windows[_cursor];
+    final probs       = (win['probabilities'] as List).map((e) => (e as num).toDouble()).toList();
+    final modelGuess  = win['model_guess'] as int;
+    final windowId    = win['id'] as int;
+    final startTime   = _formatTime(win['start_time'] as String);
+    final endTime     = _formatTime(win['end_time'] as String);
+    final date        = _formatDate(win['start_time'] as String);
+    final windowCount = win['window_count'] as int;
+    final durationMin = (win['duration_min'] as num).toDouble();
+    final avgHr       = (win['avg_hr']  as num).toDouble();
+    final avgHrv      = (win['avg_hrv'] as num).toDouble();
+    final avgBr       = (win['avg_br']  as num).toDouble();
 
     return Column(
       children: [
@@ -278,15 +287,16 @@ class _LabelingScreenState extends State<LabelingScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: _buildTimeCard(
-            date,
-            startTime,
-            endTime,
-            windowId,
-            windowCount,
-            durationMin,
+            date, startTime, endTime,
+            windowId, windowCount, durationMin,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildVitalsCard(avgHr, avgHrv, avgBr),
+        ),
+        const SizedBox(height: 10),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _buildProbCard(probs, modelGuess),
@@ -370,14 +380,16 @@ class _LabelingScreenState extends State<LabelingScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.calendar_today, color: Colors.white38, size: 16),
+          const Icon(Icons.calendar_today,
+              color: Colors.white38, size: 16),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 date,
-                style: const TextStyle(color: Colors.white54, fontSize: 11),
+                style: const TextStyle(
+                    color: Colors.white54, fontSize: 11),
               ),
               const SizedBox(height: 2),
               Text(
@@ -396,17 +408,70 @@ class _LabelingScreenState extends State<LabelingScreen> {
             children: [
               Text(
                 '#$id',
-                style: const TextStyle(color: Colors.white24, fontSize: 12),
+                style: const TextStyle(
+                    color: Colors.white24, fontSize: 12),
               ),
               Text(
                 '$windowCount windows · ${durationMin.toStringAsFixed(1)}m',
-                style:
-                    const TextStyle(color: Colors.white38, fontSize: 11),
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 11),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildVitalsCard(double hr, double hrv, double br) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF30363D)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildVital('HR', '${hr.toStringAsFixed(1)}', 'bpm',
+              Colors.redAccent),
+          _buildVitalDivider(),
+          _buildVital('HRV', '${hrv.toStringAsFixed(1)}', 'ms',
+              Colors.greenAccent),
+          _buildVitalDivider(),
+          _buildVital('BR', '${br.toStringAsFixed(1)}', 'rpm',
+              Colors.blueAccent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVital(
+      String label, String value, String unit, Color color) {
+    return Column(
+      children: [
+        Text(label,
+            style:
+                const TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: TextStyle(
+                color: color,
+                fontSize: 18,
+                fontWeight: FontWeight.bold)),
+        Text(unit,
+            style:
+                const TextStyle(color: Colors.white24, fontSize: 10)),
+      ],
+    );
+  }
+
+  Widget _buildVitalDivider() {
+    return Container(
+      height: 36,
+      width: 1,
+      color: const Color(0xFF30363D),
     );
   }
 
@@ -441,7 +506,9 @@ class _LabelingScreenState extends State<LabelingScreen> {
                     child: Text(
                       kStateNames[i],
                       style: TextStyle(
-                        color: isGuess ? kStateColors[i] : Colors.white54,
+                        color: isGuess
+                            ? kStateColors[i]
+                            : Colors.white54,
                         fontSize: 11,
                         fontWeight: isGuess
                             ? FontWeight.bold
@@ -494,7 +561,9 @@ class _LabelingScreenState extends State<LabelingScreen> {
               : const Color(0xFF21262D),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isGuess ? kStateColors[label] : const Color(0xFF30363D),
+            color: isGuess
+                ? kStateColors[label]
+                : const Color(0xFF30363D),
             width: isGuess ? 2 : 1,
           ),
         ),
@@ -517,7 +586,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
                   child: Text(
                     kStateNames[label],
                     style: TextStyle(
-                      color: isGuess ? Colors.white : Colors.white70,
+                      color:
+                          isGuess ? Colors.white : Colors.white70,
                       fontWeight: isGuess
                           ? FontWeight.bold
                           : FontWeight.normal,
@@ -532,7 +602,8 @@ class _LabelingScreenState extends State<LabelingScreen> {
               const SizedBox(height: 4),
               const Text(
                 '← model guess',
-                style: TextStyle(color: Colors.white38, fontSize: 10),
+                style: TextStyle(
+                    color: Colors.white38, fontSize: 10),
               ),
             ],
           ],

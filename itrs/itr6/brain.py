@@ -3,7 +3,6 @@
 # pip install numpy pandas scikit-learn tensorflow fastapi uvicorn
 
 import os
-import json
 import random
 from dataclasses import dataclass
 from typing import Tuple, Dict, List, Optional
@@ -39,13 +38,14 @@ class Config:
 
     max_gap_sec_for_same_segment: int = 10
 
+    # Non-overlapping windows
     window_seconds: int = 120
-    stride_seconds: int = 30
+    stride_seconds: int = 120   # stride = window → no overlap
 
     # Grouping
-    group_window_minutes:       int   = 15
-    max_groups_per_round:       int   = 50
-    group_similarity_threshold: float = 0.85
+    min_group_minutes:    int   = 15     # minimum group duration
+    max_groups_per_round: int   = 50     # max groups shown at once
+    state_change_threshold: float = 0.30 # cosine distance threshold for state change
 
     n_classes:  int   = 6
     input_dim:  int   = 3
@@ -222,11 +222,15 @@ def rule_classifier_window(
 
 
 # ============================================================
-# 7) Window creation
+# 7) Non-overlapping window creation
 # ============================================================
 def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
+    """
+    Creates NON-OVERLAPPING windows.
+    stride = window_seconds → each second of data appears in exactly one window.
+    """
     win    = cfg.window_seconds
-    stride = cfg.stride_seconds
+    stride = cfg.stride_seconds   # = win → no overlap
     X_list, y_rule, y_rule_conf, meta = [], [], [], []
 
     for seg_id, g in df.groupby("segment_id"):
@@ -255,6 +259,10 @@ def make_windows_from_segments(df: pd.DataFrame, cfg: Config):
                 "segment_id": int(seg_id),
                 "start_time": pd.Timestamp(ts[s]).isoformat(),
                 "end_time":   pd.Timestamp(ts[e - 1]).isoformat(),
+                # Averaged vitals for display
+                "avg_hr":     round(float(np.mean(x_hr)),  1),
+                "avg_hrv":    round(float(np.mean(x_hrv)), 1),
+                "avg_br":     round(float(np.mean(x_br)),  1),
             })
 
     if not X_list:
@@ -320,155 +328,125 @@ def extract_features(X: np.ndarray) -> np.ndarray:
 
 
 # ============================================================
-# 10) Group similar windows — time proximity FIRST
+# 10) Cosine distance between two feature vectors
 # ============================================================
-def group_windows_by_similarity(
-    uncertain_idx: np.ndarray,
-    features:      np.ndarray,
-    meta:          List[Dict],
-    probs:         np.ndarray,
-    max_groups:    int,
-    group_minutes: int,
+def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
+    denom = (np.linalg.norm(a) * np.linalg.norm(b)) + 1e-9
+    return float(1.0 - np.dot(a, b) / denom)
+
+
+# ============================================================
+# 11) Merge non-overlapping windows into ≥15 min groups
+#     using state-change boundary detection
+# ============================================================
+def merge_into_groups(
+    window_indices: np.ndarray,
+    features:       np.ndarray,
+    meta:           List[Dict],
+    probs:          np.ndarray,
+    min_minutes:    int,
+    change_thresh:  float,
 ) -> List[Dict]:
     """
-    Groups uncertain windows into blocks based on:
-    1. Temporal proximity FIRST — windows > group_minutes apart are NEVER merged
-    2. Feature similarity WITHIN each time block (KMeans)
+    Merges consecutive non-overlapping windows into groups where:
+    - Each group is ≥ min_minutes long
+    - A new group starts when a state change is detected
+      (cosine distance between consecutive feature vectors > change_thresh)
+    - Time ranges are continuous and non-repeating
     """
-    if len(uncertain_idx) == 0:
+    if len(window_indices) == 0:
         return []
 
-    # ── Step 1: Sort by time and split into temporal blocks ──
-    start_times  = [pd.Timestamp(meta[i]["start_time"]) for i in uncertain_idx]
-    sort_order   = np.argsort(start_times)
-    sorted_idx   = uncertain_idx[sort_order]
-    sorted_times = [start_times[i] for i in sort_order]
+    groups     = []
+    current    = [window_indices[0]]
+    current_dur = 0.0
 
-    time_blocks = []
-    current_block = [sorted_idx[0]]
-    for k in range(1, len(sorted_idx)):
-        gap_minutes = (sorted_times[k] - sorted_times[k - 1]).total_seconds() / 60
-        if gap_minutes > group_minutes:
-            time_blocks.append(current_block)
-            current_block = [sorted_idx[k]]
+    for k in range(1, len(window_indices)):
+        prev_idx = window_indices[k - 1]
+        curr_idx = window_indices[k]
+
+        # Check time continuity — if gap > 1 window, force new group
+        try:
+            prev_end   = pd.Timestamp(meta[prev_idx]["end_time"])
+            curr_start = pd.Timestamp(meta[curr_idx]["start_time"])
+            gap_sec    = (curr_start - prev_end).total_seconds()
+        except Exception:
+            gap_sec = 9999
+
+        # Cosine distance between consecutive feature vectors
+        dist = cosine_distance(features[prev_idx], features[curr_idx])
+
+        # Duration of current group so far
+        try:
+            g_start  = pd.Timestamp(meta[current[0]]["start_time"])
+            g_end    = pd.Timestamp(meta[current[-1]]["end_time"])
+            current_dur = (g_end - g_start).total_seconds() / 60
+        except Exception:
+            current_dur = 0.0
+
+        # Decide: start new group or continue current
+        state_changed = dist > change_thresh
+        time_gap      = gap_sec > 60          # more than 1 min gap → new group
+        long_enough   = current_dur >= min_minutes
+
+        if (state_changed and long_enough) or time_gap:
+            groups.append(current)
+            current = [curr_idx]
         else:
-            current_block.append(sorted_idx[k])
-    time_blocks.append(current_block)
+            current.append(curr_idx)
 
-    print(f"  Time blocks (gap > {group_minutes}min): {len(time_blocks)}")
+    # Don't forget the last group
+    groups.append(current)
 
-    # ── Step 2: Within each time block, cluster by similarity ──
-    all_groups = []
-    group_id   = 0
+    # Build group dicts
+    result = []
+    for grp in groups:
+        grp_idx = np.array(grp)
 
-    for block in time_blocks:
-        block_idx = np.array(block)
+        # Averaged vitals across all windows in group
+        avg_hr  = round(float(np.mean([meta[i]["avg_hr"]  for i in grp_idx])), 1)
+        avg_hrv = round(float(np.mean([meta[i]["avg_hrv"] for i in grp_idx])), 1)
+        avg_br  = round(float(np.mean([meta[i]["avg_br"]  for i in grp_idx])), 1)
 
-        if len(block_idx) == 1:
-            i         = block_idx[0]
-            avg_probs = probs[i].tolist()
-            all_groups.append({
-                "id":            int(i),
-                "window_ids":    [int(i)],
-                "start_time":    meta[i]["start_time"],
-                "end_time":      meta[i]["end_time"],
-                "duration_min":  0.0,
-                "window_count":  1,
-                "probabilities": avg_probs,
-                "model_guess":   int(np.argmax(avg_probs)),
-                "cluster_id":    group_id,
-            })
-            group_id += 1
-            continue
+        # Averaged probs
+        avg_probs   = probs[grp_idx].mean(axis=0).tolist()
+        model_guess = int(np.argmax(avg_probs))
 
-        feat_sub = features[block_idx]
+        # Time span — use exact start of first and end of last window
+        group_start = meta[grp_idx[0]]["start_time"]
+        group_end   = meta[grp_idx[-1]]["end_time"]
 
-        # Normalize
-        scaler = RobustScaler()
         try:
-            feat_norm = scaler.fit_transform(feat_sub)
+            t0  = pd.Timestamp(group_start)
+            t1  = pd.Timestamp(group_end)
+            dur = round((t1 - t0).total_seconds() / 60, 1)
         except Exception:
-            feat_norm = feat_sub
+            dur = 0.0
 
-        # PCA
-        n_components = min(6, feat_norm.shape[1], feat_norm.shape[0] - 1)
-        if n_components < 1:
-            n_components = 1
-        try:
-            pca      = PCA(n_components=n_components, random_state=SEED)
-            feat_pca = pca.fit_transform(feat_norm)
-        except Exception:
-            feat_pca = feat_norm
+        # Representative window = most uncertain in group
+        maxp       = probs[grp_idx].max(axis=1)
+        rep_local  = int(np.argmin(maxp))
+        rep_global = int(grp_idx[rep_local])
 
-        # KMeans — at most sqrt(block_size) clusters within a block
-        n_clusters = max(1, min(int(np.sqrt(len(block_idx))), len(block_idx)))
-        try:
-            km          = KMeans(n_clusters=n_clusters, random_state=SEED, n_init=10)
-            cluster_ids = km.fit_predict(feat_pca)
-        except Exception:
-            cluster_ids = np.zeros(len(block_idx), dtype=int)
+        result.append({
+            "id":            rep_global,
+            "window_ids":    [int(i) for i in grp_idx],
+            "start_time":    group_start,
+            "end_time":      group_end,
+            "duration_min":  dur,
+            "window_count":  len(grp_idx),
+            "probabilities": avg_probs,
+            "model_guess":   model_guess,
+            "avg_hr":        avg_hr,
+            "avg_hrv":       avg_hrv,
+            "avg_br":        avg_br,
+        })
 
-        for cid in range(n_clusters):
-            mask       = cluster_ids == cid
-            local_idx  = np.where(mask)[0]
-            global_idx = block_idx[local_idx]
-
-            if len(global_idx) == 0:
-                continue
-
-            # Sort by time
-            g_times    = [pd.Timestamp(meta[i]["start_time"]) for i in global_idx]
-            sorted_g   = np.argsort(g_times)
-            global_idx = global_idx[sorted_g]
-
-            # Representative = closest to cluster center
-            center     = km.cluster_centers_[cid]
-            dists      = np.linalg.norm(feat_pca[local_idx] - center, axis=1)
-            rep_local  = local_idx[np.argmin(dists)]
-            rep_global = block_idx[rep_local]
-
-            # Aggregate probs
-            avg_probs   = probs[global_idx].mean(axis=0).tolist()
-            model_guess = int(np.argmax(avg_probs))
-
-            # Time span
-            group_start = meta[global_idx[0]]["start_time"]
-            group_end   = meta[global_idx[-1]]["end_time"]
-            try:
-                t0  = pd.Timestamp(group_start)
-                t1  = pd.Timestamp(group_end)
-                dur = round((t1 - t0).total_seconds() / 60, 1)
-            except Exception:
-                dur = 0.0
-
-            all_groups.append({
-                "id":            int(rep_global),
-                "window_ids":    [int(i) for i in global_idx],
-                "start_time":    group_start,
-                "end_time":      group_end,
-                "duration_min":  dur,
-                "window_count":  len(global_idx),
-                "probabilities": avg_probs,
-                "model_guess":   model_guess,
-                "cluster_id":    group_id,
-            })
-            group_id += 1
-
-    # Sort all groups by start time
-    all_groups.sort(key=lambda g: g["start_time"])
-
-    # Cap at max_groups — take the most uncertain ones
-    if len(all_groups) > max_groups:
-        all_groups.sort(key=lambda g: -max(g["probabilities"]))
-        all_groups = all_groups[:max_groups]
-        all_groups.sort(key=lambda g: g["start_time"])
-
-    print(f"  Grouped {len(uncertain_idx)} uncertain windows → {len(all_groups)} groups")
-    return all_groups
+    return result
 
 
 # ============================================================
-# 11) Keras LSTM model
+# 12) Keras LSTM model
 # ============================================================
 def build_model(cfg: Config) -> keras.Model:
     inputs = keras.Input(shape=(cfg.window_seconds, cfg.input_dim), name="input")
@@ -480,7 +458,7 @@ def build_model(cfg: Config) -> keras.Model:
 
 
 # ============================================================
-# 12) Predict helpers
+# 13) Predict helpers
 # ============================================================
 def predict_proba(model: keras.Model, X: np.ndarray, batch_size=256) -> np.ndarray:
     return model.predict(X, batch_size=batch_size, verbose=0)
@@ -491,7 +469,7 @@ def entropy_from_probs(p: np.ndarray, eps=1e-9) -> np.ndarray:
 
 
 # ============================================================
-# 13) Global app state
+# 14) Global app state
 # ============================================================
 class AppState:
     model:             Optional[keras.Model] = None
@@ -511,7 +489,7 @@ STATE = AppState()
 
 
 # ============================================================
-# 14) FastAPI app
+# 15) FastAPI app
 # ============================================================
 api = FastAPI(title="Brain API")
 
@@ -544,7 +522,6 @@ def get_windows():
 
 @api.post("/label")
 def submit_label(payload: LabelPayload):
-    # Find the group this window_id belongs to
     group = next(
         (g for g in STATE.uncertain_windows if g["id"] == payload.window_id),
         None,
@@ -617,7 +594,7 @@ def retrain():
     _refresh_uncertain_windows()
 
     return {
-        "ok":             True,
+        "ok":              True,
         "labeled_windows": len(STATE.labels),
         "uncertain_left":  len(STATE.uncertain_windows),
     }
@@ -630,13 +607,13 @@ def _refresh_uncertain_windows():
     probs         = predict_proba(STATE.model, STATE.X)
     maxp          = probs.max(axis=1)
 
-    uncertain_idx = np.where(
-        (maxp >= CFG.uncertainty_low) & (maxp <= CFG.uncertainty_high)
-    )[0]
+    # Uncertain = model is not confident
+    uncertain_mask = (maxp >= CFG.uncertainty_low) & (maxp <= CFG.uncertainty_high)
 
-    labeled_set   = set(STATE.labels.keys())
-    uncertain_idx = np.array(
-        [i for i in uncertain_idx if i not in labeled_set],
+    # Exclude already labeled
+    labeled_set    = set(STATE.labels.keys())
+    uncertain_idx  = np.array(
+        [i for i in np.where(uncertain_mask)[0] if i not in labeled_set],
         dtype=np.int64,
     )
 
@@ -646,18 +623,34 @@ def _refresh_uncertain_windows():
         STATE.uncertain_windows = []
         return
 
-    STATE.uncertain_windows = group_windows_by_similarity(
-        uncertain_idx = uncertain_idx,
-        features      = STATE.features,
-        meta          = STATE.meta,
-        probs         = probs,
-        max_groups    = CFG.max_groups_per_round,
-        group_minutes = CFG.group_window_minutes,
+    # Sort by time
+    start_times   = [pd.Timestamp(STATE.meta[i]["start_time"]) for i in uncertain_idx]
+    sort_order    = np.argsort(start_times)
+    uncertain_idx = uncertain_idx[sort_order]
+
+    # Merge into ≥15 min continuous non-overlapping groups
+    all_groups = merge_into_groups(
+        window_indices = uncertain_idx,
+        features       = STATE.features,
+        meta           = STATE.meta,
+        probs          = probs,
+        min_minutes    = CFG.min_group_minutes,
+        change_thresh  = CFG.state_change_threshold,
     )
+
+    print(f"  Merged into {len(all_groups)} groups")
+
+    # Cap at max_groups — take most uncertain
+    if len(all_groups) > CFG.max_groups_per_round:
+        all_groups.sort(key=lambda g: max(g["probabilities"]))
+        all_groups = all_groups[:CFG.max_groups_per_round]
+        all_groups.sort(key=lambda g: g["start_time"])
+
+    STATE.uncertain_windows = all_groups
 
 
 # ============================================================
-# 15) Training pipeline
+# 16) Training pipeline
 # ============================================================
 def run_training():
     print("TensorFlow:", tf.__version__)
@@ -675,7 +668,7 @@ def run_training():
     df_seg = add_segment_ids(df_filled, CFG.max_gap_sec_for_same_segment)
     print("Segments:", df_seg["segment_id"].nunique())
 
-    # D) Windows
+    # D) Non-overlapping windows
     X_raw, y_rule, y_rule_conf, meta = make_windows_from_segments(df_seg, CFG)
     n = len(X_raw)
     print("Windows created:", n)
@@ -749,7 +742,7 @@ def run_training():
 
 
 # ============================================================
-# 16) Entry point
+# 17) Entry point
 # ============================================================
 if __name__ == "__main__":
     run_training()
