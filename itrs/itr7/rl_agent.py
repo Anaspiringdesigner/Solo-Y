@@ -1,12 +1,10 @@
 # rl_agent.py
 # Q-Learning RL agent
-# State:   normalised HR, HRV, BR → discretised
-# Action:  6 visual scenes in TouchDesigner
-# Reward:  +ΔHRV - ΔHR (calm and focused)
-# Comms:   OSC → TouchDesigner
+# State:   discretised HR + HRV + BR
+# Action:  6 visual parameter sets → TouchDesigner
+# Reward:  HRV up + HR down = calm and focused
 #
-# Requirements:
-#   pip install numpy requests python-osc
+# pip install numpy requests python-osc
 
 import time
 import json
@@ -20,40 +18,57 @@ from pythonosc import udp_client
 # Config
 # ============================================================
 BRAIN_API    = "http://127.0.0.1:8000"
-TD_IP        = "127.0.0.1"   # TouchDesigner IP
-TD_PORT      = 7000           # TouchDesigner OSC port
-POLL_SEC     = 120            # act every 2 minutes (one window)
+TD_IP        = "127.0.0.1"
+TD_PORT      = 7000
+POLL_SEC     = 120
 Q_TABLE_PATH = Path("q_table.json")
 
 # Q-learning hyperparameters
-ALPHA        = 0.1    # learning rate
-GAMMA        = 0.9    # discount factor
-EPSILON      = 0.3    # exploration rate (30% random at start)
-EPSILON_MIN  = 0.05   # minimum exploration
-EPSILON_DECAY= 0.995  # decay per episode
+ALPHA         = 0.1
+GAMMA         = 0.9
+EPSILON       = 0.3
+EPSILON_MIN   = 0.05
+EPSILON_DECAY = 0.995
 
-N_STATES     = 27     # 3 bins × 3 vitals (HR, HRV, BR)
-N_ACTIONS    = 6      # one per brain state scene
+N_STATES  = 27   # 3 bins × 3 vitals
+N_ACTIONS = 6
 
 # Reward weights
-ALPHA_HRV    = 0.6    # HRV improvement weight
-BETA_HR      = 0.4    # HR reduction weight
+ALPHA_HRV = 0.6
+BETA_HR   = 0.4
 
-# Action → TouchDesigner scene mapping
-ACTION_NAMES = {
-    0: "Baseline / Calm",
-    1: "Panic / Chaos",
-    2: "Meaningful Focus",
-    3: "Inattention / Drift",
-    4: "Rigid Hyperfocus",
-    5: "Intervention Alert",
+# ── Bin edges ──
+# Adjust to YOUR personal ranges after first session
+HR_BINS  = [60, 80]    # low < 60 | mid 60-80 | high > 80
+HRV_BINS = [20, 50]    # low < 20 | mid 20-50 | high > 50
+BR_BINS  = [12, 18]    # low < 12 | mid 12-18 | high > 18
+
+# ── Action space ──
+# Each action is a set of visual parameters sent to TouchDesigner
+# (speed, hue, blur, contrast)
+#
+# speed    → how fast the fluid moves    (low = calm)
+# hue      → colour temperature          (0.6 = blue/cool, 0.1 = red/warm)
+# blur     → smoothness of the fluid     (high = smooth)
+# contrast → harshness of the visual     (low = soft)
+#
+ACTION_PARAMS = {
+    0: {"speed": 0.01, "hue": 0.60, "blur": 20, "contrast": 0.5},  # deep calm
+    1: {"speed": 0.01, "hue": 0.10, "blur": 20, "contrast": 0.5},  # gentle warm
+    2: {"speed": 0.01, "hue": 0.60, "blur": 10, "contrast": 1.0},  # soft focus
+    3: {"speed": 0.05, "hue": 0.60, "blur": 20, "contrast": 0.5},  # light engage
+    4: {"speed": 0.05, "hue": 0.10, "blur": 20, "contrast": 0.5},  # gentle alert
+    5: {"speed": 0.05, "hue": 0.60, "blur": 10, "contrast": 1.0},  # active focus
 }
 
-# Bin edges for discretising vitals
-# Adjust these to your personal HR/HRV/BR ranges
-HR_BINS  = [60, 80]    # low < 60, mid 60-80, high > 80
-HRV_BINS = [20, 50]    # low < 20, mid 20-50, high > 50
-BR_BINS  = [12, 18]    # low < 12, mid 12-18, high > 18
+ACTION_NAMES = {
+    0: "Deep Calm      (slow + cool + smooth)",
+    1: "Gentle Warm    (slow + warm + smooth)",
+    2: "Soft Focus     (slow + cool + complex)",
+    3: "Light Engage   (medium + cool + smooth)",
+    4: "Gentle Alert   (medium + warm + smooth)",
+    5: "Active Focus   (medium + cool + complex)",
+}
 
 
 # ============================================================
@@ -72,13 +87,13 @@ def load_q_table() -> np.ndarray:
 def save_q_table(q: np.ndarray):
     with open(Q_TABLE_PATH, "w") as f:
         json.dump(q.tolist(), f)
+    print(f"  Q-table saved → {Q_TABLE_PATH}")
 
 
 # ============================================================
 # State discretisation
 # ============================================================
 def discretise(value: float, bins: list) -> int:
-    """Map a continuous value to a bin index (0, 1, 2)."""
     for i, edge in enumerate(bins):
         if value < edge:
             return i
@@ -87,13 +102,21 @@ def discretise(value: float, bins: list) -> int:
 
 def get_state_index(hr: float, hrv: float, br: float) -> int:
     """
-    Discretise HR, HRV, BR into a single state index.
-    3 bins each → 3×3×3 = 27 states
+    Maps HR, HRV, BR into a single state index 0-26.
+    3 bins each → 3×3×3 = 27 states.
     """
     hr_bin  = discretise(hr,  HR_BINS)
     hrv_bin = discretise(hrv, HRV_BINS)
     br_bin  = discretise(br,  BR_BINS)
     return hr_bin * 9 + hrv_bin * 3 + br_bin
+
+
+def describe_state(hr: float, hrv: float, br: float) -> str:
+    """Human readable state description."""
+    hr_label  = "low HR"  if hr  < HR_BINS[0]  else "mid HR"  if hr  < HR_BINS[1]  else "high HR"
+    hrv_label = "low HRV" if hrv < HRV_BINS[0] else "mid HRV" if hrv < HRV_BINS[1] else "high HRV"
+    br_label  = "low BR"  if br  < BR_BINS[0]  else "mid BR"  if br  < BR_BINS[1]  else "high BR"
+    return f"{hr_label} | {hrv_label} | {br_label}"
 
 
 # ============================================================
@@ -106,29 +129,34 @@ def compute_reward(
     hrv_curr: float,
 ) -> float:
     """
-    r(t) = α * ΔHRV_norm + β * (-ΔHR_norm)
+    r(t) = α * ΔHRV_norm + β * (−ΔHR_norm)
 
-    HRV up   → positive reward
-    HR down  → positive reward
-    Clipped to [-1, +1]
+    HRV going up   → positive reward
+    HR going down  → positive reward
+    Clipped to [−1, +1]
     """
     delta_hrv = np.clip(
         (hrv_curr - hrv_prev) / (abs(hrv_prev) + 1e-6), -1, 1
     )
-    delta_hr  = np.clip(
-        (hr_curr  - hr_prev)  / (abs(hr_prev)  + 1e-6), -1, 1
+    delta_hr = np.clip(
+        (hr_curr - hr_prev) / (abs(hr_prev) + 1e-6), -1, 1
     )
     reward = ALPHA_HRV * delta_hrv + BETA_HR * (-delta_hr)
     return float(np.clip(reward, -1.0, 1.0))
 
 
 # ============================================================
-# Action selection (ε-greedy)
+# Action selection
 # ============================================================
 def select_action(q: np.ndarray, state: int, epsilon: float) -> int:
+    """ε-greedy: explore randomly or exploit best known action."""
     if np.random.random() < epsilon:
-        return np.random.randint(N_ACTIONS)   # explore
-    return int(np.argmax(q[state]))            # exploit
+        action = np.random.randint(N_ACTIONS)
+        print(f"  Exploring → random action {action}")
+        return action
+    action = int(np.argmax(q[state]))
+    print(f"  Exploiting → best action {action}")
+    return action
 
 
 # ============================================================
@@ -142,10 +170,10 @@ def update_q(
     next_state: int,
 ) -> np.ndarray:
     """
-    Q(s,a) ← Q(s,a) + α * [r + γ * max Q(s',a') - Q(s,a)]
+    Q(s,a) ← Q(s,a) + α[r + γ·maxQ(s',a') − Q(s,a)]
     """
-    best_next  = float(np.max(q[next_state]))
-    current_q  = q[state, action]
+    best_next        = float(np.max(q[next_state]))
+    current_q        = q[state, action]
     q[state, action] = current_q + ALPHA * (
         reward + GAMMA * best_next - current_q
     )
@@ -153,38 +181,53 @@ def update_q(
 
 
 # ============================================================
-# OSC sender → TouchDesigner
+# OSC → TouchDesigner
 # ============================================================
-def send_osc_action(client: udp_client.SimpleUDPClient, action: int,
-                    hr: float, hrv: float, br: float, reward: float):
+def send_osc_action(
+    client: udp_client.SimpleUDPClient,
+    action: int,
+    hr:     float,
+    hrv:    float,
+    br:     float,
+    reward: float,
+):
     """
-    Send action and bio state to TouchDesigner via OSC.
+    Send visual parameters to TouchDesigner via OSC.
 
-    TouchDesigner listens on:
-      /rl/action    int      (0-5 scene index)
-      /rl/hr        float    (current HR)
-      /rl/hrv       float    (current HRV)
-      /rl/br        float    (current BR)
-      /rl/reward    float    (last reward)
+    TouchDesigner listens for:
+      /rl/speed     float   fluid movement speed
+      /rl/hue       float   colour temperature
+      /rl/blur      float   smoothness
+      /rl/contrast  float   harshness
+      /rl/hr        float   current HR
+      /rl/hrv       float   current HRV
+      /rl/br        float   current BR
+      /rl/reward    float   last reward
     """
-    client.send_message("/rl/action", action)
-    client.send_message("/rl/hr",     float(hr))
-    client.send_message("/rl/hrv",    float(hrv))
-    client.send_message("/rl/br",     float(br))
-    client.send_message("/rl/reward", float(reward))
+    params = ACTION_PARAMS[action]
 
-    print(f"  OSC → TD | action={action} ({ACTION_NAMES[action]}) "
-          f"| reward={reward:+.3f}")
+    client.send_message("/rl/speed",    float(params["speed"]))
+    client.send_message("/rl/hue",      float(params["hue"]))
+    client.send_message("/rl/blur",     float(params["blur"]))
+    client.send_message("/rl/contrast", float(params["contrast"]))
+    client.send_message("/rl/hr",       float(hr))
+    client.send_message("/rl/hrv",      float(hrv))
+    client.send_message("/rl/br",       float(br))
+    client.send_message("/rl/reward",   float(reward))
+
+    print(f"  OSC → TD:")
+    print(f"    action   = {action} ({ACTION_NAMES[action]})")
+    print(f"    speed    = {params['speed']}")
+    print(f"    hue      = {params['hue']}")
+    print(f"    blur     = {params['blur']}")
+    print(f"    contrast = {params['contrast']}")
+    print(f"    reward   = {reward:+.3f}")
 
 
 # ============================================================
-# Fetch latest bio state from brain.py
+# Fetch latest vitals from brain.py
 # ============================================================
 def fetch_latest_vitals() -> dict:
-    """
-    GET /latest from brain.py
-    Returns latest averaged window vitals.
-    """
     try:
         res = requests.get(f"{BRAIN_API}/latest", timeout=10)
         if res.status_code == 200:
@@ -195,25 +238,43 @@ def fetch_latest_vitals() -> dict:
 
 
 # ============================================================
+# Print Q-table summary
+# ============================================================
+def print_q_summary(q: np.ndarray):
+    print("\n  ── Q-table summary ──")
+    for s in range(N_STATES):
+        best_a = int(np.argmax(q[s]))
+        best_q = float(np.max(q[s]))
+        if best_q != 0:
+            print(f"    state {s:2d} → "
+                  f"action {best_a} | "
+                  f"{ACTION_NAMES[best_a]} | "
+                  f"Q={best_q:.3f}")
+    print("  ─────────────────────\n")
+
+
+# ============================================================
 # Main RL loop
 # ============================================================
 def run():
-    print("=" * 50)
+    print("=" * 60)
     print("RL Agent — Polar H10 → TouchDesigner")
-    print(f"OSC target: {TD_IP}:{TD_PORT}")
-    print(f"Brain API:  {BRAIN_API}")
-    print("=" * 50)
+    print(f"OSC target : {TD_IP}:{TD_PORT}")
+    print(f"Brain API  : {BRAIN_API}")
+    print(f"Poll every : {POLL_SEC}s")
+    print("=" * 60)
 
-    # Init
     q       = load_q_table()
     epsilon = EPSILON
     client  = udp_client.SimpleUDPClient(TD_IP, TD_PORT)
 
-    prev_hr  = None
-    prev_hrv = None
-    episode  = 0
+    prev_hr    = None
+    prev_hrv   = None
+    prev_state = None
+    prev_action = None
+    episode    = 0
 
-    print("\nWaiting for first bio window...")
+    print("\nWaiting for first bio window from polar_reader...")
 
     while True:
         # ── Fetch current vitals ──
@@ -227,56 +288,51 @@ def run():
         curr_hr  = float(vitals.get("avg_hr",  70))
         curr_hrv = float(vitals.get("avg_hrv", 30))
         curr_br  = float(vitals.get("avg_br",  15))
+        curr_state_name = vitals.get("state_name", "Unknown")
 
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] "
-              f"HR={curr_hr:.1f} HRV={curr_hrv:.1f} BR={curr_br:.1f}")
+        print(f"\n{'='*60}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Episode {episode + 1}")
+        print(f"  Brain state : {curr_state_name}")
+        print(f"  HR={curr_hr:.1f}  HRV={curr_hrv:.1f}  BR={curr_br:.1f}")
+        print(f"  {describe_state(curr_hr, curr_hrv, curr_br)}")
 
-        # ── Get state ──
-        state = get_state_index(curr_hr, curr_hrv, curr_br)
+        # ── Get state index ──
+        curr_state = get_state_index(curr_hr, curr_hrv, curr_br)
+        print(f"  State index : {curr_state}")
 
-        # ── Compute reward (needs previous window) ──
+        # ── Compute reward ──
         reward = 0.0
         if prev_hr is not None and prev_hrv is not None:
             reward = compute_reward(prev_hr, curr_hr, prev_hrv, curr_hrv)
-            print(f"  Reward: {reward:+.3f} "
-                  f"(ΔHRV={curr_hrv-prev_hrv:+.1f} "
-                  f"ΔHR={curr_hr-prev_hr:+.1f})")
+            print(f"  Reward      : {reward:+.3f} "
+                  f"(ΔHRV={curr_hrv - prev_hrv:+.1f} "
+                  f"ΔHR={curr_hr - prev_hr:+.1f})")
+
+        # ── Update Q-table from previous step ──
+        if prev_state is not None and prev_action is not None:
+            q = update_q(q, prev_state, prev_action, reward, curr_state)
+            save_q_table(q)
+            epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
+            episode += 1
+            print(f"  Epsilon     : {epsilon:.3f}")
 
         # ── Select action ──
-        action = select_action(q, state, epsilon)
+        action = select_action(q, curr_state, epsilon)
 
         # ── Send to TouchDesigner ──
         send_osc_action(client, action, curr_hr, curr_hrv, curr_br, reward)
 
-        # ── Update Q-table (if we have previous state) ──
-        if prev_hr is not None:
-            prev_state = get_state_index(prev_hr, prev_hrv, curr_br)
-            q = update_q(q, prev_state, action, reward, state)
-            save_q_table(q)
+        # ── Print Q summary every 10 episodes ──
+        if episode > 0 and episode % 10 == 0:
+            print_q_summary(q)
 
-            episode += 1
-            epsilon  = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
+        # ── Store for next step ──
+        prev_hr     = curr_hr
+        prev_hrv    = curr_hrv
+        prev_state  = curr_state
+        prev_action = action
 
-            print(f"  Episode {episode} | "
-                  f"ε={epsilon:.3f} | "
-                  f"Q[{prev_state},{action}]={q[prev_state,action]:.3f}")
-
-        # ── Print Q-table summary ──
-        if episode % 10 == 0 and episode > 0:
-            print("\n  Q-table best actions per state:")
-            for s in range(N_STATES):
-                best_a = int(np.argmax(q[s]))
-                best_q = float(np.max(q[s]))
-                if best_q != 0:
-                    print(f"    state {s:2d} → "
-                          f"action {best_a} "
-                          f"({ACTION_NAMES[best_a]}) "
-                          f"Q={best_q:.3f}")
-
-        # ── Store previous ──
-        prev_hr  = curr_hr
-        prev_hrv = curr_hrv
-
+        print(f"  Waiting {POLL_SEC}s for next window...")
         time.sleep(POLL_SEC)
 
 
