@@ -23,7 +23,7 @@ from datetime import datetime
 # Config
 # ============================================================
 # Path on Android where Polar Sensor Logger saves files
-ANDROID_POLAR_DIR = "/sdcard/PolarSensorLogger"
+ANDROID_POLAR_DIR = "/sdcard/Download/Data_from_H10"
 
 # brain.py API
 BRAIN_API = "http://127.0.0.1:8000"

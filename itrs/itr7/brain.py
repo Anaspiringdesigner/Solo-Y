@@ -4,7 +4,8 @@
 
 import os
 import random
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Tuple, Dict, List, Optional
 
 import numpy as np
@@ -39,7 +40,7 @@ class Config:
 
     # Non-overlapping windows
     window_seconds: int = 120
-    stride_seconds: int = 120  # stride = window → no overlap
+    stride_seconds: int = 120
 
     # Grouping
     min_group_minutes:      int   = 15
@@ -59,11 +60,11 @@ class Config:
     finetune_patience: int   = 6
     min_delta:         float = 1e-4
 
-    # Uncertainty — wider band + entropy
-    uncertainty_low:      float = 0.25   # max prob lower bound
-    uncertainty_high:     float = 0.80   # max prob upper bound
-    entropy_threshold:    float = 0.50   # min normalised entropy to be uncertain
-    top_n_uncertain:      int   = 2000   # max uncertain windows before grouping
+    # Uncertainty
+    uncertainty_low:   float = 0.25
+    uncertainty_high:  float = 0.80
+    entropy_threshold: float = 0.50
+    top_n_uncertain:   int   = 2000
 
 
 CFG = Config()
@@ -300,7 +301,7 @@ def transform_robust_scaler(
 
 
 # ============================================================
-# 9) Extract flat features for clustering
+# 9) Extract flat features for grouping
 # ============================================================
 def extract_features(X: np.ndarray) -> np.ndarray:
     n, t, c = X.shape
@@ -323,54 +324,34 @@ def extract_features(X: np.ndarray) -> np.ndarray:
 
 
 # ============================================================
-# 10) Uncertainty scoring — entropy + max prob
+# 10) Uncertainty scoring
 # ============================================================
 def compute_uncertainty_scores(probs: np.ndarray) -> np.ndarray:
-    """
-    Combined uncertainty score per window.
-
-    Score = 0.6 * normalised_entropy + 0.4 * (1 - max_prob)
-
-    normalised_entropy = H(p) / log(n_classes)
-      → 0.0 = fully confident (one class = 1.0)
-      → 1.0 = fully uncertain (all classes equal)
-
-    Higher score = more uncertain = higher priority for labeling.
-    """
-    eps        = 1e-9
-    n_classes  = probs.shape[1]
-    entropy    = -np.sum(probs * np.log(probs + eps), axis=1)
-    norm_ent   = entropy / np.log(n_classes)          # 0..1
-    max_prob   = probs.max(axis=1)                     # 0..1
-    score      = 0.6 * norm_ent + 0.4 * (1.0 - max_prob)
-    return score                                       # shape (n,)
+    eps       = 1e-9
+    n_classes = probs.shape[1]
+    entropy   = -np.sum(probs * np.log(probs + eps), axis=1)
+    norm_ent  = entropy / np.log(n_classes)
+    max_prob  = probs.max(axis=1)
+    score     = 0.6 * norm_ent + 0.4 * (1.0 - max_prob)
+    return score
 
 
 def select_uncertain_windows(
-    probs:        np.ndarray,
-    labeled_set:  set,
-    cfg:          Config,
+    probs:       np.ndarray,
+    labeled_set: set,
+    cfg:         Config,
 ) -> np.ndarray:
-    """
-    Returns indices of uncertain windows sorted by uncertainty score (desc).
-
-    A window is uncertain if EITHER:
-      - max_prob is between uncertainty_low and uncertainty_high  (wide band)
-      - normalised entropy >= entropy_threshold
-    """
     eps       = 1e-9
     n_classes = probs.shape[1]
     max_prob  = probs.max(axis=1)
     entropy   = -np.sum(probs * np.log(probs + eps), axis=1)
     norm_ent  = entropy / np.log(n_classes)
 
-    # Wide band OR high entropy
     band_mask    = (max_prob >= cfg.uncertainty_low) & \
                    (max_prob <= cfg.uncertainty_high)
     entropy_mask = norm_ent >= cfg.entropy_threshold
     uncertain    = np.where(band_mask | entropy_mask)[0]
 
-    # Remove already labeled
     uncertain = np.array(
         [i for i in uncertain if i not in labeled_set],
         dtype=np.int64,
@@ -379,13 +360,10 @@ def select_uncertain_windows(
     if len(uncertain) == 0:
         return uncertain
 
-    # Sort by uncertainty score descending
-    scores         = compute_uncertainty_scores(probs[uncertain])
-    sorted_local   = np.argsort(-scores)
-    uncertain      = uncertain[sorted_local]
-
-    # Cap at top_n_uncertain before grouping
-    uncertain = uncertain[:cfg.top_n_uncertain]
+    scores       = compute_uncertainty_scores(probs[uncertain])
+    sorted_local = np.argsort(-scores)
+    uncertain    = uncertain[sorted_local]
+    uncertain    = uncertain[:cfg.top_n_uncertain]
 
     return uncertain
 
@@ -399,7 +377,7 @@ def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
 
 
 # ============================================================
-# 12) Merge windows into ≥15 min continuous groups
+# 12) Merge windows into groups
 # ============================================================
 def merge_into_groups(
     window_indices: np.ndarray,
@@ -409,17 +387,10 @@ def merge_into_groups(
     min_minutes:    int,
     change_thresh:  float,
 ) -> List[Dict]:
-    """
-    Merges consecutive non-overlapping windows into groups where:
-    - Each group is ≥ min_minutes long
-    - A new group starts on state change OR time gap > 1 min
-    - Groups shorter than min_minutes are dropped
-    - Time ranges are continuous and non-repeating
-    """
     if len(window_indices) == 0:
         return []
 
-    # Sort by time first
+    # Sort by time
     start_times    = [pd.Timestamp(meta[i]["start_time"]) for i in window_indices]
     sort_order     = np.argsort(start_times)
     window_indices = window_indices[sort_order]
@@ -431,7 +402,6 @@ def merge_into_groups(
         prev_idx = window_indices[k - 1]
         curr_idx = window_indices[k]
 
-        # Time gap between end of previous and start of current
         try:
             prev_end   = pd.Timestamp(meta[prev_idx]["end_time"])
             curr_start = pd.Timestamp(meta[curr_idx]["start_time"])
@@ -439,10 +409,8 @@ def merge_into_groups(
         except Exception:
             gap_sec = 9999
 
-        # Cosine distance between consecutive feature vectors
         dist = cosine_distance(features[prev_idx], features[curr_idx])
 
-        # Current group duration so far
         try:
             g_start     = pd.Timestamp(meta[current[0]]["start_time"])
             g_end       = pd.Timestamp(meta[current[-1]]["end_time"])
@@ -462,11 +430,9 @@ def merge_into_groups(
 
     raw_groups.append(current)
 
-    # Build group dicts and drop groups < min_minutes
     result = []
     for grp in raw_groups:
-        grp_idx = np.array(grp)
-
+        grp_idx     = np.array(grp)
         group_start = meta[grp_idx[0]]["start_time"]
         group_end   = meta[grp_idx[-1]]["end_time"]
 
@@ -477,20 +443,16 @@ def merge_into_groups(
         except Exception:
             dur = 0.0
 
-        # Drop groups shorter than min_minutes
         if dur < min_minutes:
             continue
 
-        # Averaged vitals
         avg_hr  = round(float(np.mean([meta[i]["avg_hr"]  for i in grp_idx])), 1)
         avg_hrv = round(float(np.mean([meta[i]["avg_hrv"] for i in grp_idx])), 1)
         avg_br  = round(float(np.mean([meta[i]["avg_br"]  for i in grp_idx])), 1)
 
-        # Averaged probs
         avg_probs   = probs[grp_idx].mean(axis=0).tolist()
         model_guess = int(np.argmax(avg_probs))
 
-        # Representative = most uncertain window in group
         scores     = compute_uncertainty_scores(probs[grp_idx])
         rep_local  = int(np.argmax(scores))
         rep_global = int(grp_idx[rep_local])
@@ -532,7 +494,18 @@ def predict_proba(model: keras.Model, X: np.ndarray, batch_size=256) -> np.ndarr
 
 
 # ============================================================
-# 15) Global app state
+# 15) Scale a single raw window
+# ============================================================
+def scale_window(seq: np.ndarray, scaler: Dict) -> np.ndarray:
+    """Scale a single (window, 3) array using stored scaler."""
+    out = seq.copy()
+    for ch in range(out.shape[1]):
+        out[:, ch] = (out[:, ch] - scaler["median"][ch]) / scaler["iqr"][ch]
+    return out
+
+
+# ============================================================
+# 16) Global app state
 # ============================================================
 class AppState:
     model:             Optional[keras.Model] = None
@@ -546,13 +519,15 @@ class AppState:
     uncertain_windows: List[Dict]            = []
     labels:            Dict[int, int]        = {}
     trained:           bool                  = False
+    latest_window:     Optional[Dict]        = None
+    window_buffer:     deque                 = deque(maxlen=100)
 
 
 STATE = AppState()
 
 
 # ============================================================
-# 16) FastAPI app
+# 17) FastAPI app
 # ============================================================
 api = FastAPI(title="Brain API")
 
@@ -569,12 +544,20 @@ class LabelPayload(BaseModel):
     label:     int
 
 
+class IngestPayload(BaseModel):
+    windows: List[Dict]
+
+
+# ── Existing endpoints ──────────────────────────────────────
+
 @api.get("/status")
 def status():
     return {
         "trained":         STATE.trained,
         "uncertain_count": len(STATE.uncertain_windows),
         "labeled_count":   len(STATE.labels),
+        "buffer_size":     len(STATE.window_buffer),
+        "has_latest":      STATE.latest_window is not None,
     }
 
 
@@ -600,7 +583,6 @@ def submit_label(payload: LabelPayload):
             "labeled_groups":  len(STATE.labels),
         }
 
-    # Apply label to ALL windows in the group
     for wid in group["window_ids"]:
         STATE.labels[wid] = payload.label
         if STATE.y_user is not None:
@@ -630,15 +612,13 @@ def retrain():
         }
 
     tr_idx = np.array(labeled_ids)
-
     if len(tr_idx) < 4:
         return {"ok": False, "reason": "Not enough labeled data to split"}
 
     tr_ft, va_ft = train_test_split(tr_idx, test_size=0.2, random_state=SEED)
-
-    y_tr    = STATE.y_user[tr_ft]
-    y_va    = STATE.y_user[va_ft]
-    class_w = compute_class_weights(y_tr, CFG.n_classes)
+    y_tr         = STATE.y_user[tr_ft]
+    y_va         = STATE.y_user[va_ft]
+    class_w      = compute_class_weights(y_tr, CFG.n_classes)
 
     STATE.model.fit(
         STATE.X[tr_ft],
@@ -659,10 +639,8 @@ def retrain():
         verbose=0,
     )
 
-    print(
-        f"Retrained on {len(tr_ft)} windows "
-        f"({len(STATE.labels)} unique windows labeled)"
-    )
+    print(f"Retrained on {len(tr_ft)} windows "
+          f"({len(STATE.labels)} unique windows labeled)")
     _refresh_uncertain_windows()
 
     return {
@@ -672,21 +650,172 @@ def retrain():
     }
 
 
+# ── New endpoints ───────────────────────────────────────────
+
+@api.post("/ingest")
+def ingest(payload: IngestPayload):
+    """
+    Receive new live windows from polar_reader.py.
+    Runs inference on each window.
+    Stores latest vitals for RL agent.
+    Refreshes uncertain groups.
+    """
+    if STATE.model is None or STATE.scaler is None:
+        return {"ok": False, "reason": "Model not ready yet"}
+
+    new_windows = payload.windows
+    if not new_windows:
+        return {"ok": False, "reason": "No windows provided"}
+
+    ingested = 0
+
+    for win in new_windows:
+        try:
+            hr  = np.array(win["hr"],  dtype=np.float32)
+            hrv = np.array(win["hrv"], dtype=np.float32)
+            br  = np.array(win["br"],  dtype=np.float32)
+
+            # Pad or trim to window_seconds
+            target = CFG.window_seconds
+
+            def fix(arr: np.ndarray) -> np.ndarray:
+                if len(arr) >= target:
+                    return arr[:target]
+                return np.pad(arr, (0, target - len(arr)), mode="edge")
+
+            hr  = fix(hr)
+            hrv = fix(hrv)
+            br  = fix(br)
+
+            # Build sequence (window, 3)
+            seq = np.stack([hr, hrv, br], axis=-1)
+
+            # Scale
+            seq_scaled = scale_window(seq, STATE.scaler)
+
+            # Inference
+            X_new       = seq_scaled[np.newaxis, :, :]   # (1, window, 3)
+            probs        = predict_proba(STATE.model, X_new)[0]
+            model_guess  = int(np.argmax(probs))
+            uncertainty  = float(compute_uncertainty_scores(probs[np.newaxis])[0])
+
+            # Build window meta
+            window_meta = {
+                "start_time":    win["start_time"],
+                "end_time":      win["end_time"],
+                "avg_hr":        float(win["avg_hr"]),
+                "avg_hrv":       float(win["avg_hrv"]),
+                "avg_br":        float(win["avg_br"]),
+                "probabilities": probs.tolist(),
+                "model_guess":   model_guess,
+                "uncertainty":   uncertainty,
+                "state_name":    STATE_NAMES.get(model_guess, "Unknown"),
+            }
+
+            # Always update latest window for RL agent
+            STATE.latest_window = window_meta
+
+            # Add to rolling buffer
+            STATE.window_buffer.append(window_meta)
+
+            ingested += 1
+
+            print(f"  Ingested window | "
+                  f"state={STATE_NAMES[model_guess]} | "
+                  f"HR={win['avg_hr']} | "
+                  f"HRV={win['avg_hrv']} | "
+                  f"uncertainty={uncertainty:.3f}")
+
+        except Exception as e:
+            print(f"  Ingest window error: {e}")
+            continue
+
+    # Refresh uncertain groups after ingestion
+    if ingested > 0:
+        _refresh_uncertain_windows()
+
+    return {
+        "ok":              True,
+        "ingested":        ingested,
+        "uncertain_groups": len(STATE.uncertain_windows),
+    }
+
+
+@api.get("/latest")
+def get_latest():
+    """
+    Return the most recent window vitals + model prediction.
+    Used by RL agent every 2 minutes.
+    """
+    if STATE.latest_window is None:
+        return {}
+    return STATE.latest_window
+
+
+@api.get("/buffer")
+def get_buffer():
+    """
+    Return the last N windows from the rolling buffer.
+    Useful for debugging and visualisation.
+    """
+    return {
+        "count":   len(STATE.window_buffer),
+        "windows": list(STATE.window_buffer),
+    }
+
+
+@api.get("/summary")
+def get_summary():
+    """
+    Return a summary of the rolling buffer.
+    State distribution, average vitals, trend.
+    """
+    if not STATE.window_buffer:
+        return {"ok": False, "reason": "No data yet"}
+
+    buf = list(STATE.window_buffer)
+
+    # State distribution
+    state_counts = {}
+    for w in buf:
+        name = w.get("state_name", "Unknown")
+        state_counts[name] = state_counts.get(name, 0) + 1
+
+    # Average vitals
+    avg_hr  = round(float(np.mean([w["avg_hr"]  for w in buf])), 1)
+    avg_hrv = round(float(np.mean([w["avg_hrv"] for w in buf])), 1)
+    avg_br  = round(float(np.mean([w["avg_br"]  for w in buf])), 1)
+
+    # Trend — last 5 vs first 5
+    def trend(key: str) -> float:
+        vals = [w[key] for w in buf]
+        if len(vals) < 10:
+            return 0.0
+        return round(float(np.mean(vals[-5:])) - float(np.mean(vals[:5])), 2)
+
+    return {
+        "ok":            True,
+        "window_count":  len(buf),
+        "state_dist":    state_counts,
+        "avg_hr":        avg_hr,
+        "avg_hrv":       avg_hrv,
+        "avg_br":        avg_br,
+        "hr_trend":      trend("avg_hr"),
+        "hrv_trend":     trend("avg_hrv"),
+        "br_trend":      trend("avg_br"),
+    }
+
+
+# ============================================================
+# 18) Refresh uncertain windows
+# ============================================================
 def _refresh_uncertain_windows():
-    """
-    1. Run inference on all windows
-    2. Score each window by entropy + max_prob uncertainty
-    3. Select uncertain windows (wide band OR high entropy)
-    4. Sort by time → merge into ≥15 min continuous groups
-    5. Cap at max_groups_per_round most uncertain groups
-    """
     if STATE.model is None or STATE.X is None:
         return
 
     probs       = predict_proba(STATE.model, STATE.X)
     labeled_set = set(STATE.labels.keys())
 
-    # Select uncertain windows
     uncertain_idx = select_uncertain_windows(probs, labeled_set, CFG)
     print(f"  Uncertain windows (unlabeled): {len(uncertain_idx)}")
 
@@ -694,7 +823,6 @@ def _refresh_uncertain_windows():
         STATE.uncertain_windows = []
         return
 
-    # Merge into ≥15 min groups
     all_groups = merge_into_groups(
         window_indices = uncertain_idx,
         features       = STATE.features,
@@ -706,9 +834,7 @@ def _refresh_uncertain_windows():
 
     print(f"  Valid groups (≥{CFG.min_group_minutes} min): {len(all_groups)}")
 
-    # Cap at max_groups — take most uncertain groups
     if len(all_groups) > CFG.max_groups_per_round:
-        # Score each group by average uncertainty of its windows
         def group_uncertainty(g):
             idx    = np.array(g["window_ids"])
             scores = compute_uncertainty_scores(probs[idx])
@@ -722,7 +848,7 @@ def _refresh_uncertain_windows():
 
 
 # ============================================================
-# 17) Training pipeline
+# 19) Training pipeline
 # ============================================================
 def run_training():
     print("TensorFlow:", tf.__version__)
@@ -740,7 +866,7 @@ def run_training():
     df_seg = add_segment_ids(df_filled, CFG.max_gap_sec_for_same_segment)
     print("Segments:", df_seg["segment_id"].nunique())
 
-    # D) Non-overlapping windows
+    # D) Windows
     X_raw, y_rule, y_rule_conf, meta = make_windows_from_segments(df_seg, CFG)
     n = len(X_raw)
     print("Windows created:", n)
@@ -752,12 +878,12 @@ def run_training():
     scaler              = fit_robust_scaler(X_raw[idx_train])
     X                   = transform_robust_scaler(X_raw, scaler)
 
-    # F) Extract flat features for grouping
+    # F) Features
     print("Extracting features for grouping...")
     features = extract_features(X)
     print(f"  Feature shape: {features.shape}")
 
-    # G) y_user starts as -1 (unknown)
+    # G) y_user
     y_user = -1 * np.ones(n, dtype=np.int64)
 
     # H) Build + compile
@@ -769,7 +895,7 @@ def run_training():
         metrics=["accuracy"],
     )
 
-    # I) Warm-start pretrain on rule labels
+    # I) Warm-start pretrain
     print("\nWarm-start pretraining on rule labels...")
     w_rule = 0.25 + 0.75 * y_rule_conf[idx_train]
     tr_idx_pre, val_idx_pre = train_test_split(
@@ -795,7 +921,7 @@ def run_training():
         verbose=1,
     )
 
-    # J) Save to global state
+    # J) Save state
     STATE.model       = model
     STATE.scaler      = scaler
     STATE.features    = features
@@ -806,7 +932,7 @@ def run_training():
     STATE.y_user      = y_user
     STATE.trained     = True
 
-    # K) Initial uncertain window groups
+    # K) Initial uncertain groups
     print("\nFinding initial uncertain window groups...")
     _refresh_uncertain_windows()
     print(f"Groups ready for labeling: {len(STATE.uncertain_windows)}")
@@ -814,103 +940,8 @@ def run_training():
 
 
 # ============================================================
-# 18) Entry point
+# 20) Entry point
 # ============================================================
 if __name__ == "__main__":
     run_training()
     uvicorn.run(api, host="0.0.0.0", port=8000)
-
-# ── Add to imports ──
-from collections import deque
-
-# ── Add to AppState class ──
-# latest_window:  Optional[Dict] = None
-# window_buffer:  deque = deque(maxlen=100)
-
-# ── Add these two endpoints ──
-
-class IngestPayload(BaseModel):
-    windows: List[Dict]
-
-@api.post("/ingest")
-def ingest(payload: IngestPayload):
-    """
-    Receive new windows from polar_reader.py
-    Runs inference and adds uncertain ones to queue.
-    """
-    if STATE.model is None:
-        return {"ok": False, "reason": "Model not trained yet"}
-
-    new_windows = payload.windows
-    if not new_windows:
-        return {"ok": False, "reason": "No windows provided"}
-
-    ingested = 0
-    for win in new_windows:
-        try:
-            hr  = np.array(win["hr"],  dtype=np.float32)
-            hrv = np.array(win["hrv"], dtype=np.float32)
-            br  = np.array(win["br"],  dtype=np.float32)
-
-            # Pad or trim to window_seconds
-            target = CFG.window_seconds
-            def fix(arr):
-                if len(arr) >= target:
-                    return arr[:target]
-                return np.pad(arr, (0, target - len(arr)), mode="edge")
-
-            hr  = fix(hr)
-            hrv = fix(hrv)
-            br  = fix(br)
-
-            seq = np.stack([hr, hrv, br], axis=-1)
-
-            # Scale
-            for ch in range(3):
-                seq[:, ch] = (
-                    seq[:, ch] - STATE.scaler["median"][ch]
-                ) / STATE.scaler["iqr"][ch]
-
-            X_new = seq[np.newaxis, :, :]  # (1, window, 3)
-
-            # Infer
-            probs       = predict_proba(STATE.model, X_new)[0]
-            model_guess = int(np.argmax(probs))
-
-            # Store latest for RL agent
-            window_meta = {
-                "start_time":    win["start_time"],
-                "end_time":      win["end_time"],
-                "avg_hr":        win["avg_hr"],
-                "avg_hrv":       win["avg_hrv"],
-                "avg_br":        win["avg_br"],
-                "probabilities": probs.tolist(),
-                "model_guess":   model_guess,
-            }
-            STATE.latest_window  = window_meta
-            STATE.window_buffer.append(window_meta)
-
-            ingested += 1
-
-        except Exception as e:
-            print(f"  Ingest window error: {e}")
-            continue
-
-    # Refresh uncertain groups
-    _refresh_uncertain_windows()
-
-    return {
-        "ok":              True,
-        "ingested":        ingested,
-        "uncertain_groups": len(STATE.uncertain_windows),
-    }
-
-
-@api.get("/latest")
-def get_latest():
-    """
-    Return the most recent window vitals for the RL agent.
-    """
-    if STATE.latest_window is None:
-        return {}
-    return STATE.latest_window
