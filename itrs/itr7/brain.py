@@ -819,3 +819,98 @@ def run_training():
 if __name__ == "__main__":
     run_training()
     uvicorn.run(api, host="0.0.0.0", port=8000)
+
+# ── Add to imports ──
+from collections import deque
+
+# ── Add to AppState class ──
+# latest_window:  Optional[Dict] = None
+# window_buffer:  deque = deque(maxlen=100)
+
+# ── Add these two endpoints ──
+
+class IngestPayload(BaseModel):
+    windows: List[Dict]
+
+@api.post("/ingest")
+def ingest(payload: IngestPayload):
+    """
+    Receive new windows from polar_reader.py
+    Runs inference and adds uncertain ones to queue.
+    """
+    if STATE.model is None:
+        return {"ok": False, "reason": "Model not trained yet"}
+
+    new_windows = payload.windows
+    if not new_windows:
+        return {"ok": False, "reason": "No windows provided"}
+
+    ingested = 0
+    for win in new_windows:
+        try:
+            hr  = np.array(win["hr"],  dtype=np.float32)
+            hrv = np.array(win["hrv"], dtype=np.float32)
+            br  = np.array(win["br"],  dtype=np.float32)
+
+            # Pad or trim to window_seconds
+            target = CFG.window_seconds
+            def fix(arr):
+                if len(arr) >= target:
+                    return arr[:target]
+                return np.pad(arr, (0, target - len(arr)), mode="edge")
+
+            hr  = fix(hr)
+            hrv = fix(hrv)
+            br  = fix(br)
+
+            seq = np.stack([hr, hrv, br], axis=-1)
+
+            # Scale
+            for ch in range(3):
+                seq[:, ch] = (
+                    seq[:, ch] - STATE.scaler["median"][ch]
+                ) / STATE.scaler["iqr"][ch]
+
+            X_new = seq[np.newaxis, :, :]  # (1, window, 3)
+
+            # Infer
+            probs       = predict_proba(STATE.model, X_new)[0]
+            model_guess = int(np.argmax(probs))
+
+            # Store latest for RL agent
+            window_meta = {
+                "start_time":    win["start_time"],
+                "end_time":      win["end_time"],
+                "avg_hr":        win["avg_hr"],
+                "avg_hrv":       win["avg_hrv"],
+                "avg_br":        win["avg_br"],
+                "probabilities": probs.tolist(),
+                "model_guess":   model_guess,
+            }
+            STATE.latest_window  = window_meta
+            STATE.window_buffer.append(window_meta)
+
+            ingested += 1
+
+        except Exception as e:
+            print(f"  Ingest window error: {e}")
+            continue
+
+    # Refresh uncertain groups
+    _refresh_uncertain_windows()
+
+    return {
+        "ok":              True,
+        "ingested":        ingested,
+        "uncertain_groups": len(STATE.uncertain_windows),
+    }
+
+
+@api.get("/latest")
+def get_latest():
+    """
+    Return the most recent window vitals for the RL agent.
+    """
+    if STATE.latest_window is None:
+        return {}
+    return STATE.latest_window
