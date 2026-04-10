@@ -1,0 +1,7 @@
+numpy
+tensorflow
+fastapi
+uvicorn
+requests
+python-osc
+pydantic
