@@ -1,5 +1,6 @@
 # pretrain_tcn_once.py
-# One-time pretraining for TCN encoder on OLD data only (before today).
+# One-time pretraining for TCN encoder on OLD data only (before today),
+# using your existing Android folder via ADB (no historical_data folder needed).
 #
 # Usage:
 #   python pretrain_tcn_once.py
@@ -7,8 +8,12 @@
 #
 # Requirements:
 #   pip install numpy pandas tensorflow
+#   adb installed, phone connected, USB debugging on
 
 import argparse
+import subprocess
+import tempfile
+import hashlib
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -23,7 +28,10 @@ SEED = 42
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 
-DATA_DIR = Path("historical_data")   # put pulled *_HR.txt files here
+ANDROID_POLAR_DIR = "/sdcard/Download/Data_from_H10"
+LOCAL_TEMP = Path(tempfile.gettempdir()) / "polar_pretrain_pull"
+LOCAL_TEMP.mkdir(exist_ok=True)
+
 MODEL_DIR = Path("models")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -31,7 +39,7 @@ ENCODER_PATH = MODEL_DIR / "tcn_encoder.keras"
 SCALER_PATH = MODEL_DIR / "scaler.npz"
 FLAG_PATH = MODEL_DIR / "trained_once.flag"
 
-WINDOW_SECONDS = 120
+WINDOW_SECONDS = 30
 INPUT_DIM = 3
 LATENT_DIM = 32
 TCN_FILTERS = 32
@@ -40,12 +48,50 @@ DILATIONS = (1, 2, 4, 8)
 DROPOUT = 0.1
 
 BATCH_SIZE = 64
-EPOCHS = 60
+EPOCHS = 120
 VAL_SPLIT = 0.2
 
+# ============================================================
+# ADB helpers
+# ============================================================
+def adb_is_connected() -> bool:
+    try:
+        r = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5)
+        lines = [l for l in r.stdout.strip().splitlines() if l and not l.startswith("List")]
+        return any("device" in l for l in lines)
+    except Exception:
+        return False
+
+
+def adb_list_hr_files(android_dir: str) -> list:
+    try:
+        r = subprocess.run(["adb", "shell", f"ls {android_dir}"], capture_output=True, text=True, timeout=15)
+        files = []
+        for f in r.stdout.splitlines():
+            f = f.strip()
+            if f.endswith(".txt") and "_HR.txt" in f:
+                files.append(f)
+        return sorted(files)
+    except Exception:
+        return []
+
+
+def adb_pull_file(android_path: str, local_path: Path) -> bool:
+    try:
+        r = subprocess.run(["adb", "pull", android_path, str(local_path)], capture_output=True, text=True, timeout=60)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def file_hash(path: Path) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
 
 # ============================================================
-# Parsing
+# Parsing / preprocessing
 # ============================================================
 def parse_polar_hr_file(path: Path) -> pd.DataFrame:
     rows = []
@@ -83,7 +129,7 @@ def parse_polar_hr_file(path: Path) -> pd.DataFrame:
     df = df.dropna(subset=["timestamp", "hr"]).copy()
     df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # ranges
+    # sanity ranges
     df.loc[(df["hr"] < 30) | (df["hr"] > 220), "hr"] = np.nan
     df.loc[(df["hrv"] < 1) | (df["hrv"] > 250), "hrv"] = np.nan
     df.loc[(df["br"] < 4) | (df["br"] > 60), "br"] = np.nan
@@ -94,17 +140,17 @@ def parse_polar_hr_file(path: Path) -> pd.DataFrame:
     # 1s resample
     df = df.set_index("timestamp").resample("1s").mean(numeric_only=True)
 
-    # fill hr
+    # HR interpolate
     df["hr"] = df["hr"].interpolate(method="time", limit=10, limit_direction="both")
 
-    # fill hrv
+    # HRV fill/interpolate
     if df["hrv"].isna().mean() > 0.5:
         hr_std = df["hr"].rolling(window=60, min_periods=10).std()
         est_hrv = (hr_std * 12.0).clip(5, 120)
         df["hrv"] = df["hrv"].fillna(est_hrv)
     df["hrv"] = df["hrv"].interpolate(method="time", limit=20, limit_direction="both")
 
-    # fill br
+    # BR fill/interpolate
     if df["br"].isna().mean() > 0.5:
         hr_smooth = df["hr"].rolling(window=30, min_periods=5).mean()
         hr_min = hr_smooth.quantile(0.05)
@@ -123,28 +169,26 @@ def build_windows(df: pd.DataFrame, window_sec: int = 120) -> np.ndarray:
     if len(df) < window_sec:
         return np.empty((0, window_sec, 3), dtype=np.float32)
 
-    arrs = []
     hr = df["hr"].values.astype(np.float32)
     hrv = df["hrv"].values.astype(np.float32)
     br = df["br"].values.astype(np.float32)
 
+    seqs = []
     for s in range(0, len(df) - window_sec + 1, window_sec):
         e = s + window_sec
-        seq = np.stack([hr[s:e], hrv[s:e], br[s:e]], axis=-1)  # (T,3)
-        arrs.append(seq)
-
-    if not arrs:
+        seqs.append(np.stack([hr[s:e], hrv[s:e], br[s:e]], axis=-1))
+    if not seqs:
         return np.empty((0, window_sec, 3), dtype=np.float32)
-    return np.array(arrs, dtype=np.float32)
-
+    return np.array(seqs, dtype=np.float32)
 
 # ============================================================
 # Scaler
 # ============================================================
 def fit_robust_scaler(X: np.ndarray):
-    med = np.median(X.reshape(-1, X.shape[-1]), axis=0).astype(np.float32)
-    q1 = np.percentile(X.reshape(-1, X.shape[-1]), 25, axis=0).astype(np.float32)
-    q3 = np.percentile(X.reshape(-1, X.shape[-1]), 75, axis=0).astype(np.float32)
+    flat = X.reshape(-1, X.shape[-1])
+    med = np.median(flat, axis=0).astype(np.float32)
+    q1 = np.percentile(flat, 25, axis=0).astype(np.float32)
+    q3 = np.percentile(flat, 75, axis=0).astype(np.float32)
     iqr = (q3 - q1).astype(np.float32)
     iqr = np.where(np.abs(iqr) < 1e-6, 1.0, iqr).astype(np.float32)
     return med, iqr
@@ -156,9 +200,8 @@ def transform_robust(X: np.ndarray, med: np.ndarray, iqr: np.ndarray):
         Y[:, :, ch] = (Y[:, :, ch] - med[ch]) / iqr[ch]
     return Y
 
-
 # ============================================================
-# TCN Autoencoder
+# TCN AE
 # ============================================================
 def tcn_res_block(x, filters, kernel_size, dilation, dropout, name):
     shortcut = x
@@ -195,7 +238,7 @@ def build_encoder():
 
 def build_autoencoder(encoder: keras.Model):
     inp = keras.Input(shape=(WINDOW_SECONDS, INPUT_DIM), name="ae_in")
-    z = encoder(inp)  # (latent_dim,)
+    z = encoder(inp)
 
     x = layers.Dense(WINDOW_SECONDS * 64, activation="relu", name="dec_dense")(z)
     x = layers.Reshape((WINDOW_SECONDS, 64), name="dec_reshape")(x)
@@ -211,69 +254,90 @@ def build_autoencoder(encoder: keras.Model):
     )
     return ae
 
+# ============================================================
+# Data loader from existing Android folder
+# ============================================================
+def load_old_windows_from_android() -> np.ndarray:
+    if not adb_is_connected():
+        raise RuntimeError("ADB device not connected.")
 
-# ============================================================
-# Data loading: OLD data only
-# ============================================================
-def load_old_windows_from_dir(data_dir: Path) -> np.ndarray:
-    files = sorted(list(data_dir.glob("*_HR.txt")))
+    files = adb_list_hr_files(ANDROID_POLAR_DIR)
     if not files:
-        raise FileNotFoundError(f"No *_HR.txt files found in: {data_dir.resolve()}")
+        raise FileNotFoundError(f"No *_HR.txt files in {ANDROID_POLAR_DIR}")
 
-    today0 = pd.Timestamp.now().normalize()
+    today0 = pd.Timestamp.now().normalize()  # local today 00:00
+
     all_windows = []
+    seen_hashes = set()
 
-    for fp in files:
+    print(f"[DATA] Found {len(files)} HR files on device")
+    for fname in files:
+        android_path = f"{ANDROID_POLAR_DIR}/{fname}"
+        local_path = LOCAL_TEMP / fname
+
+        ok = adb_pull_file(android_path, local_path)
+        if not ok or not local_path.exists():
+            print(f"[WARN] pull failed: {fname}")
+            continue
+
+        h = file_hash(local_path)
+        if h in seen_hashes:
+            continue
+        seen_hashes.add(h)
+
         try:
-            df = parse_polar_hr_file(fp)
+            df = parse_polar_hr_file(local_path)
             if df.empty:
+                print(f"[SKIP] {fname}: empty parsed")
                 continue
 
             df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
 
-            # Keep only old data: timestamp < today at midnight
+            # OLD data only: strictly before today
             df_old = df[df["timestamp"] < today0].copy()
             if df_old.empty:
+                print(f"[SKIP] {fname}: only today data")
                 continue
 
             Xf = build_windows(df_old, WINDOW_SECONDS)
+            print(f"[DATA] {fname}: old_rows={len(df_old)} windows={len(Xf)}")
+
             if len(Xf) > 0:
                 all_windows.append(Xf)
 
-            print(f"[DATA] {fp.name}: old_rows={len(df_old)} windows={len(Xf)}")
         except Exception as e:
-            print(f"[WARN] Failed {fp.name}: {e}")
+            print(f"[WARN] parse fail {fname}: {e}")
+            continue
 
     if not all_windows:
-        raise ValueError("No OLD windows found (< today).")
+        raise ValueError("No old windows found (< today).")
 
     X = np.concatenate(all_windows, axis=0).astype(np.float32)
     return X
-
 
 # ============================================================
 # Main
 # ============================================================
 def main(force: bool = False):
     if FLAG_PATH.exists() and not force:
-        print(f"[SKIP] Found {FLAG_PATH}. Already trained once. Use --force to retrain.")
+        print(f"[SKIP] {FLAG_PATH} exists. Already trained once. Use --force to retrain.")
         return
 
-    print("[STEP] Loading OLD windows (< today)...")
-    X_raw = load_old_windows_from_dir(DATA_DIR)
+    print("[STEP] Loading old data from existing Android folder via ADB...")
+    X_raw = load_old_windows_from_android()
     print(f"[INFO] Total old windows: {len(X_raw)} | shape={X_raw.shape}")
 
-    print("[STEP] Fitting robust scaler...")
+    print("[STEP] Fit robust scaler")
     med, iqr = fit_robust_scaler(X_raw)
     X = transform_robust(X_raw, med, iqr)
-    print(f"[INFO] scaler median={med}, iqr={iqr}")
+    print(f"[INFO] median={med}, iqr={iqr}")
 
-    print("[STEP] Building TCN autoencoder...")
+    print("[STEP] Build model")
     encoder = build_encoder()
     ae = build_autoencoder(encoder)
     ae.summary()
 
-    print("[STEP] Training...")
+    print("[STEP] Train one-time")
     callbacks = [
         keras.callbacks.EarlyStopping(
             monitor="val_loss",
@@ -292,13 +356,15 @@ def main(force: bool = False):
         verbose=1
     )
 
-    print("[STEP] Saving encoder + scaler...")
+    print("[STEP] Save encoder + scaler + flag")
     encoder.save(ENCODER_PATH)
     np.savez(SCALER_PATH, median=med, iqr=iqr)
-
     FLAG_PATH.write_text("trained_once=true\n")
-    print(f"[DONE] Saved:\n  - {ENCODER_PATH}\n  - {SCALER_PATH}\n  - {FLAG_PATH}")
 
+    print("[DONE]")
+    print(f"  Encoder: {ENCODER_PATH}")
+    print(f"  Scaler : {SCALER_PATH}")
+    print(f"  Flag   : {FLAG_PATH}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
