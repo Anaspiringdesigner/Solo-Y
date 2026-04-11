@@ -120,8 +120,8 @@ def main(log_path: Path, out_path: Path, window: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log", type=str, default="rl_runs/rl_log.csv")
-    parser.add_argument("--out", type=str, default="rl_runs/rl_analysis.png")
+    parser.add_argument("--log", type=str, default="rl_log.csv")
+    parser.add_argument("--out", type=str, default="rl_analysis.png")
     parser.add_argument("--window", type=int, default=50)
     args = parser.parse_args()
 
