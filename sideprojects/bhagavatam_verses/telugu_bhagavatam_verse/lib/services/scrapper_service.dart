@@ -3,29 +3,25 @@ import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as htmlParser;
 import '../models/verse_model.dart';
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// Known Skanda → max Ghatta mapping from telugubhagavatam.org
-/// The site has 640 total ghattas across 12 skandhas (+ 2 sub-parts of 5 & 10)
-/// Source:  ^1^  site layout shows 640 ghattas, 9013 padyams
-/// ─────────────────────────────────────────────────────────────────────────────
+/// Known Skanda → max Ghatta count mapping.
+/// Based on telugubhagavatam.org site structure (640 total ghattas).
 const Map<int, int> _skandaMaxGhatta = {
   1: 30,
   2: 20,
   3: 40,
   4: 45,
-  51: 30,  // Skanda 5, part 1
-  52: 25,  // Skanda 5, part 2
+  51: 30,
+  52: 25,
   6: 40,
   7: 35,
   8: 40,
   9: 45,
-  101: 90, // Skanda 10, part 1 (Purva)
-  102: 80, // Skanda 10, part 2 (Uttara)
+  101: 90,
+  102: 80,
   11: 45,
   12: 15,
 };
 
-/// Maps our internal key to the URL Skanda parameter
 const Map<int, String> _skandaUrlParam = {
   1: '1',
   2: '2',
@@ -43,7 +39,6 @@ const Map<int, String> _skandaUrlParam = {
   12: '12',
 };
 
-/// Human-readable Skanda names in Telugu
 const Map<int, String> _skandaNames = {
   1: 'ప్రథమ స్కంధము',
   2: 'ద్వితీయ స్కంధము',
@@ -63,29 +58,22 @@ const Map<int, String> _skandaNames = {
 
 class ScraperService {
   static const String _baseUrl = 'https://telugubhagavatam.org/';
-  static const int _maxPadyamPerGhatta = 30; // conservative upper bound
-  static const int _maxRetries = 3;
+  static const int _maxPadyamPerGhatta = 30;
+  static const int _maxRetries = 5;
 
   final _random = Random();
   final List<int> _skandaKeys = _skandaMaxGhatta.keys.toList();
 
-  /// ── Pick a random verse coordinate and scrape it ──────────────────────────
+  /// Fetch a completely random verse from the website.
   Future<VerseModel?> fetchRandomVerse() async {
     for (int attempt = 0; attempt < _maxRetries; attempt++) {
       try {
-        // 1. Pick random Skanda
         final skandaKey = _skandaKeys[_random.nextInt(_skandaKeys.length)];
         final maxGhatta = _skandaMaxGhatta[skandaKey]!;
-
-        // 2. Pick random Ghatta within that Skanda
         final ghattaNum = _random.nextInt(maxGhatta) + 1;
-
-        // 3. Pick random padyam (1–30, we'll validate via response)
         final padyamNum = _random.nextInt(_maxPadyamPerGhatta) + 1;
 
-        final url = _buildUrl(skandaKey, ghattaNum, padyamNum);
         final verse = await _scrapeVerse(
-          url: url,
           skandaKey: skandaKey,
           ghattaNum: ghattaNum,
           padyamNum: padyamNum,
@@ -93,45 +81,30 @@ class ScraperService {
 
         if (verse != null) return verse;
       } catch (_) {
-        // retry
+        // Retry on any error
       }
     }
     return null;
   }
 
-  /// ── Scrape a specific verse by coordinates ────────────────────────────────
-  Future<VerseModel?> fetchSpecificVerse({
-    required int skandaKey,
-    required int ghattaNum,
-    required int padyamNum,
-  }) async {
-    final url = _buildUrl(skandaKey, ghattaNum, padyamNum);
-    return _scrapeVerse(
-      url: url,
-      skandaKey: skandaKey,
-      ghattaNum: ghattaNum,
-      padyamNum: padyamNum,
-    );
-  }
-
-  /// ── Build the telugubhagavatam.org URL ────────────────────────────────────
   String _buildUrl(int skandaKey, int ghattaNum, int padyamNum) {
     final skandaParam = _skandaUrlParam[skandaKey]!;
     return '$_baseUrl?tebha&Skanda=$skandaParam&Ghatta=$ghattaNum&padyam=$padyamNum';
   }
 
-  /// ── Core HTML scraper ─────────────────────────────────────────────────────
   Future<VerseModel?> _scrapeVerse({
-    required String url,
     required int skandaKey,
     required int ghattaNum,
     required int padyamNum,
   }) async {
+    final url = _buildUrl(skandaKey, ghattaNum, padyamNum);
+
     final response = await http.get(
       Uri.parse(url),
       headers: {
         'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'te,en;q=0.9',
       },
@@ -139,15 +112,12 @@ class ScraperService {
 
     if (response.statusCode != 200) return null;
 
-    // Decode as UTF-8 (Telugu Unicode)
     final body = response.body;
     if (body.isEmpty) return null;
 
     final document = htmlParser.parse(body);
 
-    // ── Extract verse text (padyam) ──────────────────────────────────────────
-    // The site renders padyam in <div class="padyam"> or <p class="padyam">
-    // We try multiple selectors for robustness
+    // Extract padyam (verse text)
     String padyam = _extractText(document, [
       '.padyam',
       '.padya',
@@ -156,7 +126,10 @@ class ScraperService {
       '.verse',
     ]);
 
-    // ── Extract Teeka (word meanings) ────────────────────────────────────────
+    // If no padyam found this coordinate doesn't exist — skip
+    if (padyam.trim().isEmpty) return null;
+
+    // Extract teeka (word-by-word meaning)
     String teeka = _extractText(document, [
       '.teeka',
       '.tika',
@@ -164,7 +137,7 @@ class ScraperService {
       'p.teeka',
     ]);
 
-    // ── Extract Bhavam (overall meaning) ────────────────────────────────────
+    // Extract bhavam (overall meaning)
     String bhavam = _extractText(document, [
       '.bhavam',
       '.bhava',
@@ -172,7 +145,7 @@ class ScraperService {
       'p.bhavam',
     ]);
 
-    // ── Extract Ghatta name ──────────────────────────────────────────────────
+    // Extract ghatta name
     String ghatta = _extractText(document, [
       '.ghatta',
       '.ghattam',
@@ -181,21 +154,18 @@ class ScraperService {
       '.subtitle',
     ]);
 
-    // ── Fallback: if padyam is empty, the padyam number may not exist ────────
-    if (padyam.trim().isEmpty) return null;
-
-    // ── Clean up extracted text ──────────────────────────────────────────────
-    padyam = _cleanText(padyam);
-    teeka = _cleanText(teeka);
-    bhavam = _cleanText(bhavam);
-    ghatta = _cleanText(ghatta);
-
     return VerseModel(
-      padyam: padyam,
-      teeka: teeka.isNotEmpty ? teeka : 'వివరణ అందుబాటులో లేదు',
-      bhavam: bhavam.isNotEmpty ? bhavam : 'భావం అందుబాటులో లేదు',
+      padyam: _cleanText(padyam),
+      teeka: _cleanText(teeka).isNotEmpty
+          ? _cleanText(teeka)
+          : 'వివరణ అందుబాటులో లేదు',
+      bhavam: _cleanText(bhavam).isNotEmpty
+          ? _cleanText(bhavam)
+          : 'భావం అందుబాటులో లేదు',
       skanda: _skandaNames[skandaKey] ?? 'స్కంధము',
-      ghatta: ghatta.isNotEmpty ? ghatta : 'ఘట్టం $ghattaNum',
+      ghatta: _cleanText(ghatta).isNotEmpty
+          ? _cleanText(ghatta)
+          : 'ఘట్టం $ghattaNum',
       sourceUrl: url,
       fetchedAt: DateTime.now(),
       skandaNum: skandaKey,
@@ -204,7 +174,6 @@ class ScraperService {
     );
   }
 
-  /// ── Try multiple CSS selectors, return first non-empty result ─────────────
   String _extractText(dynamic document, List<String> selectors) {
     for (final selector in selectors) {
       try {
@@ -221,7 +190,6 @@ class ScraperService {
     return '';
   }
 
-  /// ── Clean extracted text ──────────────────────────────────────────────────
   String _cleanText(String text) {
     return text
         .replaceAll(RegExp(r'\s+'), ' ')

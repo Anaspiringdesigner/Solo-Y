@@ -42,9 +42,10 @@ class _VerseCardState extends State<VerseCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ──────────────────────────────────────────────────────────
+          // ── Header ────────────────────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(color: Color(0x33FF8C00)),
@@ -64,7 +65,6 @@ class _VerseCardState extends State<VerseCard> {
                           color: const Color(0xFFFFB347),
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
                         ),
                       ),
                       if (verse.ghatta.isNotEmpty)
@@ -78,7 +78,6 @@ class _VerseCardState extends State<VerseCard> {
                     ],
                   ),
                 ),
-                // Date badge
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 4),
@@ -98,7 +97,7 @@ class _VerseCardState extends State<VerseCard> {
             ),
           ),
 
-          // ── Padyam (verse) ───────────────────────────────────────────────────
+          // ── Body ──────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -106,6 +105,7 @@ class _VerseCardState extends State<VerseCard> {
               children: [
                 // Verse text
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.3),
@@ -128,7 +128,7 @@ class _VerseCardState extends State<VerseCard> {
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
                 // Copy button
                 Align(
@@ -160,7 +160,9 @@ class _VerseCardState extends State<VerseCard> {
                   ),
                 ),
 
-                // ── Bhavam (meaning) ─────────────────────────────────────────
+                const SizedBox(height: 4),
+
+                // Bhavam section
                 _SectionToggle(
                   title: '📖 భావం',
                   isExpanded: _showBhavam,
@@ -170,9 +172,9 @@ class _VerseCardState extends State<VerseCard> {
                   contentColor: const Color(0xFFD4A96A),
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
 
-                // ── Teeka (word meanings) ────────────────────────────────────
+                // Teeka section
                 _SectionToggle(
                   title: '📝 టీక',
                   isExpanded: _showTeeka,
@@ -198,7 +200,6 @@ class _VerseCardState extends State<VerseCard> {
   }
 }
 
-/// ── Collapsible section widget ────────────────────────────────────────────────
 class _SectionToggle extends StatelessWidget {
   final String title;
   final bool isExpanded;

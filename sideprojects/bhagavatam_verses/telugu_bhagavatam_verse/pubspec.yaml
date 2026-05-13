@@ -12,29 +12,14 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # HTTP requests
   http: ^1.2.1
-
-  # HTML parsing (like BeautifulSoup)
   html: ^0.15.4
-
-  # Local persistence — stores fetched verses over time
   shared_preferences: ^2.2.3
-
-  # Sunrise/sunset calculation for accurate day boundary
-  sunrise_sunset_calc: ^1.0.1
-
-  # Google Fonts — Noto Sans Telugu
   google_fonts: ^6.2.1
-
-  # URL launcher — open verse on website
   url_launcher: ^6.3.0
-
-  # Home widget support (Android/iOS)
   home_widget: ^0.6.0
-
-  # Workmanager — background daily refresh
   workmanager: ^0.5.2
+  geolocator: ^13.0.2
 
 dev_dependencies:
   flutter_test:

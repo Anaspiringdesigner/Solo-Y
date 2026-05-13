@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/verse_model.dart';
 import '../services/scraper_service.dart';
 import '../services/verse_storage_service.dart';
+import '../services/sunrise_service.dart';
+import '../services/location_service.dart';
 import '../widgets/verse_card.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -16,27 +18,49 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _scraper = ScraperService();
   final _storage = VerseStorageService();
+  final _location = LocationService();
 
   VerseModel? _verse;
   bool _isLoading = true;
   bool _isRefreshing = false;
   String _statusMessage = '';
   int _libraryCount = 0;
+  String _sunriseTime = '';
+  String _locationLabel = '';
 
   @override
   void initState() {
     super.initState();
     _loadOrFetchVerse();
+    _loadSunriseInfo();
   }
 
-  /// ── Main logic: load cached verse or fetch new one ────────────────────────
+  /// Fetch real GPS coordinates and compute today's exact sunrise time.
+  Future<void> _loadSunriseInfo() async {
+    final coords = await _location.getCurrentLocation();
+    final now = DateTime.now();
+    final sunrise = SunriseService.getSunrise(
+      date: now,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+    );
+    final h = sunrise.hour.toString().padLeft(2, '0');
+    final m = sunrise.minute.toString().padLeft(2, '0');
+
+    setState(() {
+      _sunriseTime = '$h:$m';
+      _locationLabel =
+          '${coords.latitude.toStringAsFixed(2)}°, '
+          '${coords.longitude.toStringAsFixed(2)}°';
+    });
+  }
+
   Future<void> _loadOrFetchVerse({bool forceRefresh = false}) async {
     setState(() {
       _isLoading = true;
       _statusMessage = 'నేటి పద్యం తెస్తున్నాం...';
     });
 
-    // Check if we already have today's verse
     if (!forceRefresh && await _storage.hasTodayVerse()) {
       final cached = await _storage.loadTodayVerse();
       if (cached != null) {
@@ -51,8 +75,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // Fetch a new random verse from the website
-    setState(() => _statusMessage = 'వెబ్‌సైట్ నుండి పద్యం తెస్తున్నాం...');
+    setState(
+        () => _statusMessage = 'వెబ్‌సైట్ నుండి పద్యం తెస్తున్నాం...');
 
     final verse = await _scraper.fetchRandomVerse();
 
@@ -66,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _statusMessage = '';
       });
     } else {
-      // Fallback: load last known verse from library
       final library = await _storage.loadLibrary();
       setState(() {
         _verse = library.isNotEmpty ? library.last : null;
@@ -101,29 +124,67 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
-          // Library count badge
+          // Sunrise chip
+          if (_sunriseTime.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Center(
+                child: Tooltip(
+                  message: 'సూర్యోదయం @ $_locationLabel',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF8C00).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color:
+                              const Color(0xFFFF8C00).withOpacity(0.35)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🌅',
+                            style: TextStyle(fontSize: 11)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _sunriseTime,
+                          style: const TextStyle(
+                            color: Color(0xFFFFD580),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Library count chip
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Center(
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF8C00).withOpacity(0.2),
+                  color: const Color(0xFFFF8C00).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                      color: const Color(0xFFFF8C00).withOpacity(0.4)),
+                      color: const Color(0xFFFF8C00).withOpacity(0.35)),
                 ),
                 child: Text(
-                  '📚 $_libraryCount పద్యాలు',
-                  style: GoogleFonts.notoSansTelugu(
-                    color: const Color(0xFFFFB347),
+                  '📚 $_libraryCount',
+                  style: const TextStyle(
+                    color: Color(0xFFFFB347),
                     fontSize: 11,
                   ),
                 ),
               ),
             ),
           ),
+
           // Refresh button
           IconButton(
             icon: _isRefreshing
@@ -140,10 +201,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? null
                 : () async {
                     setState(() => _isRefreshing = true);
-                    await _loadOrFetchVerse(forceRefresh: true);
+                    await Future.wait([
+                      _loadOrFetchVerse(forceRefresh: true),
+                      _loadSunriseInfo(),
+                    ]);
                     setState(() => _isRefreshing = false);
                   },
-            tooltip: 'కొత్త పద్యం',
           ),
         ],
       ),
@@ -182,7 +245,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.wifi_off, color: Color(0xFFFFB347), size: 64),
+            const Icon(Icons.wifi_off,
+                color: Color(0xFFFFB347), size: 64),
             const SizedBox(height: 16),
             Text(
               _statusMessage,
@@ -217,16 +281,17 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Status message (warning etc.)
+          // Warning banner
           if (_statusMessage.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.orange.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withOpacity(0.4)),
+                border:
+                    Border.all(color: Colors.orange.withOpacity(0.4)),
               ),
               child: Text(
                 _statusMessage,
@@ -237,12 +302,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-          // Main verse card
           VerseCard(verse: _verse!),
 
           const SizedBox(height: 16),
 
-          // Open in browser button
+          // Open in browser
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -264,14 +328,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 8),
 
-          // Attribution
+          // Attribution + location info
           Center(
-            child: Text(
-              'మూలం: telugubhagavatam.org · పోతన తెలుగు భాగవతం',
-              style: GoogleFonts.notoSansTelugu(
-                color: const Color(0xFF6B4C2A),
-                fontSize: 10,
-              ),
+            child: Column(
+              children: [
+                Text(
+                  'మూలం: telugubhagavatam.org · పోతన తెలుగు భాగవతం',
+                  style: GoogleFonts.notoSansTelugu(
+                    color: const Color(0xFF6B4C2A),
+                    fontSize: 10,
+                  ),
+                ),
+                if (_locationLabel.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '📍 $_locationLabel · 🌅 సూర్యోదయం $_sunriseTime',
+                    style: const TextStyle(
+                      color: Color(0xFF4A3020),
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
 

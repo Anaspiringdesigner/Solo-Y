@@ -2,13 +2,13 @@ import 'dart:convert';
 
 /// Represents a single padyam (verse) from telugubhagavatam.org
 class VerseModel {
-  final String padyam;       // Telugu verse text
-  final String teeka;        // Word-by-word meaning (టీక)
-  final String bhavam;       // Overall meaning (భావం)
-  final String skanda;       // Skanda name (స్కంధం)
-  final String ghatta;       // Ghatta (episode) name
-  final String sourceUrl;    // Direct link to the verse page
-  final DateTime fetchedAt;  // When it was scraped
+  final String padyam;
+  final String teeka;
+  final String bhavam;
+  final String skanda;
+  final String ghatta;
+  final String sourceUrl;
+  final DateTime fetchedAt;
   final int skandaNum;
   final int ghattaNum;
   final int padyamNum;
@@ -26,7 +26,6 @@ class VerseModel {
     required this.padyamNum,
   });
 
-  /// Serialise to JSON for SharedPreferences storage
   Map<String, dynamic> toJson() => {
         'padyam': padyam,
         'teeka': teeka,
@@ -54,6 +53,7 @@ class VerseModel {
       );
 
   String toJsonString() => jsonEncode(toJson());
+
   factory VerseModel.fromJsonString(String s) =>
       VerseModel.fromJson(jsonDecode(s));
 }
