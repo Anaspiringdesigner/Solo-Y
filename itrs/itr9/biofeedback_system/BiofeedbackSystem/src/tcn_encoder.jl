@@ -7,43 +7,38 @@
 module TCNEncoder
 
 using Flux
-using Flux: Chain, Conv, BatchNorm, Dense, relu, dropout
+using Flux: Chain, Conv, BatchNorm, Dense, relu
 using Statistics
 using BSON: @save, @load
-using NPZ                    # for loading Python scaler.npz
+using NPZ
 using Random
 
-# ── Config (matches Python Config dataclass) ─────────────────
+# ── Config ───────────────────────────────────────────────────
 const WINDOW_SECONDS = 30
-const INPUT_DIM      = 3      # [HR, HRV, BR]
+const INPUT_DIM      = 3
 const LATENT_DIM     = 32
 const TCN_FILTERS    = 32
 const TCN_KERNEL     = 3
 const DILATIONS      = (1, 2, 4, 8)
 const DROPOUT_RATE   = 0.1f0
 
-const MODEL_DIR      = "models"
-const ENCODER_PATH   = joinpath(MODEL_DIR, "tcn_encoder.bson")
-const SCALER_PATH    = joinpath(MODEL_DIR, "scaler.npz")
+const MODEL_DIR    = "models"
+const ENCODER_PATH = joinpath(MODEL_DIR, "tcn_encoder.bson")
+const SCALER_PATH  = joinpath(MODEL_DIR, "scaler.npz")
 
-# ── Default scaler (matches Python default_scaler()) ─────────
 const DEFAULT_MEDIAN = Float32[70.0, 30.0, 14.0]
 const DEFAULT_IQR    = Float32[15.0, 20.0,  6.0]
 
 # ── Scaler ───────────────────────────────────────────────────
-
 struct RobustScaler
     median :: Vector{Float32}
     iqr    :: Vector{Float32}
 end
 
-# Default scaler (used when scaler.npz not found)
-default_scaler() = RobustScaler(
-    copy(DEFAULT_MEDIAN),
-    copy(DEFAULT_IQR)
-)
+function default_scaler()
+    RobustScaler(copy(DEFAULT_MEDIAN), copy(DEFAULT_IQR))
+end
 
-# Load from Python-saved .npz file
 function load_scaler(path::String)::RobustScaler
     if !isfile(path)
         println("[SCALER] Not found at $path, using default")
@@ -52,175 +47,130 @@ function load_scaler(path::String)::RobustScaler
     data = npzread(path)
     med  = Float32.(data["median"])
     iqr  = Float32.(data["iqr"])
-    # Prevent division by zero (matches Python logic)
     iqr  = [abs(v) < 1f-6 ? 1f0 : v for v in iqr]
     println("[SCALER] Loaded from $path")
     return RobustScaler(med, iqr)
 end
 
-# Scale a (30, 3) window — matches Python scale_window()
 function scale_window(seq::Array{Float32,2},
                       scaler::RobustScaler)::Array{Float32,2}
     out = copy(seq)
     for ch in 1:size(out, 2)
-        out[:, ch] = (out[:, ch] .- scaler.median[ch]) ./ scaler.iqr[ch]
+        out[:, ch] = (out[:, ch] .- scaler.median[ch]) ./
+                      scaler.iqr[ch]
     end
     return out
 end
 
 # ── TCN Residual Block ────────────────────────────────────────
-# Matches Python tcn_res_block():
-# Conv1D(causal) → BN → ReLU → Dropout ×2 + residual
-
 struct TCNResBlock
-    conv1    :: Conv
-    bn1      :: BatchNorm
-    conv2    :: Conv
-    bn2      :: BatchNorm
-    proj     :: Union{Conv, Nothing}   # 1×1 projection if channels differ
-    drop_rate:: Float32
+    conv1     :: Conv
+    bn1       :: BatchNorm
+    conv2     :: Conv
+    bn2       :: BatchNorm
+    proj      :: Union{Conv, Nothing}
+    drop_rate :: Float32
 end
 
-# Constructor
+Flux.@layer TCNResBlock
+
 function TCNResBlock(in_ch::Int, filters::Int,
                      kernel::Int, dilation::Int,
                      drop_rate::Float32)
-
-    # Causal padding = (kernel-1) * dilation on the LEFT only
-    # Flux Conv handles this via pad parameter
-    pad = (kernel - 1) * dilation
-
-    conv1 = Conv((kernel,), in_ch => filters;
+    pad   = (kernel - 1) * dilation
+    conv1 = Conv((kernel,), in_ch  => filters;
                  pad=(pad, 0), dilation=dilation)
     bn1   = BatchNorm(filters)
-
     conv2 = Conv((kernel,), filters => filters;
                  pad=(pad, 0), dilation=dilation)
     bn2   = BatchNorm(filters)
-
-    # 1×1 projection if input channels ≠ output channels
     proj  = in_ch != filters ?
             Conv((1,), in_ch => filters; pad=0) :
             nothing
-
-    TCNResBlock(conv1, bn1, conv2, bn2, proj, drop_rate)
+    return TCNResBlock(conv1, bn1, conv2, bn2, proj, drop_rate)
 end
 
-# Make it callable — forward pass
 function (block::TCNResBlock)(x::AbstractArray;
                                training::Bool=false)
-    # x shape in Flux: (time, channels, batch)
-
     shortcut = x
-
-    # Branch 1
     y = block.conv1(x)
     y = block.bn1(y)
     y = relu.(y)
-    y = training ? dropout(y, block.drop_rate) : y
-
-    # Branch 2
+    y = training ? Flux.dropout(y, block.drop_rate) : y
     y = block.conv2(y)
     y = block.bn2(y)
     y = relu.(y)
-    y = training ? dropout(y, block.drop_rate) : y
-
-    # Residual projection if needed
+    y = training ? Flux.dropout(y, block.drop_rate) : y
     if block.proj !== nothing
         shortcut = block.proj(shortcut)
     end
-
-    # Add + final ReLU
-    out = relu.(y .+ shortcut)
-    return out
+    return relu.(y .+ shortcut)
 end
 
-# Register as Flux trainable
-Flux.@functor TCNResBlock
-
-# ── TCN Encoder ───────────────────────────────────────────────
-# Matches Python build_tcn_encoder()
-
+# ── TCN Encoder Model ─────────────────────────────────────────
 struct TCNEncoderModel
-    blocks  :: Vector{TCNResBlock}
-    dense   :: Dense
-    ln      :: LayerNorm
+    blocks :: Vector{TCNResBlock}
+    dense  :: Dense
+    ln     :: LayerNorm
 end
+
+Flux.@layer TCNEncoderModel
 
 function build_tcn_encoder()::TCNEncoderModel
     blocks = TCNResBlock[]
-
-    in_ch = INPUT_DIM    # first block takes 3 input channels
-    for (i, d) in enumerate(DILATIONS)
+    in_ch  = INPUT_DIM
+    for d in DILATIONS
         push!(blocks, TCNResBlock(in_ch, TCN_FILTERS,
                                   TCN_KERNEL, d, DROPOUT_RATE))
-        in_ch = TCN_FILTERS   # subsequent blocks take 32 channels
+        in_ch = TCN_FILTERS
     end
-
     dense = Dense(TCN_FILTERS => LATENT_DIM)
     ln    = LayerNorm(LATENT_DIM)
-
     return TCNEncoderModel(blocks, dense, ln)
 end
 
-# Forward pass
 function (enc::TCNEncoderModel)(x::AbstractArray;
                                  training::Bool=false)
-    # Input x: (batch, time, channels) from data streamer
-    # Flux Conv1D expects: (time, channels, batch)
-    # So we permute: (batch,time,channels) → (time,channels,batch)
+    # x: (batch, time, channels) → permute → (time, channels, batch)
     h = permutedims(x, (2, 3, 1))
-
-    # Pass through TCN blocks
     for block in enc.blocks
         h = block(h; training=training)
     end
-
-    # GlobalAveragePooling1D
-    # h shape: (time, channels, batch) → mean over time dim
-    h = mean(h, dims=1)              # (1, channels, batch)
-    h = dropdims(h, dims=1)          # (channels, batch)
-
-    # Dense → LayerNorm
-    z = enc.dense(h)                 # (latent_dim, batch)
-    z = enc.ln(z)                    # (latent_dim, batch)
-
+    # GlobalAveragePooling over time dim
+    h = mean(h, dims=1)
+    h = dropdims(h, dims=1)      # (channels, batch)
+    z = enc.dense(h)
+    z = enc.ln(z)
     return z
 end
 
-# Register as Flux trainable
-Flux.@functor TCNEncoderModel
-
-# ── Decoder + Autoencoder (for pretraining only) ──────────────
-
+# ── Autoencoder ───────────────────────────────────────────────
 struct TCNAutoencoder
     encoder :: TCNEncoderModel
     decoder :: Chain
 end
 
+Flux.@layer TCNAutoencoder
+
 function build_autoencoder(encoder::TCNEncoderModel)::TCNAutoencoder
     decoder = Chain(
-        Dense(LATENT_DIM => WINDOW_SECONDS * 64, relu),  # dec_dense
-        x -> reshape(x, WINDOW_SECONDS, 64, :),          # dec_reshape
-        Conv((3,), 64 => 64, relu; pad=1),               # dec_c1
-        Conv((3,), 64 => 32, relu; pad=1),               # dec_c2
-        Conv((1,), 32 => INPUT_DIM;  pad=0),             # recon
+        Dense(LATENT_DIM => WINDOW_SECONDS * 64, relu),
+        x -> reshape(x, WINDOW_SECONDS, 64, :),
+        Conv((3,), 64 => 64, relu; pad=1),
+        Conv((3,), 64 => 32, relu; pad=1),
+        Conv((1,), 32 => INPUT_DIM; pad=0),
     )
     return TCNAutoencoder(encoder, decoder)
 end
 
 function (ae::TCNAutoencoder)(x::AbstractArray;
                                training::Bool=false)
-    z    = ae.encoder(x; training=training)   # (latent, batch)
-    recon = ae.decoder(z)                      # (time, channels, batch)
-    # Permute back to (batch, time, channels)
+    z     = ae.encoder(x; training=training)
+    recon = ae.decoder(z)
     return permutedims(recon, (3, 1, 2))
 end
 
-Flux.@functor TCNAutoencoder
-
 # ── Save / Load ───────────────────────────────────────────────
-
 function save_encoder(enc::TCNEncoderModel,
                       path::String=ENCODER_PATH)
     mkpath(dirname(path))
@@ -230,7 +180,7 @@ end
 
 function load_encoder(path::String=ENCODER_PATH)::TCNEncoderModel
     if !isfile(path)
-        println("[LOAD] No saved encoder found, building fresh")
+        println("[LOAD] No saved encoder, building fresh")
         return build_tcn_encoder()
     end
     @load path enc
@@ -239,60 +189,48 @@ function load_encoder(path::String=ENCODER_PATH)::TCNEncoderModel
 end
 
 # ── App State ─────────────────────────────────────────────────
-
 mutable struct EncoderState
-    encoder        :: Union{TCNEncoderModel, Nothing}
-    scaler         :: RobustScaler
-    latest         :: Union{Dict, Nothing}
-    buffer         :: Vector{Dict}
+    encoder          :: Union{TCNEncoderModel, Nothing}
+    scaler           :: RobustScaler
+    latest           :: Union{Dict, Nothing}
+    buffer           :: Vector{Dict}
     using_pretrained :: Bool
 end
 
-EncoderState() = EncoderState(
-    nothing,
-    default_scaler(),
-    nothing,
-    Dict[],
-    false
-)
+function EncoderState()
+    EncoderState(nothing, default_scaler(), nothing, Dict[], false)
+end
 
 const STATE = EncoderState()
 const BUFFER_MAXSIZE = 1000
 
-# ── Encode a single window ────────────────────────────────────
-# Called by RL agent — matches Python /ingest logic
-
-function encode_window(hr::Vector{Float32},
-                       hrv::Vector{Float32},
-                       br::Vector{Float32},
-                       avg_hr::Float32,
-                       avg_hrv::Float32,
-                       avg_br::Float32,
-                       end_time::String)::Union{Dict, Nothing}
+# ── Encode Window ─────────────────────────────────────────────
+function encode_window(hr      :: Vector{Float32},
+                        hrv     :: Vector{Float32},
+                        br      :: Vector{Float32},
+                        avg_hr  :: Float32,
+                        avg_hrv :: Float32,
+                        avg_br  :: Float32,
+                        end_time:: String)::Union{Dict, Nothing}
 
     STATE.encoder === nothing && return nothing
 
     try
-        # Fix length to 30
-        fix_len(arr, n) = length(arr) >= n ? arr[1:n] :
-                          vcat(arr, fill(arr[end], n - length(arr)))
+        function fix_len(arr, n)
+            length(arr) >= n ? arr[1:n] :
+            vcat(arr, fill(arr[end], n - length(arr)))
+        end
 
         hr_f  = fix_len(hr,  WINDOW_SECONDS)
         hrv_f = fix_len(hrv, WINDOW_SECONDS)
         br_f  = fix_len(br,  WINDOW_SECONDS)
 
-        # Stack → (30, 3)
-        seq = hcat(hr_f, hrv_f, br_f)
-
-        # Scale
+        seq        = hcat(hr_f, hrv_f, br_f)
         seq_scaled = scale_window(seq, STATE.scaler)
 
-        # Add batch dim → (1, 30, 3)
         x = reshape(seq_scaled, 1, WINDOW_SECONDS, INPUT_DIM)
-
-        # Encode → z ∈ ℝ³²
         z = STATE.encoder(x; training=false)
-        z_vec = vec(z)    # flatten to 1D vector
+        z_vec = vec(z)
 
         item = Dict(
             "end_time" => end_time,
@@ -308,7 +246,9 @@ function encode_window(hr::Vector{Float32},
             popfirst!(STATE.buffer)
         end
 
-        println("[ENCODE] end=$(end_time) HR=$(round(avg_hr,digits=1)) HRV=$(round(avg_hrv,digits=1))")
+        println("[ENCODE] end=$(end_time) " *
+                "HR=$(round(avg_hr, digits=1)) " *
+                "HRV=$(round(avg_hrv, digits=1))")
         return item
 
     catch e
@@ -318,25 +258,21 @@ function encode_window(hr::Vector{Float32},
 end
 
 # ── Init ──────────────────────────────────────────────────────
-
 function init_encoder()
     mkpath(MODEL_DIR)
-
-    # Load scaler
     STATE.scaler = load_scaler(SCALER_PATH)
 
-    # Load or build encoder
     if isfile(ENCODER_PATH)
         println("[INIT] Loading pretrained encoder: $ENCODER_PATH")
-        STATE.encoder = load_encoder(ENCODER_PATH)
+        STATE.encoder        = load_encoder(ENCODER_PATH)
         STATE.using_pretrained = true
     else
         println("[INIT] No pretrained encoder, building fresh")
-        STATE.encoder = build_tcn_encoder()
+        STATE.encoder        = build_tcn_encoder()
         STATE.using_pretrained = false
     end
 
-    println("[INIT] Encoder ready | latent_dim=$LATENT_DIM")
+    println("[INIT] Encoder ready | latent_dim=$(LATENT_DIM)")
 end
 
 end # module TCNEncoder
