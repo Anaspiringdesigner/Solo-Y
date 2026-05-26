@@ -5,7 +5,7 @@ class AppConstants {
   static const String serverIp   = '10.96.79.235';
   static const String serverBase = 'http://10.96.79.235:8000';
   static const String streamUrl  =
-      'rtmp://10.96.79.235/live/biofeedback';
+      'http://10.96.79.235:8080/hls/biofeedback.m3u8';
 
   // ── Polling ─────────────────────────────────────────────
   static const int statusPollMs   = 2000;
