@@ -55,11 +55,11 @@ class InteractionBar extends StatelessWidget {
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(AppConstants.accentColor)
-                        .withOpacity(0.15),
+                        .withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: const Color(AppConstants.accentColor)
-                          .withOpacity(0.4),
+                          .withValues(alpha: 0.4),
                     ),
                   ),
                   child: Text(
@@ -116,7 +116,7 @@ class InteractionBar extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: isActive
                           ? const Color(AppConstants.accentColor)
-                              .withOpacity(0.15)
+                              .withValues(alpha: 0.15)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
