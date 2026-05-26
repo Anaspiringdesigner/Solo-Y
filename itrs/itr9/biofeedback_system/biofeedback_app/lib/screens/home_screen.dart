@@ -8,8 +8,8 @@ import '../providers/biofeedback_provider.dart';
 import '../services/calendar_service.dart';
 import '../widgets/video_stream_widget.dart';
 import '../widgets/vitals_card.dart';
-import '../widgets/hrv_chart.dart';
-import '../widgets/interaction_bar.dart';
+import '../widgets/hrv_chart.dart' as hrv_widget;
+import '../widgets/interaction_bar.dart' as interaction_widget;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -220,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 700),
-                      child: InteractionBar(
+                      child: interaction_widget.InteractionBar(
                         activeIndex:
                             s?.activeInteraction ?? 0,
                         isHolding:
@@ -238,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 800),
-                      child: HRVChart(
+                      child: hrv_widget.HRVChart(
                         hrvData: bio.hrvHistory,
                         hrData:  bio.hrHistory,
                       ),
