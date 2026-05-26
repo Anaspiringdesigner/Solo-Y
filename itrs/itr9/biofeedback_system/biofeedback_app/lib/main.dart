@@ -1,5 +1,3 @@
-// lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/biofeedback_provider.dart';
@@ -27,8 +25,8 @@ class BiofeedbackApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.dark(
-            primary:    const Color(AppConstants.accentColor),
-            surface:    const Color(AppConstants.surfaceColor),
+            primary: const Color(AppConstants.accentColor),
+            surface: const Color(AppConstants.surfaceColor),
           ),
           scaffoldBackgroundColor:
               const Color(AppConstants.bgColor),

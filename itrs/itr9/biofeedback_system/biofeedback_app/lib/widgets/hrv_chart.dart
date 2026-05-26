@@ -1,5 +1,3 @@
-// lib/widgets/hrv_chart.dart
-
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../constants.dart';
@@ -41,7 +39,7 @@ class HRVChart extends StatelessWidget {
           const SizedBox(height: 8),
           Expanded(
             child: hrvData.length < 2
-                ? Center(
+                ? const Center(
                     child: Text(
                       'Collecting data...',
                       style: TextStyle(
@@ -73,7 +71,7 @@ class HRVChart extends StatelessWidget {
                             show:  true,
                             color: const Color(
                                     AppConstants.calmColor)
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                           ),
                         ),
                       ],
