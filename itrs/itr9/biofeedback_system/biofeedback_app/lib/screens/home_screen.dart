@@ -1,5 +1,3 @@
-// lib/screens/home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -27,14 +25,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
-
     SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.edgeToEdge);
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BiofeedbackProvider>().startPolling();
     });
@@ -92,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
 
-              // ── Header ────────────────────────────────────
+              // ── Header ──────────────────────────────────
               FadeInDown(
                 duration: const Duration(milliseconds: 600),
                 child: Padding(
@@ -142,7 +137,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        bio.isConnected ? 'LIVE' : 'OFFLINE',
+                        bio.isConnected
+                            ? 'LIVE'
+                            : 'OFFLINE',
                         style: GoogleFonts.inter(
                           color: bio.isConnected
                               ? const Color(
@@ -161,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               const SizedBox(height: 12),
 
-              // ── Video Stream ──────────────────────────────
+              // ── Video Stream ────────────────────────────
               FadeIn(
                 duration: const Duration(milliseconds: 800),
                 child: const VideoStreamWidget(),
@@ -175,10 +172,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
 
-                    // ── Vitals Row ──────────────────────────
+                    // ── Vitals Row ────────────────────────
                     FadeInUp(
-                      duration:
-                          const Duration(milliseconds: 600),
+                      duration: const Duration(
+                          milliseconds: 600),
                       child: Row(
                         children: [
                           VitalsCard(
@@ -208,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             value: s != null
                                 ? s.avgBr.toStringAsFixed(1)
                                 : '--',
-                            unit:       '/min',
+                            unit:  '/min',
                             color: const Color(
                                 AppConstants.accentColor),
                             isStressed: false,
@@ -219,13 +216,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Interaction Bar ─────────────────────
+                    // ── Interaction Bar ───────────────────
                     FadeInUp(
-                      duration:
-                          const Duration(milliseconds: 700),
+                      duration: const Duration(
+                          milliseconds: 700),
                       child: InteractionBar(
-                        activeIndex: s?.activeInteraction ?? 0,
-                        isHolding:   s?.isHolding ?? false,
+                        activeIndex:
+                            s?.activeInteraction ?? 0,
+                        isHolding:
+                            s?.isHolding ?? false,
                         holdProgress:
                             s?.holdProgress ?? 0.0,
                         holdTimeRemaining:
@@ -235,10 +234,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── HRV Chart ───────────────────────────
+                    // ── HRV Chart ─────────────────────────
                     FadeInUp(
-                      duration:
-                          const Duration(milliseconds: 800),
+                      duration: const Duration(
+                          milliseconds: 800),
                       child: HRVChart(
                         hrvData: bio.hrvHistory,
                         hrData:  bio.hrHistory,
@@ -247,24 +246,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Trigger Message ─────────────────────
+                    // ── Trigger Message ───────────────────
                     if (bio.triggerMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
                           width:   double.infinity,
                           padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(
+                          margin:  const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: const Color(
                                     AppConstants.accentColor)
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                             borderRadius:
                                 BorderRadius.circular(12),
                             border: Border.all(
                               color: const Color(
                                       AppConstants.accentColor)
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                             ),
                           ),
                           child: Text(
@@ -279,22 +278,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                    // ── Calendar Message ────────────────────
+                    // ── Calendar Message ──────────────────
                     if (bio.calendarMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
                           width:   double.infinity,
                           padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(
+                          margin:  const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: Colors.purple
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                             borderRadius:
                                 BorderRadius.circular(12),
                             border: Border.all(
                               color: Colors.purple
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                             ),
                           ),
                           child: Text(
@@ -308,10 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                    // ── Manual Trigger Button ───────────────
+                    // ── Manual Trigger Button ─────────────
                     FadeInUp(
-                      duration:
-                          const Duration(milliseconds: 900),
+                      duration: const Duration(
+                          milliseconds: 900),
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -322,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(
                                     AppConstants.accentColor)
-                                .withOpacity(0.15),
+                                .withValues(alpha: 0.15),
                             foregroundColor: const Color(
                                 AppConstants.accentColor),
                             side: const BorderSide(
@@ -334,8 +333,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius:
                                   BorderRadius.circular(32),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 16),
+                            padding:
+                                const EdgeInsets.symmetric(
+                                    vertical: 16),
                           ),
                           child: bio.isTriggerLoading
                               ? const SizedBox(
@@ -344,15 +344,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child:
                                       CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Color(
-                                        AppConstants.accentColor),
+                                    color: Color(AppConstants
+                                        .accentColor),
                                   ),
                                 )
                               : Text(
                                   '⚡  Trigger Interaction',
                                   style: GoogleFonts.inter(
                                     fontSize:      15,
-                                    fontWeight:    FontWeight.w600,
+                                    fontWeight:
+                                        FontWeight.w600,
                                     letterSpacing: 0.5,
                                   ),
                                 ),
@@ -362,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Calendar Button ─────────────────────
+                    // ── Calendar Button ───────────────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 1000),
@@ -375,15 +376,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _calendarSignedIn
                                 ? Colors.purple
-                                    .withOpacity(0.05)
+                                    .withValues(alpha: 0.05)
                                 : Colors.purple
-                                    .withOpacity(0.15),
+                                    .withValues(alpha: 0.15),
                             foregroundColor:
                                 Colors.purpleAccent,
                             side: BorderSide(
                               color: _calendarSignedIn
                                   ? Colors.purple
-                                      .withOpacity(0.3)
+                                      .withValues(alpha: 0.3)
                                   : Colors.purpleAccent,
                               width: 1,
                             ),
@@ -391,8 +392,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius:
                                   BorderRadius.circular(32),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 16),
+                            padding:
+                                const EdgeInsets.symmetric(
+                                    vertical: 16),
                           ),
                           child: Text(
                             _calendarSignedIn
@@ -408,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                    // ── RL Debug Info ───────────────────────
+                    // ── RL Debug Info ─────────────────────
                     if (s != null) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
@@ -433,11 +435,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               _debugChip(
                                   'Step', '${s.step}'),
-                              _debugChip('ε',
-                                  s.epsilon.toStringAsFixed(3)),
+                              _debugChip(
+                                  'ε',
+                                  s.epsilon
+                                      .toStringAsFixed(3)),
                               _debugChip('Replay',
                                   '${s.replaySize}'),
-                              _debugChip('Reward',
+                              _debugChip(
+                                  'Reward',
                                   s.lastReward
                                       .toStringAsFixed(3)),
                             ],
@@ -462,9 +467,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(
           label,
-          style: TextStyle(
-            color:         const Color(
-                AppConstants.textSecondary),
+          style: const TextStyle(
+            color:         Color(AppConstants.textSecondary),
             fontSize:      10,
             letterSpacing: 1.0,
           ),

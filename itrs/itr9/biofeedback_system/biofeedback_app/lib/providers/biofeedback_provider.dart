@@ -25,7 +25,7 @@ class BiofeedbackProvider extends ChangeNotifier {
   // ── Start Polling ─────────────────────────────────────────
   void startPolling() {
     _statusTimer = Timer.periodic(
-      Duration(milliseconds: AppConstants.statusPollMs),
+      Const Duration(milliseconds: AppConstants.statusPollMs),
       (_) => _fetchStatus(),
     );
     _fetchStatus();
