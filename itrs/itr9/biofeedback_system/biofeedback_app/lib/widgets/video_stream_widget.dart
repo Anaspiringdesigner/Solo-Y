@@ -1,7 +1,5 @@
-// lib/widgets/video_stream_widget.dart
-
 import 'package:flutter/material.dart';
-import 'package:better_player/better_player.dart';
+import 'package:video_player/video_player.dart';
 import '../constants.dart';
 
 class VideoStreamWidget extends StatefulWidget {
@@ -13,8 +11,9 @@ class VideoStreamWidget extends StatefulWidget {
 }
 
 class _VideoStreamWidgetState extends State<VideoStreamWidget> {
-  BetterPlayerController? _controller;
-  bool _hasError = false;
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _hasError      = false;
 
   @override
   void initState() {
@@ -22,39 +21,26 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
     _initPlayer();
   }
 
-  void _initPlayer() {
-    final config = BetterPlayerConfiguration(
-      aspectRatio: 1.0,
-      fit:         BoxFit.contain,
-      autoPlay:    true,
-      looping:     true,
-      controlsConfiguration:
-          const BetterPlayerControlsConfiguration(
-        showControls: false,
-      ),
-    );
+  Future<void> _initPlayer() async {
+    try {
+      _controller = VideoPlayerController.networkUrl(
+        Uri.parse(AppConstants.streamUrl),
+      );
 
-    final dataSource = BetterPlayerDataSource(
-      BetterPlayerDataSourceType.network,
-      AppConstants.streamUrl,
-      liveStream: true,
-      bufferingConfiguration:
-          const BetterPlayerBufferingConfiguration(
-        minBufferMs:                          500,
-        maxBufferMs:                          1500,
-        bufferForPlaybackMs:                  500,
-        bufferForPlaybackAfterRebufferMs:     1000,
-      ),
-    );
+      await _controller!.initialize();
 
-    _controller = BetterPlayerController(config);
-    _controller!.setupDataSource(dataSource);
-    _controller!.addEventsListener((event) {
-      if (event.betterPlayerEventType ==
-          BetterPlayerEventType.exception) {
-        if (mounted) setState(() => _hasError = true);
+      _controller!.setLooping(true);
+      _controller!.play();
+
+      if (mounted) {
+        setState(() => _isInitialized = true);
       }
-    });
+    } catch (e) {
+      debugPrint('Video error: $e');
+      if (mounted) {
+        setState(() => _hasError = true);
+      }
+    }
   }
 
   @override
@@ -71,12 +57,17 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
       return _buildErrorWidget(size);
     }
 
+    if (!_isInitialized) {
+      return _buildLoadingWidget(size);
+    }
+
     return SizedBox(
       width:  size,
       height: size,
-      child: _controller != null
-          ? BetterPlayer(controller: _controller!)
-          : _buildLoadingWidget(size),
+      child: AspectRatio(
+        aspectRatio: 1.0,
+        child: VideoPlayer(_controller!),
+      ),
     );
   }
 
@@ -86,8 +77,21 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
       height: size,
       color:  const Color(AppConstants.surfaceColor),
       child:  const Center(
-        child: CircularProgressIndicator(
-          color: Color(AppConstants.accentColor),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              color: Color(AppConstants.accentColor),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Connecting to stream...',
+              style: TextStyle(
+                color:    Color(AppConstants.textSecondary),
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -98,28 +102,28 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
       width:  size,
       height: size,
       color:  const Color(AppConstants.surfaceColor),
-      child:  Column(
+      child:  const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.signal_wifi_off,
             color: Color(AppConstants.stressColor),
             size:  48,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Text(
             'Stream unavailable',
             style: TextStyle(
-              color:    const Color(AppConstants.textSecondary),
+              color:    Color(AppConstants.textSecondary),
               fontSize: 14,
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
-            AppConstants.streamUrl,
+            'Check OBS + nginx are running',
             style: TextStyle(
-              color:    const Color(AppConstants.textSecondary),
-              fontSize: 10,
+              color:    Color(AppConstants.textSecondary),
+              fontSize: 11,
             ),
           ),
         ],
