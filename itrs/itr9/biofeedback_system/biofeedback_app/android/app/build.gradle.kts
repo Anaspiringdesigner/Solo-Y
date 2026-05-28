@@ -37,6 +37,19 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packagingOptions {
+        pickFirst 'lib/**/libc++_shared.so'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile(
+                'proguard-android-optimize.txt'),
+                'proguard-rules.pro'
+        }
+    }
 }
 
 flutter {

@@ -121,6 +121,8 @@ function handle_ingest(req::HTTP.Request)
                 )
                 APP_STATE.active_interaction = action
                 APP_STATE.last_reward        = ENV_INSTANCE[].last_reward
+                TDBridge.send_vitals(0f0, 0f0, 0f0)
+                TDBridge.send_hold_progress(0, RLEnvironment.HOLD_STEPS)
                 ENV_INSTANCE[].is_terminated = false
             end
 

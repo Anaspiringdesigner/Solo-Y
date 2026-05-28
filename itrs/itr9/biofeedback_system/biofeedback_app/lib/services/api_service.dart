@@ -15,7 +15,7 @@ class ApiService {
     try {
       final resp = await http
           .get(Uri.parse('${AppConstants.serverBase}/status'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
 
       if (resp.statusCode == 200) {
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -38,7 +38,7 @@ class ApiService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'trigger_type': triggerType}),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 10));
 
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;

@@ -10,7 +10,8 @@ class VideoStreamWidget extends StatefulWidget {
       _VideoStreamWidgetState();
 }
 
-class _VideoStreamWidgetState extends State<VideoStreamWidget> {
+class _VideoStreamWidgetState
+    extends State<VideoStreamWidget> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError      = false;
@@ -25,12 +26,14 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
     try {
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(AppConstants.streamUrl),
+        httpHeaders: {
+          'Accept': '*/*',
+        },
       );
 
       await _controller!.initialize();
-
-      _controller!.setLooping(true);
-      _controller!.play();
+      await _controller!.setLooping(true);
+      await _controller!.play();
 
       if (mounted) {
         setState(() => _isInitialized = true);
@@ -64,9 +67,9 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
     return SizedBox(
       width:  size,
       height: size,
-      child: AspectRatio(
+      child:  AspectRatio(
         aspectRatio: 1.0,
-        child: VideoPlayer(_controller!),
+        child:       VideoPlayer(_controller!),
       ),
     );
   }

@@ -18,6 +18,7 @@ using Random
 using Statistics
 using BSON: @save, @load
 using Dates
+import ..TDBridge
 
 # ── Config ───────────────────────────────────────────────────
 const STATE_DIM     = 36

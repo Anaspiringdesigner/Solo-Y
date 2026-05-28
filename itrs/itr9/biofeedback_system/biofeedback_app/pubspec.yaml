@@ -12,6 +12,7 @@ dependencies:
 
   # Video streaming
   video_player:           ^2.8.2
+  flutter_vlc_player:     ^7.4.1
 
   # Charts
   fl_chart:               ^0.68.0
