@@ -169,7 +169,7 @@ function interpolate_limit(vals::Vector{Float64},
     i   = 1
     while i <= n
         if isnan(out[i])
-            # find the gap
+            # Find end of gap
             j = i
             while j <= n && isnan(out[j])
                 j += 1
@@ -177,12 +177,16 @@ function interpolate_limit(vals::Vector{Float64},
             gap_len = j - i
 
             if gap_len <= limit
-                left  = i > 1 ? out[i-1] : (j <= n ? out[j] : NaN)
-                right = j <= n ? out[j]   : out[i-1]
+                # Safe left value
+                left  = i > 1 ? out[i-1] : NaN
+                # Safe right value
+                right = j <= n ? out[j] : NaN
 
                 if !isnan(left) && !isnan(right)
+                    # Linear interpolation
                     for k in i:(j-1)
-                        t = (k - i + 1) / (gap_len + 1)
+                        t = Float64(k - i + 1) /
+                            Float64(gap_len + 1)
                         out[k] = left + t * (right - left)
                     end
                 elseif !isnan(left)

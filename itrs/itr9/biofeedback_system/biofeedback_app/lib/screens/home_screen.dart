@@ -1,3 +1,5 @@
+// lib/screens/home_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +11,8 @@ import '../services/calendar_service.dart';
 import '../widgets/video_stream_widget.dart';
 import '../widgets/vitals_card.dart';
 import '../widgets/hrv_chart.dart' as hrv_widget;
-import '../widgets/interaction_bar.dart' as interaction_widget;
+import '../widgets/interaction_bar.dart'
+    as interaction_widget;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -41,21 +44,29 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // ── Calendar Sign In ──────────────────────────────────────
   Future<void> _handleCalendarSignIn() async {
     final ok = await _calendar.signIn();
     if (ok && mounted) {
       setState(() => _calendarSignedIn = true);
-      _calendar.startPolling((eventName) {
+
+      _calendar.startDailyPlanning((eventName) {
         context
             .read<BiofeedbackProvider>()
             .fireCalendarTrigger(eventName);
       });
-      _showSnack('📅 Calendar connected');
+
+      _showSnack(
+        '📅 Calendar connected — '
+        '${_calendar.scheduledTriggerCount} '
+        'triggers scheduled today',
+      );
     } else {
       _showSnack('❌ Calendar sign in failed');
     }
   }
 
+  // ── Snackbar ──────────────────────────────────────────────
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -63,8 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
           message,
           style: GoogleFonts.inter(color: Colors.white),
         ),
-        backgroundColor: const Color(AppConstants.surfaceColor),
-        behavior:        SnackBarBehavior.floating,
+        backgroundColor:
+            const Color(AppConstants.surfaceColor),
+        behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -89,7 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // ── Header ──────────────────────────────────
               FadeInDown(
-                duration: const Duration(milliseconds: 600),
+                duration:
+                    const Duration(milliseconds: 600),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                       16, 16, 16, 0),
@@ -112,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Adaptive Interactions',
                             style: GoogleFonts.inter(
-                              color:      const Color(
+                              color: const Color(
                                   AppConstants.textPrimary),
                               fontSize:   20,
                               fontWeight: FontWeight.w700,
@@ -121,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                       const Spacer(),
+                      // ── Connection Indicator ─────────────
                       AnimatedContainer(
                         duration: const Duration(
                             milliseconds: 500),
@@ -160,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // ── Video Stream ────────────────────────────
               FadeIn(
-                duration: const Duration(milliseconds: 800),
+                duration:
+                    const Duration(milliseconds: 800),
                 child: const VideoStreamWidget(),
               ),
 
@@ -181,29 +196,32 @@ class _HomeScreenState extends State<HomeScreen> {
                           VitalsCard(
                             label: 'HR',
                             value: s != null
-                                ? s.avgHr.toStringAsFixed(0)
+                                ? s.avgHr
+                                    .toStringAsFixed(0)
                                 : '--',
                             unit:  'bpm',
                             color: const Color(
                                 AppConstants.stressColor),
-                            isStressed:
-                                s != null && s.avgHr > 90,
+                            isStressed: s != null &&
+                                s.avgHr > 90,
                           ),
                           VitalsCard(
                             label: 'HRV',
                             value: s != null
-                                ? s.avgHrv.toStringAsFixed(1)
+                                ? s.avgHrv
+                                    .toStringAsFixed(1)
                                 : '--',
                             unit:  'ms',
                             color: const Color(
                                 AppConstants.calmColor),
-                            isStressed:
-                                s != null && s.avgHrv < 20,
+                            isStressed: s != null &&
+                                s.avgHrv < 20,
                           ),
                           VitalsCard(
                             label: 'BR',
                             value: s != null
-                                ? s.avgBr.toStringAsFixed(1)
+                                ? s.avgBr
+                                    .toStringAsFixed(1)
                                 : '--',
                             unit:  '/min',
                             color: const Color(
@@ -220,7 +238,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 700),
-                      child: interaction_widget.InteractionBar(
+                      child:
+                          interaction_widget.InteractionBar(
                         activeIndex:
                             s?.activeInteraction ?? 0,
                         isHolding:
@@ -252,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Container(
                           width:   double.infinity,
                           padding: const EdgeInsets.all(12),
-                          margin:  const EdgeInsets.only(
+                          margin: const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: const Color(
@@ -262,7 +281,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 BorderRadius.circular(12),
                             border: Border.all(
                               color: const Color(
-                                      AppConstants.accentColor)
+                                      AppConstants
+                                          .accentColor)
                                   .withValues(alpha: 0.3),
                             ),
                           ),
@@ -284,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Container(
                           width:   double.infinity,
                           padding: const EdgeInsets.all(12),
-                          margin:  const EdgeInsets.only(
+                          margin: const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: Colors.purple
@@ -299,7 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Text(
                             bio.calendarMessage,
                             style: GoogleFonts.inter(
-                              color:    Colors.purpleAccent,
+                              color: Colors.purpleAccent,
                               fontSize: 13,
                             ),
                             textAlign: TextAlign.center,
@@ -333,9 +353,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius:
                                   BorderRadius.circular(32),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(
-                                    vertical: 16),
+                            padding: const EdgeInsets
+                                .symmetric(vertical: 16),
                           ),
                           child: bio.isTriggerLoading
                               ? const SizedBox(
@@ -363,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Calendar Button ───────────────────
+                    // ── Calendar Connect Button ───────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 1000),
@@ -392,9 +411,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius:
                                   BorderRadius.circular(32),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(
-                                    vertical: 16),
+                            padding: const EdgeInsets
+                                .symmetric(vertical: 16),
                           ),
                           child: Text(
                             _calendarSignedIn
@@ -409,6 +427,38 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+
+                    // ── Calendar Refresh Button ───────────
+                    if (_calendarSignedIn) ...[
+                      const SizedBox(height: 8),
+                      FadeInUp(
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: () async {
+                              await _calendar.refreshToday();
+                              if (mounted) {
+                                _showSnack(
+                                  '🔄 Refreshed — '
+                                  '${_calendar.scheduledTriggerCount} '
+                                  'triggers scheduled',
+                                );
+                              }
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(
+                                  AppConstants
+                                      .textSecondary),
+                            ),
+                            child: Text(
+                              '🔄  Refresh Today\'s Schedule',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
 
                     // ── RL Debug Info ─────────────────────
                     if (s != null) ...[

@@ -9,27 +9,45 @@ import 'package:http/http.dart' as http;
 import '../constants.dart';
 
 class CalendarService {
-  static final CalendarService _instance = CalendarService._internal();
+  static final CalendarService _instance =
+      CalendarService._internal();
   factory CalendarService() => _instance;
   CalendarService._internal();
 
+  // ── Google Sign In ────────────────────────────────────────
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [gcal.CalendarApi.calendarReadonlyScope],
+    // Web Client ID — required for Calendar API access
+    serverClientId:
+        '760908125337-sfppi17rht5mkv6ckcm28q2g25r5ru5i'
+        '.apps.googleusercontent.com',
+    scopes: [
+      gcal.CalendarApi.calendarReadonlyScope,
+      'email',
+      'profile',
+    ],
   );
 
   bool   isSignedIn = false;
-  Timer? _calendarTimer;
+  Timer? _dailyTimer;
+  Timer? _eventTimers_check;
 
+  // List of scheduled event timers
+  final List<Timer> _eventTimers = [];
+
+  // Callback when event trigger fires
   Function(String eventName)? onEventDetected;
 
   // ── Sign In ───────────────────────────────────────────────
   Future<bool> signIn() async {
     try {
       final account = await _googleSignIn.signIn();
-      isSignedIn = account != null;
-      return isSignedIn;
+      if (account == null) return false;
+
+      isSignedIn = true;
+      debugPrint('[CALENDAR] Signed in: ${account.email}');
+      return true;
     } catch (e) {
-      debugPrint('Calendar sign in error: $e');
+      debugPrint('[CALENDAR] Sign in error: $e');
       return false;
     }
   }
@@ -38,34 +56,74 @@ class CalendarService {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     isSignedIn = false;
-    _calendarTimer?.cancel();
+    _cancelAllTimers();
   }
 
-  // ── Start Polling ─────────────────────────────────────────
-  void startPolling(Function(String) onEvent) {
+  // ── Start Daily Planning ──────────────────────────────────
+  void startDailyPlanning(Function(String) onEvent) {
     onEventDetected = onEvent;
-    _calendarTimer  = Timer.periodic(
-      Duration(milliseconds: AppConstants.calendarPollMs),
-      (_) => _checkUpcomingEvents(),
-    );
-    _checkUpcomingEvents();
+
+    // Plan immediately for today
+    _planTodayEvents();
+
+    // Re-plan every day at midnight
+    _scheduleMidnightRefresh();
+  }
+
+  // ── Cancel All Timers ─────────────────────────────────────
+  void _cancelAllTimers() {
+    for (final t in _eventTimers) {
+      t.cancel();
+    }
+    _eventTimers.clear();
+    _dailyTimer?.cancel();
+    _eventTimers_check?.cancel();
   }
 
   void stopPolling() {
-    _calendarTimer?.cancel();
+    _cancelAllTimers();
   }
 
-  // ── Check Upcoming Events ─────────────────────────────────
-  Future<void> _checkUpcomingEvents() async {
+  // ── Schedule Midnight Refresh ─────────────────────────────
+  void _scheduleMidnightRefresh() {
+    final now      = DateTime.now();
+    final midnight = DateTime(
+        now.year, now.month, now.day + 1, 0, 0, 0);
+    final timeUntilMidnight = midnight.difference(now);
+
+    _dailyTimer = Timer(timeUntilMidnight, () {
+      _planTodayEvents();
+      // Then repeat every 24 hours
+      _dailyTimer = Timer.periodic(
+        const Duration(hours: 24),
+        (_) => _planTodayEvents(),
+      );
+    });
+
+    debugPrint('[CALENDAR] Next refresh in: '
+        '${timeUntilMidnight.inHours}h '
+        '${timeUntilMidnight.inMinutes % 60}m');
+  }
+
+  // ── Plan Today's Events ───────────────────────────────────
+  Future<void> _planTodayEvents() async {
     if (!isSignedIn) return;
 
     try {
-      final account = await _googleSignIn.signInSilently();
+      // Cancel existing event timers
+      for (final t in _eventTimers) {
+        t.cancel();
+      }
+      _eventTimers.clear();
+
+      final account =
+          await _googleSignIn.signInSilently();
       if (account == null) return;
 
       final auth = await account.authentication;
       if (auth.accessToken == null) return;
 
+      // Build authenticated HTTP client
       final client = authenticatedClient(
         http.Client(),
         AccessCredentials(
@@ -81,32 +139,91 @@ class CalendarService {
       );
 
       final calApi = gcal.CalendarApi(client);
-      final now    = DateTime.now().toUtc();
-      final ahead  = now.add(Duration(
-          minutes: AppConstants.calendarLookAheadMin));
+
+      // Fetch ALL events for today
+      final now       = DateTime.now();
+      final startOfDay = DateTime(
+          now.year, now.month, now.day, 0, 0, 0)
+          .toUtc();
+      final endOfDay  = DateTime(
+          now.year, now.month, now.day, 23, 59, 59)
+          .toUtc();
 
       final events = await calApi.events.list(
         'primary',
-        timeMin:      now,
-        timeMax:      ahead,
+        timeMin:      startOfDay,
+        timeMax:      endOfDay,
         singleEvents: true,
         orderBy:      'startTime',
-        maxResults:   5,
+        maxResults:   50,
       );
 
       client.close();
 
-      if (events.items != null &&
-          events.items!.isNotEmpty) {
-        for (final event in events.items!) {
-          final name = event.summary ?? 'Calendar Event';
-          debugPrint('[CALENDAR] Upcoming: $name');
-          onEventDetected?.call(name);
-          break;
-        }
+      if (events.items == null ||
+          events.items!.isEmpty) {
+        debugPrint('[CALENDAR] No events today');
+        return;
       }
+
+      debugPrint('[CALENDAR] Found '
+          '${events.items!.length} events today');
+
+      // Schedule trigger for each event
+      int scheduled = 0;
+      for (final event in events.items!) {
+        final eventName =
+            event.summary ?? 'Calendar Event';
+        final startTime =
+            event.start?.dateTime?.toLocal();
+
+        if (startTime == null) continue;
+
+        // Trigger 5 minutes before event
+        final triggerTime = startTime.subtract(
+            Duration(
+                minutes:
+                    AppConstants.calendarLookAheadMin));
+
+        // Skip if trigger time already passed
+        if (triggerTime.isBefore(DateTime.now())) {
+          debugPrint('[CALENDAR] Skipping past '
+              'event: $eventName at $startTime');
+          continue;
+        }
+
+        final delay = triggerTime
+            .difference(DateTime.now());
+
+        debugPrint('[CALENDAR] Scheduled: '
+            '$eventName → triggers in '
+            '${delay.inMinutes}m '
+            '${delay.inSeconds % 60}s');
+
+        // Schedule the trigger
+        final timer = Timer(delay, () {
+          debugPrint('[CALENDAR] ⚡ Firing trigger '
+              'for: $eventName');
+          onEventDetected?.call(eventName);
+        });
+
+        _eventTimers.add(timer);
+        scheduled++;
+      }
+
+      debugPrint('[CALENDAR] Scheduled '
+          '$scheduled triggers for today');
+
     } catch (e) {
       debugPrint('[CALENDAR ERROR] $e');
     }
   }
+
+  // ── Manual Refresh ────────────────────────────────────────
+  Future<void> refreshToday() async {
+    await _planTodayEvents();
+  }
+
+  // ── Get Today's Event Count ───────────────────────────────
+  int get scheduledTriggerCount => _eventTimers.length;
 }
