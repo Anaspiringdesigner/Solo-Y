@@ -300,9 +300,10 @@ function main()
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
 
-    # Step 5: Start DataStreamer in background
-    println("\n[INIT] Starting ADB DataStreamer...")
-    @async DataStreamer.watch()
+    # Data now comes directly from Flutter app
+    # ADB streamer disabled
+    println("\n[INIT] Data transfer via Flutter app")
+    println("  → Start data transfer in the Flutter app")
 
     # Step 6: Start HTTP server
     println("\n[INIT] HTTP server starting on port $(BRAIN_PORT)...")

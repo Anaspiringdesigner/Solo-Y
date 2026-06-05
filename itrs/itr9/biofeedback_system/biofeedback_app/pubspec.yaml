@@ -39,3 +39,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+# Background service
+flutter_background_service:  ^5.0.5
+flutter_background_service_android: ^6.2.2
+
+# File access on Android
+path_provider:               ^2.1.3
+permission_handler:          ^11.3.1

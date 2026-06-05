@@ -1,9 +1,8 @@
-// lib/providers/biofeedback_provider.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/biofeedback_model.dart';
 import '../services/api_service.dart';
+import '../services/data_transfer_service.dart';
 import '../constants.dart';
 
 class BiofeedbackProvider extends ChangeNotifier {
@@ -11,12 +10,13 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   // ── State ─────────────────────────────────────────────────
   BiofeedbackStatus? status;
-  bool   isConnected      = false;
-  bool   isTriggerLoading = false;
-  String triggerMessage   = '';
-  String calendarMessage  = '';
+  bool   isConnected          = false;
+  bool   isTriggerLoading     = false;
+  bool   isDataTransferActive = false;
+  String triggerMessage       = '';
+  String calendarMessage      = '';
+  String dataTransferStatus   = 'Stopped';
 
-  // History for chart (last 60 readings)
   final List<double> hrvHistory = [];
   final List<double> hrHistory  = [];
 
@@ -25,7 +25,8 @@ class BiofeedbackProvider extends ChangeNotifier {
   // ── Start Polling ─────────────────────────────────────────
   void startPolling() {
     _statusTimer = Timer.periodic(
-      const Duration(milliseconds: AppConstants.statusPollMs),
+      const Duration(
+          milliseconds: AppConstants.statusPollMs),
       (_) => _fetchStatus(),
     );
     _fetchStatus();
@@ -33,6 +34,33 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   void stopPolling() {
     _statusTimer?.cancel();
+  }
+
+  // ── Start Data Transfer ───────────────────────────────────
+  Future<void> startDataTransfer() async {
+    await DataTransferService.start();
+    isDataTransferActive = true;
+    dataTransferStatus   = 'Running';
+    notifyListeners();
+  }
+
+  // ── Stop Data Transfer ────────────────────────────────────
+  Future<void> stopDataTransfer() async {
+    await DataTransferService.stop();
+    isDataTransferActive = false;
+    dataTransferStatus   = 'Stopped';
+    notifyListeners();
+  }
+
+  // ── Check Transfer Status ─────────────────────────────────
+  Future<void> checkDataTransferStatus() async {
+    final running =
+        await DataTransferService.isRunning();
+    isDataTransferActive = running;
+    dataTransferStatus   = running
+        ? 'Running'
+        : 'Stopped';
+    notifyListeners();
   }
 
   // ── Fetch Status ──────────────────────────────────────────
@@ -58,21 +86,24 @@ class BiofeedbackProvider extends ChangeNotifier {
     triggerMessage   = '';
     notifyListeners();
 
-    final result = await _api.fireTrigger(triggerType: 2);
+    final result = await _api.fireTrigger(
+        triggerType: 2);
 
     isTriggerLoading = false;
 
     if (result != null && result['ok'] == true) {
-      triggerMessage = '✅ ${result['name']} selected';
-    } else if (result != null && result['ok'] == false) {
-      triggerMessage = result['reason'] ?? '⚠️ Could not trigger';
+      triggerMessage =
+          '✅ ${result['name']} selected';
+    } else if (result != null &&
+               result['ok'] == false) {
+      triggerMessage =
+          result['reason'] ?? '⚠️ Could not trigger';
     } else {
       triggerMessage = '❌ Server not reachable';
     }
 
     notifyListeners();
 
-    // Clear message after 3 seconds
     Future.delayed(const Duration(seconds: 3), () {
       triggerMessage = '';
       notifyListeners();
@@ -80,9 +111,11 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   // ── Calendar Trigger ──────────────────────────────────────
-  Future<void> fireCalendarTrigger(String eventName) async {
+  Future<void> fireCalendarTrigger(
+      String eventName) async {
     await _api.fireCalendarTrigger();
-    calendarMessage = '📅 $eventName — interaction selected';
+    calendarMessage =
+        '📅 $eventName — interaction selected';
     notifyListeners();
 
     Future.delayed(const Duration(seconds: 5), () {

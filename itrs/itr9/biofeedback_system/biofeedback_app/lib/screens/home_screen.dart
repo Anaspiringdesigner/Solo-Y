@@ -13,6 +13,7 @@ import '../widgets/vitals_card.dart';
 import '../widgets/hrv_chart.dart' as hrv_widget;
 import '../widgets/interaction_bar.dart'
     as interaction_widget;
+import 'package:permission_handler/permission_handler.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,6 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
         SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BiofeedbackProvider>().startPolling();
+      context
+          .read<BiofeedbackProvider>()
+          .checkDataTransferStatus();
     });
   }
 
@@ -49,13 +53,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final ok = await _calendar.signIn();
     if (ok && mounted) {
       setState(() => _calendarSignedIn = true);
-
       _calendar.startDailyPlanning((eventName) {
         context
             .read<BiofeedbackProvider>()
             .fireCalendarTrigger(eventName);
       });
-
       _showSnack(
         '📅 Calendar connected — '
         '${_calendar.scheduledTriggerCount} '
@@ -72,7 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
       SnackBar(
         content: Text(
           message,
-          style: GoogleFonts.inter(color: Colors.white),
+          style: GoogleFonts.inter(
+              color: Colors.white),
         ),
         backgroundColor:
             const Color(AppConstants.surfaceColor),
@@ -91,21 +94,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final s   = bio.status;
 
     return Scaffold(
-      backgroundColor: const Color(AppConstants.bgColor),
+      backgroundColor:
+          const Color(AppConstants.bgColor),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
             children: [
 
-              // ── Header ──────────────────────────────────
+              // ── Header ──────────────────────────────
               FadeInDown(
-                duration:
-                    const Duration(milliseconds: 600),
+                duration: const Duration(
+                    milliseconds: 600),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      16, 16, 16, 0),
+                  padding:
+                      const EdgeInsets.fromLTRB(
+                          16, 16, 16, 0),
                   child: Row(
                     children: [
                       Column(
@@ -116,9 +122,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             'BIOFEEDBACK',
                             style: GoogleFonts.inter(
                               color: const Color(
-                                  AppConstants.accentColor),
+                                  AppConstants
+                                      .accentColor),
                               fontSize:      11,
-                              fontWeight:    FontWeight.w600,
+                              fontWeight:
+                                  FontWeight.w600,
                               letterSpacing: 2.0,
                             ),
                           ),
@@ -126,15 +134,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             'Adaptive Interactions',
                             style: GoogleFonts.inter(
                               color: const Color(
-                                  AppConstants.textPrimary),
+                                  AppConstants
+                                      .textPrimary),
                               fontSize:   20,
-                              fontWeight: FontWeight.w700,
+                              fontWeight:
+                                  FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
                       const Spacer(),
-                      // ── Connection Indicator ─────────────
+                      // Connection indicator
                       AnimatedContainer(
                         duration: const Duration(
                             milliseconds: 500),
@@ -144,9 +154,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           shape: BoxShape.circle,
                           color: bio.isConnected
                               ? const Color(
-                                  AppConstants.calmColor)
+                                  AppConstants
+                                      .calmColor)
                               : const Color(
-                                  AppConstants.stressColor),
+                                  AppConstants
+                                      .stressColor),
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -157,9 +169,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: GoogleFonts.inter(
                           color: bio.isConnected
                               ? const Color(
-                                  AppConstants.calmColor)
+                                  AppConstants
+                                      .calmColor)
                               : const Color(
-                                  AppConstants.stressColor),
+                                  AppConstants
+                                      .stressColor),
                           fontSize:      10,
                           fontWeight:    FontWeight.w600,
                           letterSpacing: 1.5,
@@ -172,10 +186,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
               const SizedBox(height: 12),
 
-              // ── Video Stream ────────────────────────────
+              // ── Video Stream ────────────────────────
               FadeIn(
-                duration:
-                    const Duration(milliseconds: 800),
+                duration: const Duration(
+                    milliseconds: 800),
                 child: const VideoStreamWidget(),
               ),
 
@@ -187,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
 
-                    // ── Vitals Row ────────────────────────
+                    // ── Vitals Row ──────────────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 600),
@@ -201,7 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : '--',
                             unit:  'bpm',
                             color: const Color(
-                                AppConstants.stressColor),
+                                AppConstants
+                                    .stressColor),
                             isStressed: s != null &&
                                 s.avgHr > 90,
                           ),
@@ -213,7 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : '--',
                             unit:  'ms',
                             color: const Color(
-                                AppConstants.calmColor),
+                                AppConstants
+                                    .calmColor),
                             isStressed: s != null &&
                                 s.avgHrv < 20,
                           ),
@@ -225,7 +241,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : '--',
                             unit:  '/min',
                             color: const Color(
-                                AppConstants.accentColor),
+                                AppConstants
+                                    .accentColor),
                             isStressed: false,
                           ),
                         ],
@@ -234,12 +251,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Interaction Bar ───────────────────
+                    // ── Interaction Bar ─────────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 700),
-                      child:
-                          interaction_widget.InteractionBar(
+                      child: interaction_widget
+                          .InteractionBar(
                         activeIndex:
                             s?.activeInteraction ?? 0,
                         isHolding:
@@ -247,13 +264,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         holdProgress:
                             s?.holdProgress ?? 0.0,
                         holdTimeRemaining:
-                            s?.holdTimeRemaining ?? '0:00',
+                            s?.holdTimeRemaining ??
+                                '0:00',
                       ),
                     ),
 
                     const SizedBox(height: 12),
 
-                    // ── HRV Chart ─────────────────────────
+                    // ── HRV Chart ───────────────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 800),
@@ -265,32 +283,259 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Trigger Message ───────────────────
+                    // ── Data Transfer Card ──────────
+                    FadeInUp(
+                      duration: const Duration(
+                          milliseconds: 850),
+                      child: Container(
+                        width:   double.infinity,
+                        padding:
+                            const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                              AppConstants
+                                  .surfaceColor),
+                          borderRadius:
+                              BorderRadius.circular(
+                                  16),
+                          border: Border.all(
+                            color: const Color(
+                                AppConstants
+                                    .cardBorder),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration:
+                                      const Duration(
+                                          milliseconds:
+                                              500),
+                                  width:  8,
+                                  height: 8,
+                                  decoration:
+                                      BoxDecoration(
+                                    shape:
+                                        BoxShape.circle,
+                                    color: bio
+                                            .isDataTransferActive
+                                        ? const Color(
+                                            AppConstants
+                                                .calmColor)
+                                        : const Color(
+                                            AppConstants
+                                                .textSecondary),
+                                  ),
+                                ),
+                                const SizedBox(
+                                    width: 8),
+                                Text(
+                                  'DATA TRANSFER',
+                                  style:
+                                      GoogleFonts.inter(
+                                    color: const Color(
+                                        AppConstants
+                                            .textSecondary),
+                                    fontSize:      11,
+                                    fontWeight:
+                                        FontWeight.w600,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  bio.dataTransferStatus,
+                                  style:
+                                      GoogleFonts.inter(
+                                    color: bio
+                                            .isDataTransferActive
+                                        ? const Color(
+                                            AppConstants
+                                                .calmColor)
+                                        : const Color(
+                                            AppConstants
+                                                .textSecondary),
+                                    fontSize:   12,
+                                    fontWeight:
+                                        FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child:
+                                      ElevatedButton(
+                                    onPressed: bio
+                                            .isDataTransferActive
+                                        ? null
+                                        : () async {
+                                            await Permission
+                                                .manageExternalStorage
+                                                .request();
+                                            await bio
+                                                .startDataTransfer();
+                                          },
+                                    style: ElevatedButton
+                                        .styleFrom(
+                                      backgroundColor:
+                                          const Color(
+                                                  AppConstants
+                                                      .calmColor)
+                                              .withValues(
+                                                  alpha:
+                                                      0.15),
+                                      foregroundColor:
+                                          const Color(
+                                              AppConstants
+                                                  .calmColor),
+                                      side: BorderSide(
+                                        color: bio
+                                                .isDataTransferActive
+                                            ? const Color(
+                                                    AppConstants
+                                                        .calmColor)
+                                                .withValues(
+                                                    alpha:
+                                                        0.3)
+                                            : const Color(
+                                                AppConstants
+                                                    .calmColor),
+                                      ),
+                                      shape:
+                                          RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius
+                                                .circular(
+                                                    12),
+                                      ),
+                                      padding:
+                                          const EdgeInsets
+                                              .symmetric(
+                                              vertical:
+                                                  12),
+                                    ),
+                                    child: Text(
+                                      '▶  Start',
+                                      style:
+                                          GoogleFonts
+                                              .inter(
+                                        fontSize:   13,
+                                        fontWeight:
+                                            FontWeight
+                                                .w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(
+                                    width: 8),
+                                Expanded(
+                                  child:
+                                      ElevatedButton(
+                                    onPressed: bio
+                                            .isDataTransferActive
+                                        ? () => bio
+                                            .stopDataTransfer()
+                                        : null,
+                                    style: ElevatedButton
+                                        .styleFrom(
+                                      backgroundColor:
+                                          const Color(
+                                                  AppConstants
+                                                      .stressColor)
+                                              .withValues(
+                                                  alpha:
+                                                      0.15),
+                                      foregroundColor:
+                                          const Color(
+                                              AppConstants
+                                                  .stressColor),
+                                      side: BorderSide(
+                                        color: bio
+                                                .isDataTransferActive
+                                            ? const Color(
+                                                AppConstants
+                                                    .stressColor)
+                                            : const Color(
+                                                    AppConstants
+                                                        .stressColor)
+                                                .withValues(
+                                                    alpha:
+                                                        0.3),
+                                      ),
+                                      shape:
+                                          RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius
+                                                .circular(
+                                                    12),
+                                      ),
+                                      padding:
+                                          const EdgeInsets
+                                              .symmetric(
+                                              vertical:
+                                                  12),
+                                    ),
+                                    child: Text(
+                                      '⏹  Stop',
+                                      style:
+                                          GoogleFonts
+                                              .inter(
+                                        fontSize:   13,
+                                        fontWeight:
+                                            FontWeight
+                                                .w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // ── Trigger Message ─────────────
                     if (bio.triggerMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
-                          width:   double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          width: double.infinity,
+                          padding:
+                              const EdgeInsets.all(12),
                           margin: const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: const Color(
-                                    AppConstants.accentColor)
+                                    AppConstants
+                                        .accentColor)
                                 .withValues(alpha: 0.1),
                             borderRadius:
-                                BorderRadius.circular(12),
+                                BorderRadius.circular(
+                                    12),
                             border: Border.all(
                               color: const Color(
                                       AppConstants
                                           .accentColor)
-                                  .withValues(alpha: 0.3),
+                                  .withValues(
+                                      alpha: 0.3),
                             ),
                           ),
                           child: Text(
                             bio.triggerMessage,
                             style: GoogleFonts.inter(
                               color: const Color(
-                                  AppConstants.accentColor),
+                                  AppConstants
+                                      .accentColor),
                               fontSize: 13,
                             ),
                             textAlign: TextAlign.center,
@@ -298,22 +543,25 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                    // ── Calendar Message ──────────────────
+                    // ── Calendar Message ────────────
                     if (bio.calendarMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
-                          width:   double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          width: double.infinity,
+                          padding:
+                              const EdgeInsets.all(12),
                           margin: const EdgeInsets.only(
                               bottom: 12),
                           decoration: BoxDecoration(
                             color: Colors.purple
                                 .withValues(alpha: 0.1),
                             borderRadius:
-                                BorderRadius.circular(12),
+                                BorderRadius.circular(
+                                    12),
                             border: Border.all(
                               color: Colors.purple
-                                  .withValues(alpha: 0.3),
+                                  .withValues(
+                                      alpha: 0.3),
                             ),
                           ),
                           child: Text(
@@ -327,34 +575,41 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                    // ── Manual Trigger Button ─────────────
+                    // ── Manual Trigger Button ───────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 900),
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: bio.isTriggerLoading
-                              ? null
-                              : () =>
-                                  bio.fireManualTrigger(),
-                          style: ElevatedButton.styleFrom(
+                          onPressed:
+                              bio.isTriggerLoading
+                                  ? null
+                                  : () => bio
+                                      .fireManualTrigger(),
+                          style:
+                              ElevatedButton.styleFrom(
                             backgroundColor: const Color(
-                                    AppConstants.accentColor)
+                                    AppConstants
+                                        .accentColor)
                                 .withValues(alpha: 0.15),
                             foregroundColor: const Color(
                                 AppConstants.accentColor),
                             side: const BorderSide(
                               color: Color(
-                                  AppConstants.accentColor),
+                                  AppConstants
+                                      .accentColor),
                               width: 1,
                             ),
-                            shape: RoundedRectangleBorder(
+                            shape:
+                                RoundedRectangleBorder(
                               borderRadius:
-                                  BorderRadius.circular(32),
+                                  BorderRadius.circular(
+                                      32),
                             ),
-                            padding: const EdgeInsets
-                                .symmetric(vertical: 16),
+                            padding:
+                                const EdgeInsets.symmetric(
+                                    vertical: 16),
                           ),
                           child: bio.isTriggerLoading
                               ? const SizedBox(
@@ -363,8 +618,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child:
                                       CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Color(AppConstants
-                                        .accentColor),
+                                    color: Color(
+                                        AppConstants
+                                            .accentColor),
                                   ),
                                 )
                               : Text(
@@ -382,7 +638,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ── Calendar Connect Button ───────────
+                    // ── Calendar Button ─────────────
                     FadeInUp(
                       duration: const Duration(
                           milliseconds: 1000),
@@ -392,27 +648,35 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _calendarSignedIn
                               ? null
                               : _handleCalendarSignIn,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _calendarSignedIn
-                                ? Colors.purple
-                                    .withValues(alpha: 0.05)
-                                : Colors.purple
-                                    .withValues(alpha: 0.15),
+                          style:
+                              ElevatedButton.styleFrom(
+                            backgroundColor:
+                                _calendarSignedIn
+                                    ? Colors.purple
+                                        .withValues(
+                                            alpha: 0.05)
+                                    : Colors.purple
+                                        .withValues(
+                                            alpha: 0.15),
                             foregroundColor:
                                 Colors.purpleAccent,
                             side: BorderSide(
                               color: _calendarSignedIn
                                   ? Colors.purple
-                                      .withValues(alpha: 0.3)
+                                      .withValues(
+                                          alpha: 0.3)
                                   : Colors.purpleAccent,
                               width: 1,
                             ),
-                            shape: RoundedRectangleBorder(
+                            shape:
+                                RoundedRectangleBorder(
                               borderRadius:
-                                  BorderRadius.circular(32),
+                                  BorderRadius.circular(
+                                      32),
                             ),
-                            padding: const EdgeInsets
-                                .symmetric(vertical: 16),
+                            padding:
+                                const EdgeInsets.symmetric(
+                                    vertical: 16),
                           ),
                           child: Text(
                             _calendarSignedIn
@@ -428,7 +692,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                    // ── Calendar Refresh Button ───────────
+                    // ── Calendar Refresh ────────────
                     if (_calendarSignedIn) ...[
                       const SizedBox(height: 8),
                       FadeInUp(
@@ -436,7 +700,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: double.infinity,
                           child: TextButton(
                             onPressed: () async {
-                              await _calendar.refreshToday();
+                              await _calendar
+                                  .refreshToday();
                               if (mounted) {
                                 _showSnack(
                                   '🔄 Refreshed — '
@@ -446,8 +711,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               }
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(
-                                  AppConstants
+                              foregroundColor:
+                                  const Color(AppConstants
                                       .textSecondary),
                             ),
                             child: Text(
@@ -460,41 +725,48 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
 
-                    // ── RL Debug Info ─────────────────────
+                    // ── RL Debug Info ───────────────
                     if (s != null) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
                         duration: const Duration(
                             milliseconds: 1100),
                         child: Container(
-                          width:   double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          width: double.infinity,
+                          padding:
+                              const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: const Color(
-                                AppConstants.surfaceColor),
+                                AppConstants
+                                    .surfaceColor),
                             borderRadius:
-                                BorderRadius.circular(12),
+                                BorderRadius.circular(
+                                    12),
                             border: Border.all(
                               color: const Color(
-                                  AppConstants.cardBorder),
+                                  AppConstants
+                                      .cardBorder),
                             ),
                           ),
                           child: Row(
                             mainAxisAlignment:
-                                MainAxisAlignment.spaceEvenly,
+                                MainAxisAlignment
+                                    .spaceEvenly,
                             children: [
                               _debugChip(
                                   'Step', '${s.step}'),
                               _debugChip(
                                   'ε',
                                   s.epsilon
-                                      .toStringAsFixed(3)),
+                                      .toStringAsFixed(
+                                          3)),
                               _debugChip('Replay',
                                   '${s.replaySize}'),
                               _debugChip(
                                   'Reward',
                                   s.lastReward
-                                      .toStringAsFixed(3)),
+                                      .toStringAsFixed(
+                                          3)),
                             ],
                           ),
                         ),
@@ -518,7 +790,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           label,
           style: const TextStyle(
-            color:         Color(AppConstants.textSecondary),
+            color: Color(AppConstants.textSecondary),
             fontSize:      10,
             letterSpacing: 1.0,
           ),
@@ -527,7 +799,8 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           value,
           style: GoogleFonts.inter(
-            color:      const Color(AppConstants.textPrimary),
+            color: const Color(
+                AppConstants.textPrimary),
             fontSize:   13,
             fontWeight: FontWeight.w600,
           ),
