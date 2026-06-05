@@ -2,6 +2,7 @@ include: package:flutter_lints/flutter.yaml
 
 linter:
   rules:
-    prefer_const_constructors: false
-    unnecessary_const: false
-    prefer_const_literals_to_create_immutables: false
+    prefer_const_constructors:                        false
+    unnecessary_const:                                false
+    prefer_const_literals_to_create_immutables:       false
+    constant_identifier_names:                        false

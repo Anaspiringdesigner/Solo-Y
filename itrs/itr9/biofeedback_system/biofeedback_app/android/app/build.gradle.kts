@@ -5,8 +5,8 @@ plugins {
 }
 
 android {
-    namespace = "com.example.biofeedback_app"
-    compileSdk = flutter.compileSdkVersion
+    namespace  = "com.example.biofeedback_app"
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,9 +21,9 @@ android {
     defaultConfig {
         applicationId = "com.example.biofeedback_app"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        targetSdk     = 36
+        versionCode   = flutter.versionCode
+        versionName   = flutter.versionName
     }
 
     packaging {
@@ -34,15 +34,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        debug {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                signingConfigs.getByName("debug")
         }
     }
 }

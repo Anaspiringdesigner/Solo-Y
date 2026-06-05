@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import '../constants.dart';
 
 class VideoStreamWidget extends StatefulWidget {
@@ -12,9 +13,10 @@ class VideoStreamWidget extends StatefulWidget {
 
 class _VideoStreamWidgetState
     extends State<VideoStreamWidget> {
-  VideoPlayerController? _controller;
-  bool _isInitialized = false;
-  bool _hasError      = false;
+
+  late final Player         _player;
+  late final VideoController _controller;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -24,22 +26,22 @@ class _VideoStreamWidgetState
 
   Future<void> _initPlayer() async {
     try {
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(AppConstants.streamUrl),
-        httpHeaders: {
-          'Accept': '*/*',
-        },
+      _player     = Player();
+      _controller = VideoController(_player);
+
+      await _player.open(
+        Media(AppConstants.streamUrl),
+        play: true,
       );
 
-      await _controller!.initialize();
-      await _controller!.setLooping(true);
-      await _controller!.play();
-
-      if (mounted) {
-        setState(() => _isInitialized = true);
-      }
+      _player.stream.error.listen((error) {
+        debugPrint('MediaKit error: $error');
+        if (mounted) {
+          setState(() => _hasError = true);
+        }
+      });
     } catch (e) {
-      debugPrint('Video error: $e');
+      debugPrint('Player init error: $e');
       if (mounted) {
         setState(() => _hasError = true);
       }
@@ -48,7 +50,7 @@ class _VideoStreamWidgetState
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _player.dispose();
     super.dispose();
   }
 
@@ -60,42 +62,15 @@ class _VideoStreamWidgetState
       return _buildErrorWidget(size);
     }
 
-    if (!_isInitialized) {
-      return _buildLoadingWidget(size);
-    }
-
     return SizedBox(
       width:  size,
       height: size,
-      child:  AspectRatio(
+      child:  Video(
+        controller:  _controller,
         aspectRatio: 1.0,
-        child:       VideoPlayer(_controller!),
-      ),
-    );
-  }
-
-  Widget _buildLoadingWidget(double size) {
-    return Container(
-      width:  size,
-      height: size,
-      color:  const Color(AppConstants.surfaceColor),
-      child:  const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(
-              color: Color(AppConstants.accentColor),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Connecting to stream...',
-              style: TextStyle(
-                color:    Color(AppConstants.textSecondary),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
+        fill:        const Color(
+            AppConstants.surfaceColor),
+        controls:    NoVideoControls,
       ),
     );
   }
@@ -117,7 +92,8 @@ class _VideoStreamWidgetState
           Text(
             'Stream unavailable',
             style: TextStyle(
-              color:    Color(AppConstants.textSecondary),
+              color:    Color(
+                  AppConstants.textSecondary),
               fontSize: 14,
             ),
           ),
@@ -125,7 +101,8 @@ class _VideoStreamWidgetState
           Text(
             'Check OBS + nginx are running',
             style: TextStyle(
-              color:    Color(AppConstants.textSecondary),
+              color:    Color(
+                  AppConstants.textSecondary),
               fontSize: 11,
             ),
           ),

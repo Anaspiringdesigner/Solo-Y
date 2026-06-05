@@ -27,6 +27,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _calendarSignedIn = false;
 
   @override
+  void dispose() {
+    _calendar.stopPolling();
+    super.dispose();
+  }
+
+  // ---------- Notification  Permission Request -----------------
+  @override
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([
@@ -34,18 +41,18 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
     SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.edgeToEdge);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BiofeedbackProvider>().startPolling();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) async {
+      context
+          .read<BiofeedbackProvider>()
+          .startPolling();
       context
           .read<BiofeedbackProvider>()
           .checkDataTransferStatus();
-    });
-  }
 
-  @override
-  void dispose() {
-    _calendar.stopPolling();
-    super.dispose();
+      // Request notification permission
+      await Permission.notification.request();
+    });
   }
 
   // ── Calendar Sign In ──────────────────────────────────────

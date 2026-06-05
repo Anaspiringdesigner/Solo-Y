@@ -6,18 +6,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants.dart';
 
 // ── Constants ──────────────────────────────────────────────
-const String POLAR_DIR =
-    '/sdcard/Download/Data_from_H10';
-const int    POLL_INTERVAL_SEC  = 5;
-const int    WINDOW_SECONDS     = 30;
-const int    STRIDE_SECONDS     = 5;
-const int    RECENT_MINUTES     = 20;
-const int    STALE_MINUTES      = 3;
+const String polarDir        = '/sdcard/Download/Data_from_H10';
+const int    pollIntervalSec = 5;
+const int    windowSeconds   = 30;
+const int    strideSeconds   = 5;
+const int    recentMinutes   = 20;
+const int    staleMinutes    = 3;
 
 class DataTransferService {
   static final DataTransferService _instance =
@@ -26,27 +24,27 @@ class DataTransferService {
   DataTransferService._internal();
 
   // ── Initialize Background Service ──────────────────────
-  static Future<void> initialize() async {
+ static Future<void> initialize() async {
     final service = FlutterBackgroundService();
 
     await service.configure(
       androidConfiguration: AndroidConfiguration(
-        onStart:           onStart,
-        autoStart:         true,
-        isForegroundMode:  true,
+        onStart:          onStart,
+        autoStart:        false,      // ← don't auto start
+        isForegroundMode: true,
         notificationChannelId:
             'biofeedback_data_transfer',
         initialNotificationTitle:
             'Biofeedback',
         initialNotificationContent:
-            'Transferring biometric data...',
+            'Ready to transfer data',
         foregroundServiceNotificationId: 888,
         foregroundServiceTypes: [
           AndroidForegroundType.dataSync,
         ],
       ),
       iosConfiguration: IosConfiguration(
-        autoStart:  true,
+        autoStart:    false,
         onForeground: onStart,
         onBackground: onIosBackground,
       ),
@@ -106,7 +104,7 @@ void onStart(ServiceInstance service) async {
 
   // ── Main polling loop ─────────────────────────────────
   Timer.periodic(
-    const Duration(seconds: POLL_INTERVAL_SEC),
+    const Duration(seconds: pollIntervalSec),
     (timer) async {
       try {
         // Check storage permission
@@ -120,7 +118,7 @@ void onStart(ServiceInstance service) async {
         }
 
         // List HR files
-        final dir = Directory(POLAR_DIR);
+        final dir = Directory(polarDir);
         if (!await dir.exists()) {
           updateNotification(
               'Polar data folder not found');
@@ -165,7 +163,7 @@ void onStart(ServiceInstance service) async {
 
         // Filter recent data
         final cutoff = DateTime.now()
-            .subtract(Duration(minutes: RECENT_MINUTES));
+            .subtract(Duration(minutes: recentMinutes));
         final recent = rows
             .where((r) => r.timestamp.isAfter(cutoff))
             .toList();
@@ -184,13 +182,13 @@ void onStart(ServiceInstance service) async {
         final newWindows = lastEnd.isEmpty
             ? windows
             : windows
-                .where((w) => w.endTime > lastEnd)
+                .where((w) => w.endTime.compareTo(lastEnd) > 0)
                 .toList();
         if (newWindows.isEmpty) return;
 
         // Filter stale windows
         final staleCutoff = DateTime.now()
-            .subtract(Duration(minutes: STALE_MINUTES));
+            .subtract(Duration(minutes: staleMinutes));
         final fresh = newWindows
             .where((w) {
               final wEnd = DateTime.parse(w.endTime);
@@ -381,7 +379,7 @@ void _interpolate(List<double> vals, int limit) {
   while (i < n) {
     if (vals[i].isNaN) {
       int j = i;
-      while (j < n && vals[j].isNaN) j++;
+      while (j < n && vals[j].isNaN) { j++; }
       final gapLen = j - i;
       if (gapLen <= limit) {
         final left  = i > 0 ? vals[i - 1] : double.nan;
@@ -392,9 +390,9 @@ void _interpolate(List<double> vals, int limit) {
             vals[k] = left + t * (right - left);
           }
         } else if (!left.isNaN) {
-          for (int k = i; k < j; k++) vals[k] = left;
+          for (int k = i; k < j; k++) { vals[k] = left; }
         } else if (!right.isNaN) {
-          for (int k = i; k < j; k++) vals[k] = right;
+          for (int k = i; k < j; k++) { vals[k] = right; }
         }
       }
       i = j;
@@ -475,11 +473,11 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
   final windows = <_Window>[];
   final n       = rows.length;
 
-  if (n < WINDOW_SECONDS) return windows;
+  if (n < windowSeconds) return windows;
 
   int s = 0;
-  while (s + WINDOW_SECONDS <= n) {
-    final chunk = rows.sublist(s, s + WINDOW_SECONDS);
+  while (s + windowSeconds <= n) {
+    final chunk = rows.sublist(s, s + windowSeconds);
 
     final hrList  = chunk.map((r) => r.hr).toList();
     final hrvList = chunk.map((r) => r.hrv).toList();
@@ -503,7 +501,7 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
       avgBr:     double.parse(avgBr.toStringAsFixed(1)),
     ));
 
-    s += STRIDE_SECONDS;
+    s += strideSeconds;
   }
 
   return windows;
