@@ -43,15 +43,20 @@ class _HomeScreenState extends State<HomeScreen> {
         SystemUiMode.edgeToEdge);
     WidgetsBinding.instance
         .addPostFrameCallback((_) async {
+      // Start polling
       context
           .read<BiofeedbackProvider>()
           .startPolling();
-      context
-          .read<BiofeedbackProvider>()
-          .checkDataTransferStatus();
 
-      // Request notification permission
+      // Request permissions
       await Permission.notification.request();
+      await Permission
+          .manageExternalStorage.request();
+
+      // Auto-start data transfer
+      await context
+          .read<BiofeedbackProvider>()
+          .startDataTransfer();
     });
   }
 
@@ -285,228 +290,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: hrv_widget.HRVChart(
                         hrvData: bio.hrvHistory,
                         hrData:  bio.hrHistory,
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ── Data Transfer Card ──────────
-                    FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 850),
-                      child: Container(
-                        width:   double.infinity,
-                        padding:
-                            const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                              AppConstants
-                                  .surfaceColor),
-                          borderRadius:
-                              BorderRadius.circular(
-                                  16),
-                          border: Border.all(
-                            color: const Color(
-                                AppConstants
-                                    .cardBorder),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration:
-                                      const Duration(
-                                          milliseconds:
-                                              500),
-                                  width:  8,
-                                  height: 8,
-                                  decoration:
-                                      BoxDecoration(
-                                    shape:
-                                        BoxShape.circle,
-                                    color: bio
-                                            .isDataTransferActive
-                                        ? const Color(
-                                            AppConstants
-                                                .calmColor)
-                                        : const Color(
-                                            AppConstants
-                                                .textSecondary),
-                                  ),
-                                ),
-                                const SizedBox(
-                                    width: 8),
-                                Text(
-                                  'DATA TRANSFER',
-                                  style:
-                                      GoogleFonts.inter(
-                                    color: const Color(
-                                        AppConstants
-                                            .textSecondary),
-                                    fontSize:      11,
-                                    fontWeight:
-                                        FontWeight.w600,
-                                    letterSpacing: 1.5,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  bio.dataTransferStatus,
-                                  style:
-                                      GoogleFonts.inter(
-                                    color: bio
-                                            .isDataTransferActive
-                                        ? const Color(
-                                            AppConstants
-                                                .calmColor)
-                                        : const Color(
-                                            AppConstants
-                                                .textSecondary),
-                                    fontSize:   12,
-                                    fontWeight:
-                                        FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child:
-                                      ElevatedButton(
-                                    onPressed: bio
-                                            .isDataTransferActive
-                                        ? null
-                                        : () async {
-                                            await Permission
-                                                .manageExternalStorage
-                                                .request();
-                                            await bio
-                                                .startDataTransfer();
-                                          },
-                                    style: ElevatedButton
-                                        .styleFrom(
-                                      backgroundColor:
-                                          const Color(
-                                                  AppConstants
-                                                      .calmColor)
-                                              .withValues(
-                                                  alpha:
-                                                      0.15),
-                                      foregroundColor:
-                                          const Color(
-                                              AppConstants
-                                                  .calmColor),
-                                      side: BorderSide(
-                                        color: bio
-                                                .isDataTransferActive
-                                            ? const Color(
-                                                    AppConstants
-                                                        .calmColor)
-                                                .withValues(
-                                                    alpha:
-                                                        0.3)
-                                            : const Color(
-                                                AppConstants
-                                                    .calmColor),
-                                      ),
-                                      shape:
-                                          RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius
-                                                .circular(
-                                                    12),
-                                      ),
-                                      padding:
-                                          const EdgeInsets
-                                              .symmetric(
-                                              vertical:
-                                                  12),
-                                    ),
-                                    child: Text(
-                                      '▶  Start',
-                                      style:
-                                          GoogleFonts
-                                              .inter(
-                                        fontSize:   13,
-                                        fontWeight:
-                                            FontWeight
-                                                .w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(
-                                    width: 8),
-                                Expanded(
-                                  child:
-                                      ElevatedButton(
-                                    onPressed: bio
-                                            .isDataTransferActive
-                                        ? () => bio
-                                            .stopDataTransfer()
-                                        : null,
-                                    style: ElevatedButton
-                                        .styleFrom(
-                                      backgroundColor:
-                                          const Color(
-                                                  AppConstants
-                                                      .stressColor)
-                                              .withValues(
-                                                  alpha:
-                                                      0.15),
-                                      foregroundColor:
-                                          const Color(
-                                              AppConstants
-                                                  .stressColor),
-                                      side: BorderSide(
-                                        color: bio
-                                                .isDataTransferActive
-                                            ? const Color(
-                                                AppConstants
-                                                    .stressColor)
-                                            : const Color(
-                                                    AppConstants
-                                                        .stressColor)
-                                                .withValues(
-                                                    alpha:
-                                                        0.3),
-                                      ),
-                                      shape:
-                                          RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius
-                                                .circular(
-                                                    12),
-                                      ),
-                                      padding:
-                                          const EdgeInsets
-                                              .symmetric(
-                                              vertical:
-                                                  12),
-                                    ),
-                                    child: Text(
-                                      '⏹  Stop',
-                                      style:
-                                          GoogleFonts
-                                              .inter(
-                                        fontSize:   13,
-                                        fontWeight:
-                                            FontWeight
-                                                .w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
                       ),
                     ),
 

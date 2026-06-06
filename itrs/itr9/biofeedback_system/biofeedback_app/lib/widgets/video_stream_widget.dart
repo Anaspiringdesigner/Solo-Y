@@ -29,7 +29,7 @@ class _VideoStreamWidgetState
     try {
       _player = Player(
         configuration: const PlayerConfiguration(
-          bufferSize: 32 * 1024 * 1024,
+          bufferSize: 8 * 1024 * 1024, // To reduce the stream delay
           logLevel:   MPVLogLevel.warn,
         ),
       );
@@ -72,6 +72,12 @@ class _VideoStreamWidgetState
         ),
         play: true,
       );
+
+      // Seek to live edge after opening
+      await Future.delayed(
+        const Duration(milliseconds: 500));
+      await _player.seek(
+        const Duration(hours: 99)); // jump to live edge
 
     } catch (e) {
       debugPrint('[VIDEO] Init error: $e');
