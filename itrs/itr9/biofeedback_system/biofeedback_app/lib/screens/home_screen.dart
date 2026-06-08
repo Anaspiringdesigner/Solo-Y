@@ -14,6 +14,7 @@ import '../widgets/hrv_chart.dart' as hrv_widget;
 import '../widgets/interaction_bar.dart'
     as interaction_widget;
 import 'package:permission_handler/permission_handler.dart';
+import '../widgets/camera_stream_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -282,6 +283,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
 
                     const SizedBox(height: 12),
+
+                    // ── Camera Stream (Video Ripples only) ──
+                    if (s != null &&
+                        s.activeInteraction == 3) ...[
+                      const SizedBox(height: 12),
+                      FadeInUp(
+                        duration: const Duration(
+                            milliseconds: 750),
+                        child: const CameraStreamWidget(),
+                        ),
+                      ],
 
                     // ── HRV Chart ───────────────────
                     FadeInUp(

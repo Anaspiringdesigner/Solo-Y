@@ -508,23 +508,39 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
 }
 
 // ── POST Windows to Julia ─────────────────────────────────────
-Future<bool> _postWindows(List<_Window> windows) async {
+Future<bool> _postWindows(
+    List<_Window> windows) async {
   try {
+    // ← This must match your Tailscale IP
+    const serverUrl =
+        'http://100.67.125.12:8000/ingest';
+
+    debugPrint('[BG] Posting to: $serverUrl');
+    debugPrint('[BG] Windows: '
+        '${windows.length}');
+
     final payload = jsonEncode({
-      'windows': windows.map((w) => w.toJson()).toList(),
+      'windows': windows
+          .map((w) => w.toJson())
+          .toList(),
     });
 
     final resp = await http
         .post(
-          Uri.parse('${AppConstants.serverBase}/ingest'),
+          Uri.parse(serverUrl),
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type':
+                'application/json',
           },
           body: payload,
         )
-        .timeout(const Duration(seconds: 20));
+        .timeout(
+            const Duration(seconds: 30));
 
+    debugPrint('[BG] Response: '
+        '${resp.statusCode}');
     return resp.statusCode == 200;
+
   } catch (e) {
     debugPrint('[BG POST ERROR] $e');
     return false;
