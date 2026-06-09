@@ -36,9 +36,11 @@ class MjpegServer {
   CameraController? get controller => _cameraController;
 
   static const int serverPort = 8081;
-  static const int outputSize = 1280; // square target
-  static const int jpegQuality = 60;  // lower = lower latency
+
+  // Continuous-first tuning
   static const ResolutionPreset preset = ResolutionPreset.medium;
+  static const int jpegQuality = 58;
+  static const int maxEncodeWidth = 640; // keep encode light for smoother fps
 
   String get streamUrl => 'http://$_boundIp:$serverPort/camera';
 
@@ -49,6 +51,7 @@ class MjpegServer {
         type: dart_io.InternetAddressType.IPv4,
         includeLoopback: false,
       );
+
       for (final iface in ifaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
@@ -92,6 +95,7 @@ class MjpegServer {
       );
 
       await _cameraController!.initialize();
+
       debugPrint('[MJPEG] Camera ready: ${lens.name}');
       return true;
     } catch (e) {
@@ -124,13 +128,14 @@ class MjpegServer {
     }
   }
 
-  // ── Process frame with frame-drop policy ──
+  // ── Process frame with drop policy ────────
   void _processCameraImage(CameraImage image) {
-    if (_isProcessingFrame) return; // drop frame to avoid lag buildup
+    // Critical for continuity: never queue slow frame processing
+    if (_isProcessingFrame) return;
     _isProcessingFrame = true;
 
     try {
-      final jpegBytes = _cameraImageToSquareJpeg(image);
+      final jpegBytes = _cameraImageToJpegFast(image);
       if (jpegBytes == null || jpegBytes.isEmpty) return;
 
       _latestFrame = jpegBytes;
@@ -142,8 +147,8 @@ class MjpegServer {
     }
   }
 
-  // ── Convert CameraImage -> square JPEG ────
-  Uint8List? _cameraImageToSquareJpeg(CameraImage image) {
+  // ── Convert CameraImage -> JPEG (fast path) ───────────────
+  Uint8List? _cameraImageToJpegFast(CameraImage image) {
     try {
       img.Image rgb;
 
@@ -167,10 +172,19 @@ class MjpegServer {
         return null;
       }
 
-      final square = _toSquareCover(rgb, outputSize);
+      // Keep native aspect ratio. Resize only if too wide (reduce CPU).
+      if (rgb.width > maxEncodeWidth) {
+        final newHeight = (rgb.height * (maxEncodeWidth / rgb.width)).round();
+        rgb = img.copyResize(
+          rgb,
+          width: maxEncodeWidth,
+          height: newHeight,
+          interpolation: img.Interpolation.linear,
+        );
+      }
 
       return Uint8List.fromList(
-        img.encodeJpg(square, quality: jpegQuality),
+        img.encodeJpg(rgb, quality: jpegQuality),
       );
     } catch (e) {
       debugPrint('[MJPEG] Conversion error: $e');
@@ -206,9 +220,7 @@ class MjpegServer {
         final uIndex = uvRow * uRowStride + uvCol * uPixelStride;
         final vIndex = uvRow * vRowStride + uvCol * vPixelStride;
 
-        if (yIndex >= yBytes.length ||
-            uIndex >= uBytes.length ||
-            vIndex >= vBytes.length) {
+        if (yIndex >= yBytes.length || uIndex >= uBytes.length || vIndex >= vBytes.length) {
           continue;
         }
 
@@ -227,38 +239,8 @@ class MjpegServer {
         out.setPixelRgb(x, y, r, g, b);
       }
     }
+
     return out;
-  }
-
-  // COVER: fills square fully (no black bars)
-  img.Image _toSquareCover(img.Image source, int target) {
-    final srcW = source.width;
-    final srcH = source.height;
-
-    final scaleW = target / srcW;
-    final scaleH = target / srcH;
-    final scale = scaleW > scaleH ? scaleW : scaleH;
-
-    final resizedW = (srcW * scale).round();
-    final resizedH = (srcH * scale).round();
-
-    final resized = img.copyResize(
-      source,
-      width: resizedW,
-      height: resizedH,
-      interpolation: img.Interpolation.average,
-    );
-
-    final cropX = (resized.width - target) ~/ 2;
-    final cropY = (resized.height - target) ~/ 2;
-
-    return img.copyCrop(
-      resized,
-      x: cropX < 0 ? 0 : cropX,
-      y: cropY < 0 ? 0 : cropY,
-      width: target,
-      height: target,
-    );
   }
 
   // ── Push frame to all clients ─────────────
@@ -320,7 +302,8 @@ class MjpegServer {
           '"lens":"${_currentLens.name}",'
           '"clients":${_clients.length},'
           '"url":"$streamUrl",'
-          '"output":"${outputSize}x${outputSize}"}',
+          '"quality":$jpegQuality,'
+          '"max_width":$maxEncodeWidth}',
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
@@ -340,6 +323,7 @@ class MjpegServer {
 
       _boundIp = await _getLocalIpv4();
       _isRunning = true;
+
       debugPrint('[MJPEG] Server at $streamUrl');
       return true;
     } catch (e) {
