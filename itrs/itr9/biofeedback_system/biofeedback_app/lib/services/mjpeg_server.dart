@@ -6,50 +6,64 @@ import 'dart:io' as dart_io;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:shelf/shelf.dart';
-import 'package:shelf/shelf_io.dart'
-    as shelf_io;
-import 'package:shelf_router/shelf_router.dart'
-    as shelf_router;
+import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
 class MjpegServer {
-  static final MjpegServer _instance =
-      MjpegServer._internal();
+  static final MjpegServer _instance = MjpegServer._internal();
   factory MjpegServer() => _instance;
   MjpegServer._internal();
 
-  CameraController?   _cameraController;
+  CameraController? _cameraController;
   dart_io.HttpServer? _server;
-  bool                _isRunning   = false;
-  bool                _isStreaming = false;
-  CameraLensDirection _currentLens =
-      CameraLensDirection.front;
 
-  // Latest JPEG frame from camera
+  bool _isRunning = false;
+  bool _isStreaming = false;
+  bool _isProcessingFrame = false;
+
+  CameraLensDirection _currentLens = CameraLensDirection.front;
+
   Uint8List? _latestFrame;
+  final List<StreamController<List<int>>> _clients = [];
 
-  // Active client stream controllers
-  final List<StreamController<List<int>>>
-      _clients = [];
+  String _boundIp = '0.0.0.0';
 
-  bool get isRunning   => _isRunning;
+  bool get isRunning => _isRunning;
   bool get isStreaming => _isStreaming;
-  CameraLensDirection get currentLens =>
-      _currentLens;
-  CameraController? get controller =>
-      _cameraController;
+  CameraLensDirection get currentLens => _currentLens;
+  CameraController? get controller => _cameraController;
 
-  static const String phoneIp   =
-      '100.122.118.37';
-  static const int    serverPort = 8081;
+  static const int serverPort = 8081;
+  static const int outputSize = 1280; // square target
+  static const int jpegQuality = 60;  // lower = lower latency
+  static const ResolutionPreset preset = ResolutionPreset.medium;
 
-  String get streamUrl =>
-      'http://$phoneIp:$serverPort/camera';
+  String get streamUrl => 'http://$_boundIp:$serverPort/camera';
+
+  // ── Resolve current local IPv4 ─────────────────────────
+  Future<String> _getLocalIpv4() async {
+    try {
+      final ifaces = await dart_io.NetworkInterface.list(
+        type: dart_io.InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final iface in ifaces) {
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          if (!ip.startsWith('127.')) return ip;
+        }
+      }
+    } catch (e) {
+      debugPrint('[MJPEG] IP resolve error: $e');
+    }
+    return '0.0.0.0';
+  }
 
   // ── Initialize Camera ─────────────────────
   Future<bool> initCamera({
-    CameraLensDirection lens =
-        CameraLensDirection.front,
+    CameraLensDirection lens = CameraLensDirection.front,
   }) async {
     try {
       final cameras = await availableCameras();
@@ -65,139 +79,229 @@ class MjpegServer {
 
       _currentLens = lens;
 
-      // Stop existing stream first
       if (_cameraController != null) {
         await _stopCameraStream();
         await _cameraController!.dispose();
       }
 
-      // Use JPEG format for direct streaming
       _cameraController = CameraController(
         camera,
-        ResolutionPreset.medium,
-        enableAudio:      false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        preset,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
       await _cameraController!.initialize();
-
-      debugPrint('[MJPEG] Camera ready: '
-          '${lens.name}');
+      debugPrint('[MJPEG] Camera ready: ${lens.name}');
       return true;
-
     } catch (e) {
-      debugPrint('[MJPEG] Camera error: $e');
+      debugPrint('[MJPEG] Camera init error: $e');
       return false;
     }
   }
 
-  // ── Start Camera Image Stream ─────────────
+  // ── Start Camera Stream ───────────────────
   Future<void> _startCameraStream() async {
-    if (_cameraController == null ||
-        !_cameraController!
-            .value.isInitialized) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
+    if (_cameraController!.value.isStreamingImages) {
       return;
     }
 
-    if (_cameraController!
-        .value.isStreamingImages) {
-      return;
-    }
-
-    await _cameraController!
-        .startImageStream((CameraImage image) {
-      // Convert camera image to JPEG bytes
+    await _cameraController!.startImageStream((CameraImage image) {
       _processCameraImage(image);
     });
 
-    debugPrint('[MJPEG] Camera image '
-        'stream started');
+    debugPrint('[MJPEG] Camera image stream started');
   }
 
-  // ── Stop Camera Image Stream ──────────────
+  // ── Stop Camera Stream ────────────────────
   Future<void> _stopCameraStream() async {
-    if (_cameraController != null &&
-        _cameraController!
-            .value.isStreamingImages) {
-      await _cameraController!
-          .stopImageStream();
-      debugPrint('[MJPEG] Camera image '
-          'stream stopped');
+    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+      await _cameraController!.stopImageStream();
+      debugPrint('[MJPEG] Camera image stream stopped');
     }
   }
 
-  // ── Process Camera Frame ──────────────────
-  void _processCameraImage(
-      CameraImage image) {
+  // ── Process frame with frame-drop policy ──
+  void _processCameraImage(CameraImage image) {
+    if (_isProcessingFrame) return; // drop frame to avoid lag buildup
+    _isProcessingFrame = true;
+
     try {
-      // For JPEG format group,
-      // planes[0] contains JPEG bytes directly
-      if (image.format.group ==
-          ImageFormatGroup.jpeg) {
-        final bytes = image.planes[0].bytes;
-        _latestFrame = bytes;
+      final jpegBytes = _cameraImageToSquareJpeg(image);
+      if (jpegBytes == null || jpegBytes.isEmpty) return;
 
-        // Push to all connected clients
-        _pushFrameToClients(bytes);
-      }
+      _latestFrame = jpegBytes;
+      _pushFrameToClients(jpegBytes);
     } catch (e) {
-      debugPrint('[MJPEG] Frame error: $e');
+      debugPrint('[MJPEG] Frame process error: $e');
+    } finally {
+      _isProcessingFrame = false;
     }
   }
 
-  // ── Push Frame to All Clients ─────────────
+  // ── Convert CameraImage -> square JPEG ────
+  Uint8List? _cameraImageToSquareJpeg(CameraImage image) {
+    try {
+      img.Image rgb;
+
+      if (image.format.group == ImageFormatGroup.yuv420 && image.planes.length >= 3) {
+        rgb = _yuv420ToRgb(image);
+      } else if (image.format.group == ImageFormatGroup.bgra8888 &&
+          image.planes.isNotEmpty) {
+        final plane = image.planes[0];
+        rgb = img.Image.fromBytes(
+          width: image.width,
+          height: image.height,
+          bytes: plane.bytes.buffer,
+          order: img.ChannelOrder.bgra,
+        );
+      } else if (image.format.group == ImageFormatGroup.jpeg &&
+          image.planes.isNotEmpty) {
+        final decoded = img.decodeJpg(image.planes[0].bytes);
+        if (decoded == null) return null;
+        rgb = decoded;
+      } else {
+        return null;
+      }
+
+      final square = _toSquareCover(rgb, outputSize);
+
+      return Uint8List.fromList(
+        img.encodeJpg(square, quality: jpegQuality),
+      );
+    } catch (e) {
+      debugPrint('[MJPEG] Conversion error: $e');
+      return null;
+    }
+  }
+
+  img.Image _yuv420ToRgb(CameraImage image) {
+    final width = image.width;
+    final height = image.height;
+    final out = img.Image(width: width, height: height);
+
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+
+    final yBytes = yPlane.bytes;
+    final uBytes = uPlane.bytes;
+    final vBytes = vPlane.bytes;
+
+    final yRowStride = yPlane.bytesPerRow;
+    final uRowStride = uPlane.bytesPerRow;
+    final vRowStride = vPlane.bytesPerRow;
+    final uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    for (int y = 0; y < height; y++) {
+      final uvRow = y >> 1;
+      for (int x = 0; x < width; x++) {
+        final yIndex = y * yRowStride + x;
+        final uvCol = x >> 1;
+
+        final uIndex = uvRow * uRowStride + uvCol * uPixelStride;
+        final vIndex = uvRow * vRowStride + uvCol * vPixelStride;
+
+        if (yIndex >= yBytes.length ||
+            uIndex >= uBytes.length ||
+            vIndex >= vBytes.length) {
+          continue;
+        }
+
+        final yp = yBytes[yIndex];
+        final up = uBytes[uIndex];
+        final vp = vBytes[vIndex];
+
+        int r = (yp + 1.402 * (vp - 128)).round();
+        int g = (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128)).round();
+        int b = (yp + 1.772 * (up - 128)).round();
+
+        if (r < 0) r = 0; else if (r > 255) r = 255;
+        if (g < 0) g = 0; else if (g > 255) g = 255;
+        if (b < 0) b = 0; else if (b > 255) b = 255;
+
+        out.setPixelRgb(x, y, r, g, b);
+      }
+    }
+    return out;
+  }
+
+  // COVER: fills square fully (no black bars)
+  img.Image _toSquareCover(img.Image source, int target) {
+    final srcW = source.width;
+    final srcH = source.height;
+
+    final scaleW = target / srcW;
+    final scaleH = target / srcH;
+    final scale = scaleW > scaleH ? scaleW : scaleH;
+
+    final resizedW = (srcW * scale).round();
+    final resizedH = (srcH * scale).round();
+
+    final resized = img.copyResize(
+      source,
+      width: resizedW,
+      height: resizedH,
+      interpolation: img.Interpolation.average,
+    );
+
+    final cropX = (resized.width - target) ~/ 2;
+    final cropY = (resized.height - target) ~/ 2;
+
+    return img.copyCrop(
+      resized,
+      x: cropX < 0 ? 0 : cropX,
+      y: cropY < 0 ? 0 : cropY,
+      width: target,
+      height: target,
+    );
+  }
+
+  // ── Push frame to all clients ─────────────
   void _pushFrameToClients(Uint8List bytes) {
     if (_clients.isEmpty) return;
 
-    const boundary =
-        '--mjpegframe\r\n'
-        'Content-Type: image/jpeg\r\n';
+    const boundary = '--mjpegframe\r\nContent-Type: image/jpeg\r\n';
+    final header = '$boundary'
+        'Content-Length: ${bytes.length}\r\n\r\n';
 
-    final header =
-        '$boundary'
-        'Content-Length: '
-        '${bytes.length}\r\n\r\n';
+    final dead = <StreamController<List<int>>>[];
 
-    final deadClients = <StreamController>[];
-
-    for (final ctrl in _clients) {
-      if (ctrl.isClosed) {
-        deadClients.add(ctrl);
+    for (final c in _clients) {
+      if (c.isClosed) {
+        dead.add(c);
         continue;
       }
       try {
-        ctrl.add(header.codeUnits);
-        ctrl.add(bytes);
-        ctrl.add('\r\n'.codeUnits);
-      } catch (e) {
-        deadClients.add(ctrl);
+        c.add(header.codeUnits);
+        c.add(bytes);
+        c.add('\r\n'.codeUnits);
+      } catch (_) {
+        dead.add(c);
       }
     }
 
-    // Remove dead clients
-    for (final c in deadClients) {
-      _clients.remove(c);
+    for (final d in dead) {
+      _clients.remove(d);
     }
   }
 
   // ── Switch Camera ─────────────────────────
   Future<void> switchCamera() async {
-    final newLens =
-        _currentLens ==
-                CameraLensDirection.front
-            ? CameraLensDirection.back
-            : CameraLensDirection.front;
+    final newLens = _currentLens == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
 
     final wasStreaming = _isStreaming;
-    if (wasStreaming) {
-      await _stopCameraStream();
-    }
+    if (wasStreaming) await _stopCameraStream();
 
     await initCamera(lens: newLens);
 
-    if (wasStreaming) {
-      await _startCameraStream();
-    }
+    if (wasStreaming) await _startCameraStream();
   }
 
   // ── Start HTTP Server ─────────────────────
@@ -207,34 +311,26 @@ class MjpegServer {
     try {
       final router = shelf_router.Router();
 
-      // MJPEG stream endpoint
-      router.get('/camera',
-          _handleMjpegRequest);
+      router.get('/camera', _handleMjpegRequest);
 
-      // Status endpoint
-      router.get('/status',
-          (Request req) {
+      router.get('/status', (Request req) {
         return Response.ok(
           '{"ok":true,'
           '"streaming":$_isStreaming,'
           '"lens":"${_currentLens.name}",'
           '"clients":${_clients.length},'
-          '"url":"$streamUrl"}',
+          '"url":"$streamUrl",'
+          '"output":"${outputSize}x${outputSize}"}',
           headers: {
-            'Content-Type':
-                'application/json',
-            'Access-Control-Allow-Origin':
-                '*',
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
         );
       });
 
-      router.get('/ping',
-          (Request req) =>
-              Response.ok('pong'));
+      router.get('/ping', (Request req) => Response.ok('pong'));
 
-      final handler = const Pipeline()
-          .addHandler(router.call);
+      final handler = const Pipeline().addHandler(router.call);
 
       _server = await shelf_io.serve(
         handler,
@@ -242,14 +338,12 @@ class MjpegServer {
         serverPort,
       );
 
+      _boundIp = await _getLocalIpv4();
       _isRunning = true;
-      debugPrint('[MJPEG] Server at '
-          '$streamUrl');
+      debugPrint('[MJPEG] Server at $streamUrl');
       return true;
-
     } catch (e) {
-      debugPrint(
-          '[MJPEG] Server error: $e');
+      debugPrint('[MJPEG] Server error: $e');
       return false;
     }
   }
@@ -258,8 +352,9 @@ class MjpegServer {
   Future<void> stopServer() async {
     await stopStreaming();
     await _server?.close(force: true);
-    _server    = null;
+    _server = null;
     _isRunning = false;
+    _boundIp = '0.0.0.0';
   }
 
   // ── Start Streaming ───────────────────────
@@ -269,20 +364,14 @@ class MjpegServer {
       if (!ok) return false;
     }
 
-    if (_cameraController == null ||
-        !_cameraController!
-            .value.isInitialized) {
-      final ok = await initCamera(
-          lens: _currentLens);
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      final ok = await initCamera(lens: _currentLens);
       if (!ok) return false;
     }
 
-    // Start continuous frame capture
     await _startCameraStream();
-
     _isStreaming = true;
-    debugPrint('[MJPEG] Streaming → '
-        '$streamUrl');
+    debugPrint('[MJPEG] Streaming -> $streamUrl');
     return true;
   }
 
@@ -294,7 +383,6 @@ class MjpegServer {
     _latestFrame = null;
   }
 
-  // ── Close All Clients ─────────────────────
   void _closeAllClients() {
     for (final c in _clients) {
       if (!c.isClosed) c.close();
@@ -302,41 +390,30 @@ class MjpegServer {
     _clients.clear();
   }
 
-  // ── Handle MJPEG HTTP Request ─────────────
-  Future<Response> _handleMjpegRequest(
-      Request request) async {
+  // ── MJPEG endpoint ────────────────────────
+  Future<Response> _handleMjpegRequest(Request request) async {
     if (!_isStreaming) {
-      return Response(503,
-          body: 'Stream not active',
-          headers: {
-            'Access-Control-Allow-Origin':
-                '*',
-          });
+      return Response(
+        503,
+        body: 'Stream not active',
+        headers: {'Access-Control-Allow-Origin': '*'},
+      );
     }
 
-    final ctrl =
-        StreamController<List<int>>();
+    final ctrl = StreamController<List<int>>();
     _clients.add(ctrl);
 
     ctrl.onCancel = () {
       _clients.remove(ctrl);
-      debugPrint('[MJPEG] Client left '
-          '(${_clients.length} left)');
+      debugPrint('[MJPEG] Client left (${_clients.length} left)');
     };
 
-    debugPrint('[MJPEG] Client connected '
-        '(${_clients.length} total)');
+    debugPrint('[MJPEG] Client connected (${_clients.length} total)');
 
-    // Send latest frame immediately
-    // so client sees something right away
     if (_latestFrame != null) {
-      const boundary =
-          '--mjpegframe\r\n'
-          'Content-Type: image/jpeg\r\n';
-      final header =
-          '$boundary'
-          'Content-Length: '
-          '${_latestFrame!.length}\r\n\r\n';
+      const boundary = '--mjpegframe\r\nContent-Type: image/jpeg\r\n';
+      final header = '$boundary'
+          'Content-Length: ${_latestFrame!.length}\r\n\r\n';
       ctrl.add(header.codeUnits);
       ctrl.add(_latestFrame!);
       ctrl.add('\r\n'.codeUnits);
@@ -346,12 +423,12 @@ class MjpegServer {
       200,
       body: ctrl.stream,
       headers: {
-        'Content-Type':
-            'multipart/x-mixed-replace; '
-            'boundary=mjpegframe',
-        'Cache-Control':   'no-cache',
-        'Connection':      'keep-alive',
-        'Pragma':          'no-cache',
+        'Content-Type': 'multipart/x-mixed-replace; boundary=mjpegframe',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
         'Access-Control-Allow-Origin': '*',
       },
     );
