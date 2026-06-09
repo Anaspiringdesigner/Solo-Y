@@ -1,11 +1,10 @@
-// lib/widgets/camera_stream_widget.dart
-
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../constants.dart';
 import '../services/mjpeg_server.dart';
 
-class CameraStreamWidget extends StatefulWidget {
+class CameraStreamWidget
+    extends StatefulWidget {
   const CameraStreamWidget({super.key});
 
   @override
@@ -24,73 +23,39 @@ class _CameraStreamWidgetState
   @override
   void initState() {
     super.initState();
-    _initCamera();
+    _init();
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _init() async {
     setState(() {
-      _isLoading  = true;
-      _statusMsg  = 'Initializing camera...';
+      _isLoading = true;
+      _statusMsg = 'Starting camera...';
     });
 
     await _server.initCamera();
-    final ok = await _server.startServer();
+    await _server.startServer();
+
+    // Auto-start streaming
+    final ok = await _server.startStreaming();
 
     if (mounted) {
       setState(() {
-        _isLoading = false;
-        _statusMsg = ok
-            ? 'Camera ready'
-            : 'Camera init failed';
+        _isLoading  = false;
+        _isStreaming = ok;
+        _statusMsg  = ok
+            ? 'Live → TD'
+            : 'Failed to start';
       });
-    }
-  }
-
-  Future<void> _toggleStream() async {
-    if (_isStreaming) {
-      await _server.stopStreaming();
-      if (mounted) {
-        setState(() {
-          _isStreaming = false;
-          _statusMsg   = 'Stream stopped';
-        });
-      }
-    } else {
-      setState(() {
-        _isLoading = true;
-        _statusMsg = 'Starting stream...';
-      });
-
-      final ok =
-          await _server.startStreaming();
-
-      if (mounted) {
-        setState(() {
-          _isLoading  = false;
-          _isStreaming = ok;
-          _statusMsg  = ok
-              ? 'Live → TD | '
-                '${_server.streamUrl}'
-              : 'Failed to start';
-        });
-      }
     }
   }
 
   Future<void> _switchCamera() async {
-    setState(() {
-      _isLoading = true;
-      _statusMsg = 'Switching camera...';
-    });
-
+    setState(() => _isLoading = true);
     await _server.switchCamera();
-
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _statusMsg = _isStreaming
-            ? 'Switched — streaming'
-            : 'Camera switched';
+        _statusMsg = 'Camera switched';
       });
     }
   }
@@ -158,7 +123,6 @@ class _CameraStreamWidgetState
                   ),
                 ),
                 const Spacer(),
-                // Switch camera button
                 GestureDetector(
                   onTap: _isLoading
                       ? null
@@ -190,21 +154,13 @@ class _CameraStreamWidgetState
             ),
           ),
 
-          // ── Camera Preview ───────────────
-          ClipRRect(
-            borderRadius:
-                BorderRadius.zero,
-            child: AspectRatio(
-              aspectRatio: 1.0,
-              child: _buildPreview(),
-            ),
-          ),
-
-          // ── Status + Controls ────────────
+          // ── Status ───────────────────────
           Padding(
-            padding:
-                const EdgeInsets.all(12),
-            child: Column(
+            padding: const EdgeInsets
+                .symmetric(
+                    horizontal: 16,
+                    vertical:   8),
+            child: Row(
               children: [
                 Text(
                   _statusMsg,
@@ -216,171 +172,26 @@ class _CameraStreamWidgetState
                         : const Color(
                             AppConstants
                                 .textSecondary),
-                    fontSize: 11,
+                    fontSize: 12,
                   ),
-                  textAlign:
-                      TextAlign.center,
-                  maxLines:  2,
-                  overflow:
-                      TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading
-                        ? null
-                        : _toggleStream,
-                    style: ElevatedButton
-                        .styleFrom(
-                      backgroundColor:
-                          _isStreaming
-                              ? const Color(
-                                      AppConstants
-                                          .stressColor)
-                                  .withValues(
-                                      alpha:
-                                          0.15)
-                              : const Color(
-                                      AppConstants
-                                          .calmColor)
-                                  .withValues(
-                                      alpha:
-                                          0.15),
-                      foregroundColor:
-                          _isStreaming
-                              ? const Color(
-                                  AppConstants
-                                      .stressColor)
-                              : const Color(
-                                  AppConstants
-                                      .calmColor),
-                      side: BorderSide(
-                        color: _isStreaming
-                            ? const Color(
-                                AppConstants
-                                    .stressColor)
-                            : const Color(
-                                AppConstants
-                                    .calmColor),
-                      ),
-                      shape:
-                          RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius
-                                .circular(
-                                    12),
-                      ),
-                      padding: const EdgeInsets
-                          .symmetric(
-                              vertical: 12),
+                const Spacer(),
+                if (_isStreaming)
+                  Text(
+                    _server.streamUrl,
+                    style: const TextStyle(
+                      color: Color(
+                          AppConstants
+                              .textSecondary),
+                      fontSize: 10,
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width:  16,
-                            height: 16,
-                            child:
-                                CircularProgressIndicator(
-                              strokeWidth:
-                                  2,
-                            ),
-                          )
-                        : Text(
-                            _isStreaming
-                                ? '⏹  Stop Stream'
-                                : '▶  Stream to TD',
-                          ),
                   ),
-                ),
               ],
             ),
           ),
+
+          const SizedBox(height: 8),
         ],
-      ),
-    );
-  }
-
-  Widget _buildPreview() {
-    if (_isLoading) {
-      return Container(
-        color: const Color(
-            AppConstants.bgColor),
-        child: const Center(
-          child: CircularProgressIndicator(
-            color: Color(
-                AppConstants.accentColor),
-          ),
-        ),
-      );
-    }
-
-    if (_server.controller != null &&
-        _server.controller!
-            .value.isInitialized) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          CameraPreview(
-              _server.controller!),
-          if (_isStreaming)
-            Positioned(
-              top:   8,
-              right: 8,
-              child: Container(
-                padding:
-                    const EdgeInsets
-                        .symmetric(
-                  horizontal: 8,
-                  vertical:   3,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(
-                          AppConstants
-                              .calmColor)
-                      .withValues(
-                          alpha: 0.9),
-                  borderRadius:
-                      BorderRadius.circular(
-                          12),
-                ),
-                child: const Row(
-                  mainAxisSize:
-                      MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons
-                          .fiber_manual_record,
-                      color: Colors.white,
-                      size:  8,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      'LIVE → TD',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize:   10,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
-    return Container(
-      color: const Color(
-          AppConstants.bgColor),
-      child: const Center(
-        child: Icon(
-          Icons.camera_alt,
-          color: Color(
-              AppConstants.textSecondary),
-          size: 48,
-        ),
       ),
     );
   }

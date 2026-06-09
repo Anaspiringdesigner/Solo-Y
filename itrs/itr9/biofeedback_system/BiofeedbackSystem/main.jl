@@ -1,14 +1,6 @@
 # ============================================================
 # main.jl
 # Biofeedback System — Full Pipeline
-#
-# Flow:
-# 1. Data Streamer polls ADB every 5s
-# 2. New windows → TCN Encoder → z(t)
-# 3. z(t) → RL Environment (stress detection)
-# 4. On trigger → RL Agent selects interaction
-# 5. Action → TouchDesigner via TDBridge (OSC)
-# 6. Hold 3 min → compute reward → train DQN
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -27,10 +19,8 @@ using JSON3
 using Sockets
 using Dates
 
-# ── Config ───────────────────────────────────────────────────
 const BRAIN_PORT = 8000
 
-# ── AppState ─────────────────────────────────────────────────
 mutable struct AppState
     avg_hr             :: Float32
     avg_hrv            :: Float32
@@ -45,13 +35,10 @@ AppState() = AppState(0f0, 0f0, 0f0, 0, 0f0, false, 0)
 
 const APP_STATE = AppState()
 
-# ── Global Instances ─────────────────────────────────────────
-const ENV_INSTANCE   = Ref{RLEnvironment.BiofeedbackEnv}(
-                           RLEnvironment.BiofeedbackEnv())
+const ENV_INSTANCE = Ref{RLEnvironment.BiofeedbackEnv}(
+    RLEnvironment.BiofeedbackEnv())
 const AGENT_INSTANCE = Ref{RLAgent.DQNAgent}(
-                           RLAgent.DQNAgent())
-
-# ── HTTP Handlers ─────────────────────────────────────────────
+    RLAgent.DQNAgent())
 
 function handle_ingest(req::HTTP.Request)
     try
@@ -85,14 +72,12 @@ function handle_ingest(req::HTTP.Request)
                 String(result["end_time"])
             )
 
-            # Update app state
             APP_STATE.avg_hr          = Float32(result["avg_hr"])
             APP_STATE.avg_hrv         = Float32(result["avg_hrv"])
             APP_STATE.avg_br          = Float32(result["avg_br"])
             APP_STATE.is_holding      = ENV_INSTANCE[].is_holding
             APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
 
-            # Send live vitals to TD during hold
             if ENV_INSTANCE[].is_holding
                 TDBridge.send_vitals(
                     Float32(result["avg_hr"]),
@@ -105,7 +90,6 @@ function handle_ingest(req::HTTP.Request)
                 )
             end
 
-            # Hold just completed → train agent
             if ENV_INSTANCE[].is_terminated
                 println("[MAIN] Hold complete — training agent")
                 action = RLAgent.agent_step!(
@@ -126,7 +110,6 @@ function handle_ingest(req::HTTP.Request)
                 ENV_INSTANCE[].is_terminated = false
             end
 
-            # Bio trigger fired → agent acts immediately
             if fired && !ENV_INSTANCE[].is_holding
                 println("[MAIN] Bio trigger — agent selecting action")
                 action = RLAgent.agent_step!(
@@ -164,12 +147,12 @@ function handle_ingest(req::HTTP.Request)
     end
 end
 
-
 function handle_trigger(req::HTTP.Request)
     try
         payload      = JSON3.read(req.body)
-        trigger_type = Int(get(payload, "trigger_type",
-                               RLEnvironment.TRIGGER_USER))
+        trigger_type = Int(get(payload,
+            "trigger_type",
+            RLEnvironment.TRIGGER_USER))
 
         latest = TCNEncoder.STATE.latest
         if latest === nothing
@@ -232,7 +215,6 @@ function handle_trigger(req::HTTP.Request)
     end
 end
 
-
 function handle_status(req::HTTP.Request)
     HTTP.Response(200, JSON3.write(Dict(
         "ok"                 => true,
@@ -252,7 +234,6 @@ function handle_status(req::HTTP.Request)
     )))
 end
 
-
 function handle_latest(req::HTTP.Request)
     latest = TCNEncoder.STATE.latest
     if latest === nothing
@@ -261,8 +242,75 @@ function handle_latest(req::HTTP.Request)
     HTTP.Response(200, JSON3.write(latest))
 end
 
+function handle_camera(req::HTTP.Request)
+    try
+        payload = JSON3.read(req.body)
+        active  = get(payload, "active", false)
+        url     = get(payload, "stream_url", "")
+        lens    = get(payload, "lens", "front")
 
-# ── Router ────────────────────────────────────────────────────
+        println("[CAMERA] Stream $(active ? "started" : "stopped") | lens=$lens | url=$url")
+
+        return HTTP.Response(200,
+            JSON3.write(Dict(
+                "ok"  => true,
+                "url" => url
+            )))
+    catch e
+        println("[CAMERA ERROR] $e")
+        return HTTP.Response(500,
+            JSON3.write(Dict(
+                "ok"    => false,
+                "error" => string(e)
+            )))
+    end
+end
+
+function handle_force_interaction(req::HTTP.Request)
+    try
+        payload     = JSON3.read(req.body)
+        interaction = Int(get(payload, "interaction", 0))
+
+        if interaction < 0 || interaction > 4
+            return HTTP.Response(400,
+                JSON3.write(Dict(
+                    "ok"    => false,
+                    "error" => "interaction must be 0-4"
+                )))
+        end
+
+        APP_STATE.active_interaction = interaction
+
+        TDBridge.send_action(
+            interaction,
+            APP_STATE.avg_hr,
+            APP_STATE.avg_hrv,
+            APP_STATE.avg_br,
+            0.0f0,
+            2,
+            false,
+            0
+        )
+
+        name = RLAgent.ACTION_NAMES[interaction]
+        println("[FORCE] Interaction $interaction ($name)")
+
+        return HTTP.Response(200,
+            JSON3.write(Dict(
+                "ok"          => true,
+                "interaction" => interaction,
+                "name"        => name
+            )))
+    catch e
+        println("[FORCE ERROR] $e")
+        return HTTP.Response(500,
+            JSON3.write(Dict(
+                "ok"    => false,
+                "error" => string(e)
+            )))
+    end
+end
+
 function router(req::HTTP.Request)
     if req.target == "/ingest" && req.method == "POST"
         return handle_ingest(req)
@@ -272,50 +320,46 @@ function router(req::HTTP.Request)
         return handle_status(req)
     elseif req.target == "/latest" && req.method == "GET"
         return handle_latest(req)
+    elseif req.target == "/camera" && req.method == "POST"
+        return handle_camera(req)
+    elseif req.target == "/force_interaction" && req.method == "POST"
+        return handle_force_interaction(req)
     else
         return HTTP.Response(404, "Not found")
     end
 end
 
-
-# ── Main ──────────────────────────────────────────────────────
 function main()
     println("=" ^ 70)
     println("Biofeedback System — Julia Pipeline")
     println("=" ^ 70)
 
-    # Step 1: Check TD connection
     println("\n[INIT] Checking TouchDesigner connection...")
     TDBridge.check_connection()
 
-    # Step 2: Init encoder
     println("\n[INIT] Starting TCN Encoder...")
     TCNEncoder.init_encoder()
 
-    # Step 3: Init RL agent
     println("\n[INIT] Starting RL Agent...")
     AGENT_INSTANCE[] = RLAgent.init_agent(load_ckpt=true)
 
-    # Step 4: Init environment
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
 
-    # Data now comes directly from Flutter app
-    # ADB streamer disabled
     println("\n[INIT] Data transfer via Flutter app")
     println("  → Start data transfer in the Flutter app")
 
-    # Step 6: Start HTTP server
     println("\n[INIT] HTTP server starting on port $(BRAIN_PORT)...")
-    println("  POST /ingest   ← windows from DataStreamer")
-    println("  POST /trigger  ← calendar or user trigger")
-    println("  GET  /status   ← system status for Flutter")
-    println("  GET  /latest   ← latest encoded window")
+    println("  POST /ingest             ← windows from DataStreamer")
+    println("  POST /trigger            ← calendar or user trigger")
+    println("  GET  /status             ← system status for Flutter")
+    println("  GET  /latest             ← latest encoded window")
+    println("  POST /camera             ← camera stream notification")
+    println("  POST /force_interaction  ← force specific interaction")
     println("\n[READY] System running — waiting for data...")
     println("=" ^ 70)
 
     HTTP.serve(router, "0.0.0.0", BRAIN_PORT)
 end
 
-# ── Entry Point ───────────────────────────────────────────────
 main()

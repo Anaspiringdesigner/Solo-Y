@@ -4,6 +4,7 @@ import '../models/biofeedback_model.dart';
 import '../services/api_service.dart';
 import '../services/data_transfer_service.dart';
 import '../constants.dart';
+import '../services/mjpeg_server.dart';
 
 class BiofeedbackProvider
     extends ChangeNotifier {
@@ -25,13 +26,15 @@ class BiofeedbackProvider
 
   // ── Start Polling ─────────────────────────────
   void startPolling() {
+    // Immediate first fetch
+    _fetchStatus();
+
     _statusTimer = Timer.periodic(
       const Duration(
           milliseconds:
               AppConstants.statusPollMs),
       (_) => _fetchStatus(),
     );
-    _fetchStatus();
   }
 
   void stopPolling() {
@@ -67,8 +70,28 @@ class BiofeedbackProvider
   Future<void> _fetchStatus() async {
     final result = await _api.fetchStatus();
     if (result != null) {
+      final prevInteraction =
+          status?.activeInteraction ?? -1;
+      final newInteraction =
+          result.activeInteraction;
+
       status      = result;
       isConnected = true;
+
+      // ── Auto camera control ─────────────
+      if (newInteraction == 3 &&
+          prevInteraction != 3) {
+        // Switched TO Video Ripples
+        debugPrint('[APP] Interaction 3 '
+            'active — starting camera');
+        _startCamera();
+      } else if (newInteraction != 3 &&
+                 prevInteraction == 3) {
+        // Switched AWAY from Video Ripples
+        debugPrint('[APP] Left interaction 3 '
+            '— stopping camera');
+        _stopCamera();
+      }
 
       hrvHistory.add(result.avgHrv);
       hrHistory.add(result.avgHr);
@@ -84,6 +107,27 @@ class BiofeedbackProvider
     notifyListeners();
   }
 
+  // ── Camera Control ──────────────────────────
+  Future<void> _startCamera() async {
+    final server = MjpegServer();
+    if (!server.isRunning) {
+      await server.initCamera();
+      await server.startServer();
+    }
+    if (!server.isStreaming) {
+      await server.startStreaming();
+      debugPrint('[APP] Camera streaming → '
+          '${server.streamUrl}');
+    }
+  }
+
+  Future<void> _stopCamera() async {
+    final server = MjpegServer();
+    if (server.isStreaming) {
+      await server.stopStreaming();
+      debugPrint('[APP] Camera stopped');
+    }
+  }
   // ── Manual Trigger ────────────────────────────
   Future<void> fireManualTrigger() async {
     isTriggerLoading = true;

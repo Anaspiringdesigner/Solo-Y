@@ -17,7 +17,7 @@ class _VideoStreamWidgetState
   late final Player          _player;
   late final VideoController _controller;
   bool _hasError    = false;
-  bool _isBuffering = false;
+  bool _isBuffering = true;
 
   @override
   void initState() {
@@ -29,7 +29,7 @@ class _VideoStreamWidgetState
     try {
       _player = Player(
         configuration: const PlayerConfiguration(
-          bufferSize: 8 * 1024 * 1024, // To reduce the stream delay
+          bufferSize: 8 * 1024 * 1024,
           logLevel:   MPVLogLevel.warn,
         ),
       );
@@ -37,47 +37,30 @@ class _VideoStreamWidgetState
       _controller = VideoController(_player);
 
       // Listen to stream events
-      _player.stream.error.listen((error) {
-        debugPrint('[VIDEO] Error: $error');
+      _player.stream.buffering.listen((b) {
+        if (mounted) {
+          setState(() => _isBuffering = b);
+        }
+      });
+
+      _player.stream.error.listen((e) {
+        debugPrint('[VIDEO] Error: $e');
         if (mounted) {
           setState(() => _hasError = true);
         }
       });
 
-      _player.stream.playing.listen((playing) {
-        debugPrint('[VIDEO] Playing: $playing');
-      });
-
-      _player.stream.buffering.listen((buffering) {
-        debugPrint('[VIDEO] Buffering: $buffering');
-        if (mounted) {
-          setState(() => _isBuffering = buffering);
-        }
-      });
-
-      _player.stream.completed.listen((completed) {
-        debugPrint('[VIDEO] Completed: $completed');
+      _player.stream.completed.listen(
+          (completed) {
         if (completed && mounted) {
-          // Restart stream if it ends
+          debugPrint(
+              '[VIDEO] Stream ended — '
+              'restarting');
           _restartStream();
         }
       });
 
-      await _player.open(
-        Media(
-          AppConstants.streamUrl,
-          httpHeaders: {
-            'User-Agent': 'BiofeedbackApp/1.0',
-          },
-        ),
-        play: true,
-      );
-
-      // Seek to live edge after opening
-      await Future.delayed(
-        const Duration(milliseconds: 500));
-      await _player.seek(
-        const Duration(hours: 99)); // jump to live edge
+      await _openStream();
 
     } catch (e) {
       debugPrint('[VIDEO] Init error: $e');
@@ -87,24 +70,35 @@ class _VideoStreamWidgetState
     }
   }
 
-  Future<void> _restartStream() async {
-    debugPrint('[VIDEO] Restarting stream...');
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() {
-        _hasError    = false;
-        _isBuffering = false;
-      });
+  Future<void> _openStream() async {
+    try {
       await _player.open(
-        Media(
-          AppConstants.streamUrl,
-          httpHeaders: {
-            'User-Agent': 'BiofeedbackApp/1.0',
-          },
-        ),
+        Media(AppConstants.streamUrl),
         play: true,
       );
+
+      // Set MPV options for true live
+      // streaming — no seeking to end
+      await _player.setPlaylistMode(
+          PlaylistMode.none);
+
+    } catch (e) {
+      debugPrint('[VIDEO] Open error: $e');
+      if (mounted) {
+        setState(() => _hasError = true);
+      }
     }
+  }
+
+  Future<void> _restartStream() async {
+    if (!mounted) return;
+    setState(() {
+      _hasError    = false;
+      _isBuffering = true;
+    });
+    await Future.delayed(
+        const Duration(seconds: 2));
+    if (mounted) await _openStream();
   }
 
   @override
@@ -115,7 +109,8 @@ class _VideoStreamWidgetState
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size.width;
+    final size =
+        MediaQuery.of(context).size.width;
 
     if (_hasError) {
       return _buildErrorWidget(size);
@@ -126,66 +121,50 @@ class _VideoStreamWidgetState
       height: size,
       child: Stack(
         children: [
-          // ── Video Player ──────────────────────────
+
+          // ── Video Player ────────────────
           Video(
             controller:  _controller,
             aspectRatio: 1.0,
-            fill:        const Color(
+            fill: const Color(
                 AppConstants.surfaceColor),
-            controls:    NoVideoControls,
+            controls: NoVideoControls,
           ),
 
-          // ── Buffering Indicator ───────────────────
+          // ── Buffering Overlay ───────────
           if (_isBuffering)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withValues(
-                    alpha: 0.3),
+                color: Colors.black
+                    .withValues(alpha: 0.4),
                 child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(
-                        AppConstants.accentColor),
-                    strokeWidth: 2,
+                  child: Column(
+                    mainAxisAlignment:
+                        MainAxisAlignment
+                            .center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: Color(
+                            AppConstants
+                                .accentColor),
+                        strokeWidth: 2,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Connecting...',
+                        style: TextStyle(
+                          color: Color(
+                              AppConstants
+                                  .textSecondary),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-
-          // ── Retry Button on Error ─────────────────
-          if (_hasError)
-            Positioned.fill(
-              child: _buildErrorWidget(size),
-            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingWidget(double size) {
-    return Container(
-      width:  size,
-      height: size,
-      color:  const Color(AppConstants.surfaceColor),
-      child:  const Center(
-        child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(
-              color: Color(
-                  AppConstants.accentColor),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Connecting to stream...',
-              style: TextStyle(
-                color: Color(
-                    AppConstants.textSecondary),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -194,15 +173,17 @@ class _VideoStreamWidgetState
     return Container(
       width:  size,
       height: size,
-      color:  const Color(AppConstants.surfaceColor),
+      color:  const Color(
+          AppConstants.surfaceColor),
       child: Column(
         mainAxisAlignment:
             MainAxisAlignment.center,
         children: [
           const Icon(
             Icons.signal_wifi_off,
-            color: Color(AppConstants.stressColor),
-            size:  48,
+            color: Color(
+                AppConstants.stressColor),
+            size: 48,
           ),
           const SizedBox(height: 12),
           const Text(
@@ -215,7 +196,7 @@ class _VideoStreamWidgetState
           ),
           const SizedBox(height: 8),
           const Text(
-            'Check OBS + nginx are running',
+            'Check OBS + nginx',
             style: TextStyle(
               color: Color(
                   AppConstants.textSecondary),
@@ -223,12 +204,11 @@ class _VideoStreamWidgetState
             ),
           ),
           const SizedBox(height: 16),
-          // ── Retry Button ────────────────────────
           ElevatedButton(
             onPressed: () {
               setState(() {
                 _hasError    = false;
-                _isBuffering = false;
+                _isBuffering = true;
               });
               _restartStream();
             },
@@ -253,4 +233,4 @@ class _VideoStreamWidgetState
       ),
     );
   }
-} 
+}
