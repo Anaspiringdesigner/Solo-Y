@@ -22,6 +22,7 @@ dependencies:
   provider:                     ^6.1.2
 
   # HTTP
+  flutter_webrtc:               ^0.14.2
   http:                         ^1.2.0
 
   # Calendar

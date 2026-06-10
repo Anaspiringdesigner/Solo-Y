@@ -1,108 +1,130 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 import '../constants.dart';
 
 class VideoStreamWidget extends StatefulWidget {
   const VideoStreamWidget({super.key});
 
   @override
-  State<VideoStreamWidget> createState() =>
-      _VideoStreamWidgetState();
+  State<VideoStreamWidget> createState() => _VideoStreamWidgetState();
 }
 
 class _VideoStreamWidgetState extends State<VideoStreamWidget> {
-  late final Player _player;
-  late final VideoController _controller;
+  final RTCVideoRenderer _renderer = RTCVideoRenderer();
+  RTCPeerConnection? _pc;
 
+  bool _isLoading = true;
   bool _hasError = false;
-  bool _isBuffering = true;
+  String _errorText = '';
+
+  final String host = '100.67.125.12';
+  final String path = 'live';
 
   @override
   void initState() {
     super.initState();
-    _initPlayer();
+    _connect();
   }
 
-  Future<void> _initPlayer() async {
+  Future<void> _connect() async {
     try {
-      _player = Player(
-        configuration: const PlayerConfiguration(
-          bufferSize: 2 * 1024 * 1024,
-          logLevel:   MPVLogLevel.info,
-        ),
+      await _renderer.initialize();
+
+      _pc = await createPeerConnection({
+        'sdpSemantics': 'unified-plan',
+        'iceServers': [
+          {'urls': 'stun:stun.l.google.com:19302'}
+        ],
+      });
+
+      _pc!.onTrack = (event) {
+        if (event.track.kind == 'video' && event.streams.isNotEmpty) {
+          _renderer.srcObject = event.streams.first;
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _hasError = false;
+            });
+          }
+        }
+      };
+
+      // recvonly transceiver is important for WHEP
+      await _pc!.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
       );
 
-      _controller = VideoController(_player);
+      final offer = await _pc!.createOffer();
+      await _pc!.setLocalDescription(offer);
 
-      _player.stream.buffering.listen((b) {
-        if (mounted) {
-          setState(() => _isBuffering = b);
-        }
-      });
+      // Wait a short moment so SDP includes ICE fields
+      await Future.delayed(const Duration(milliseconds: 400));
 
-      _player.stream.error.listen((e) {
-        debugPrint('[VIDEO] Error: $e');
-        if (mounted) {
-          setState(() => _hasError = true);
-        }
-      });
+      final local = await _pc!.getLocalDescription();
+      final offerSdp = local?.sdp ?? '';
+      if (offerSdp.isEmpty) {
+        throw Exception('Local SDP is empty');
+      }
 
-      _player.stream.playing.listen((p) {
-        debugPrint('[VIDEO] Playing: $p');
-      });
+      final url = Uri.parse('http://$host:8889/$path/whep');
+      debugPrint('[WHEP] POST $url');
 
-      _player.stream.completed.listen(
-          (completed) {
-        if (completed && mounted) {
-          _restartStream();
-        }
-      });
+      final resp = await http.post(
+        url,
+        headers: const {
+          'Content-Type': 'application/sdp',
+          'Accept': 'application/sdp',
+        },
+        body: offerSdp,
+      ).timeout(const Duration(seconds: 10));
 
-      await _openStream();
+      debugPrint('[WHEP] status=${resp.statusCode}');
+      debugPrint('[WHEP] body=${resp.body}');
 
+      if (resp.statusCode != 201) {
+        throw Exception('WHEP failed: ${resp.statusCode} ${resp.body}');
+      }
+
+      final answerSdp = resp.body;
+      if (!answerSdp.contains('a=ice-ufrag')) {
+        throw Exception('Invalid answer SDP (missing ice-ufrag)');
+      }
+
+      await _pc!.setRemoteDescription(
+        RTCSessionDescription(answerSdp, 'answer'),
+      );
     } catch (e) {
-      debugPrint('[VIDEO] Init error: $e');
       if (mounted) {
-        setState(() => _hasError = true);
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorText = e.toString();
+        });
       }
     }
   }
 
-  Future<void> _openStream() async {
-    try {
-      debugPrint('[VIDEO] Opening: '
-          '${AppConstants.streamUrl}');
-
-      await _player.open(
-        Media(AppConstants.streamUrl),
-        play: true,
-      );
-
-      await _player.setPlaylistMode(
-          PlaylistMode.none);
-
-    } catch (e) {
-      debugPrint('[VIDEO] Open error: $e');
-      if (mounted) {
-        setState(() => _hasError = true);
-      }
+  Future<void> _retry() async {
+    await _pc?.close();
+    _pc = null;
+    _renderer.srcObject = null;
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+        _errorText = '';
+      });
     }
-  }
-
-  Future<void> _restartStream() async {
-    if (!mounted) return;
-    setState(() {
-      _hasError = false;
-      _isBuffering = true;
-    });
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) await _openStream();
+    await _connect();
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    _pc?.close();
+    _renderer.dispose();
     super.dispose();
   }
 
@@ -110,103 +132,45 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size.width;
 
-    if (_hasError) {
-      return _buildErrorWidget(size);
-    }
-
     return SizedBox(
       width: size,
       height: size,
       child: Stack(
         children: [
-          Video(
-            controller: _controller,
-            aspectRatio: 1.0, // keep your current square UI
-            fill: const Color(AppConstants.surfaceColor),
-            controls: NoVideoControls,
+          Container(color: Colors.black),
+          RTCVideoView(
+            _renderer,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
           ),
-          if (_isBuffering)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.35),
-                child: const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        color: Color(AppConstants.accentColor),
-                        strokeWidth: 2,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'Connecting SRT...',
-                        style: TextStyle(
-                          color: Color(AppConstants.textSecondary),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorWidget(double size) {
-    return Container(
-      width: size,
-      height: size,
-      color: const Color(AppConstants.surfaceColor),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.signal_wifi_off,
-            color: Color(AppConstants.stressColor),
-            size: 48,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'SRT stream unavailable',
-            style: TextStyle(
-              color: Color(AppConstants.textSecondary),
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            AppConstants.streamUrl,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(AppConstants.textSecondary),
-              fontSize: 10,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _hasError = false;
-                _isBuffering = true;
-              });
-              _restartStream();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  const Color(AppConstants.accentColor).withValues(alpha: 0.15),
-              foregroundColor: const Color(AppConstants.accentColor),
-              side: const BorderSide(
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(
                 color: Color(AppConstants.accentColor),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            ),
+          if (_hasError)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error, color: Colors.redAccent, size: 42),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'WebRTC failed:\n$_errorText',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _retry,
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
-            child: const Text('↺ Retry'),
-          ),
         ],
       ),
     );

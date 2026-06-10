@@ -6,13 +6,13 @@ class AppConstants {
   // SRT URL (caller mode: app dials TD stream server)
   // Adjust port if needed.
   static String streamUrl =
-      'srt://100.67.125.12:9000';
+      'srt://100.67.125.12:9000?streamid=read:live';
 
   static void updateServerIp(String ip) {
     serverIp   = ip;
     serverBase = 'http://$ip:8000';
     streamUrl  =
-        'srt://$ip:9000?mode=caller&latency=80';
+        'srt://$ip:9000?streamid=read:live&mode=caller&latency=120';
   }
 
   // ── Polling ──────────────────────────────────
