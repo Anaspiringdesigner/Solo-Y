@@ -11,12 +11,11 @@ class VideoStreamWidget extends StatefulWidget {
       _VideoStreamWidgetState();
 }
 
-class _VideoStreamWidgetState
-    extends State<VideoStreamWidget> {
-
-  late final Player          _player;
+class _VideoStreamWidgetState extends State<VideoStreamWidget> {
+  late final Player _player;
   late final VideoController _controller;
-  bool _hasError    = false;
+
+  bool _hasError = false;
   bool _isBuffering = true;
 
   @override
@@ -29,14 +28,13 @@ class _VideoStreamWidgetState
     try {
       _player = Player(
         configuration: const PlayerConfiguration(
-          bufferSize: 8 * 1024 * 1024,
-          logLevel:   MPVLogLevel.warn,
+          bufferSize: 2 * 1024 * 1024,
+          logLevel:   MPVLogLevel.info,
         ),
       );
 
       _controller = VideoController(_player);
 
-      // Listen to stream events
       _player.stream.buffering.listen((b) {
         if (mounted) {
           setState(() => _isBuffering = b);
@@ -50,12 +48,13 @@ class _VideoStreamWidgetState
         }
       });
 
+      _player.stream.playing.listen((p) {
+        debugPrint('[VIDEO] Playing: $p');
+      });
+
       _player.stream.completed.listen(
           (completed) {
         if (completed && mounted) {
-          debugPrint(
-              '[VIDEO] Stream ended — '
-              'restarting');
           _restartStream();
         }
       });
@@ -72,13 +71,14 @@ class _VideoStreamWidgetState
 
   Future<void> _openStream() async {
     try {
+      debugPrint('[VIDEO] Opening: '
+          '${AppConstants.streamUrl}');
+
       await _player.open(
         Media(AppConstants.streamUrl),
         play: true,
       );
 
-      // Set MPV options for true live
-      // streaming — no seeking to end
       await _player.setPlaylistMode(
           PlaylistMode.none);
 
@@ -93,11 +93,10 @@ class _VideoStreamWidgetState
   Future<void> _restartStream() async {
     if (!mounted) return;
     setState(() {
-      _hasError    = false;
+      _hasError = false;
       _isBuffering = true;
     });
-    await Future.delayed(
-        const Duration(seconds: 2));
+    await Future.delayed(const Duration(milliseconds: 800));
     if (mounted) await _openStream();
   }
 
@@ -109,53 +108,40 @@ class _VideoStreamWidgetState
 
   @override
   Widget build(BuildContext context) {
-    final size =
-        MediaQuery.of(context).size.width;
+    final size = MediaQuery.of(context).size.width;
 
     if (_hasError) {
       return _buildErrorWidget(size);
     }
 
     return SizedBox(
-      width:  size,
+      width: size,
       height: size,
       child: Stack(
         children: [
-
-          // ── Video Player ────────────────
           Video(
-            controller:  _controller,
-            aspectRatio: 1.0,
-            fill: const Color(
-                AppConstants.surfaceColor),
+            controller: _controller,
+            aspectRatio: 1.0, // keep your current square UI
+            fill: const Color(AppConstants.surfaceColor),
             controls: NoVideoControls,
           ),
-
-          // ── Buffering Overlay ───────────
           if (_isBuffering)
             Positioned.fill(
               child: Container(
-                color: Colors.black
-                    .withValues(alpha: 0.4),
+                color: Colors.black.withValues(alpha: 0.35),
                 child: const Center(
                   child: Column(
-                    mainAxisAlignment:
-                        MainAxisAlignment
-                            .center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircularProgressIndicator(
-                        color: Color(
-                            AppConstants
-                                .accentColor),
+                        color: Color(AppConstants.accentColor),
                         strokeWidth: 2,
                       ),
                       SizedBox(height: 12),
                       Text(
-                        'Connecting...',
+                        'Connecting SRT...',
                         style: TextStyle(
-                          color: Color(
-                              AppConstants
-                                  .textSecondary),
+                          color: Color(AppConstants.textSecondary),
                           fontSize: 12,
                         ),
                       ),
@@ -171,63 +157,55 @@ class _VideoStreamWidgetState
 
   Widget _buildErrorWidget(double size) {
     return Container(
-      width:  size,
+      width: size,
       height: size,
-      color:  const Color(
-          AppConstants.surfaceColor),
+      color: const Color(AppConstants.surfaceColor),
       child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(
             Icons.signal_wifi_off,
-            color: Color(
-                AppConstants.stressColor),
+            color: Color(AppConstants.stressColor),
             size: 48,
           ),
           const SizedBox(height: 12),
           const Text(
-            'Stream unavailable',
+            'SRT stream unavailable',
             style: TextStyle(
-              color: Color(
-                  AppConstants.textSecondary),
+              color: Color(AppConstants.textSecondary),
               fontSize: 14,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Check OBS + nginx',
-            style: TextStyle(
-              color: Color(
-                  AppConstants.textSecondary),
-              fontSize: 11,
+          Text(
+            AppConstants.streamUrl,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(AppConstants.textSecondary),
+              fontSize: 10,
             ),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
               setState(() {
-                _hasError    = false;
+                _hasError = false;
                 _isBuffering = true;
               });
               _restartStream();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(
-                      AppConstants.accentColor)
-                  .withValues(alpha: 0.15),
-              foregroundColor: const Color(
-                  AppConstants.accentColor),
+              backgroundColor:
+                  const Color(AppConstants.accentColor).withValues(alpha: 0.15),
+              foregroundColor: const Color(AppConstants.accentColor),
               side: const BorderSide(
-                color: Color(
-                    AppConstants.accentColor),
+                color: Color(AppConstants.accentColor),
               ),
               shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('↺  Retry'),
+            child: const Text('↺ Retry'),
           ),
         ],
       ),
