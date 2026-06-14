@@ -7,7 +7,7 @@
 \usepackage{fontspec}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{calc, arrows.meta}
+\usetikzlibrary{calc, arrows.meta, positioning, shapes.geometric, fit, decorations.text}
 \usepackage{xcolor}
 \usepackage{array}
 \usepackage{tabularx}
@@ -428,7 +428,7 @@ Recommended by Expert to include this starter list};
 \begin{minipage}{0.84\textwidth}
 {\fontsize{18}{24}\itshape
 "Research by psychologist Dr. Russell Barkley, a prominent ADHD researcher, demonstrates that ADHD has a \textcolor{red}{significantly negative impact on
-life expectancy — by 12.7 years, on average.} ADHD makes our lives \accenttext{harder and shorter.}}"
+life expectancy — by 12.7 years, on average.} ADHD makes our \accenttext{lives harder and shorter.}}"
 \end{minipage}
 \end{frame}
 
@@ -695,29 +695,287 @@ at (\xD,\yBot-\boxH-0.10)
 
 \end{tikzpicture}
 \end{frame}
+
 % ---------------------------------
 
+% ---------------------------------
 \begin{frame}{System Architecture}
 \begin{tikzpicture}[remember picture,overlay]
 
-% --- rectangle coordinates
-\coordinate (P1) at ([xshift=1.2cm,yshift=-1.8cm]current page.north west);
-\coordinate (P2) at ([xshift=-1.2cm,yshift=1cm]current page.south east);
+% =========================================================
+% Anchor (safe area under title and inside border)
+% =========================================================
+\coordinate (O) at ([xshift=1.00cm,yshift=-2.20cm]current page.north west);
 
-% --- clipped rounded rectangle image
+% ========================================================
+% LEFT VERTICAL CIRCLE CHAIN (4 circles)
+% =========================================================
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (l1)
+at ([xshift=0.85cm,yshift=-0.00cm]O) {};
 \begin{scope}
-    \clip[rounded corners=14pt] (P1) rectangle (P2);
-    \node at ($(P1)!0.5!(P2)$)
-    {\includegraphics[width=14.5cm,height=7.4cm]{images/interaction_01.jpg}};
+  \clip (l1.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{\node at (l1.center){\includegraphics[scale=0.18]{images/users.jpg}};}{}
 \end{scope}
 
-% --- rounded rectangle border
-\draw[line width=0.9pt,color=linec!60,rounded corners=14pt] (P1) rectangle (P2);
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (l2)
+at ([xshift=0.85cm,yshift=-1.60cm]O) {};
+\begin{scope}
+  \clip (l2.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{\node at (l2.center){\includegraphics[scale=0.2]{images/tool_platform.jpg}};}{}
+\end{scope}
 
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (l3)
+at ([xshift=0.85cm,yshift=-3.20cm]O) {};
+\begin{scope}
+  \clip (l3.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{\node at (l3.center){\includegraphics[scale=0.475]{images/psl.jpg}};}{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (l4)
+at ([xshift=0.85cm,yshift=-4.80cm]O) {};
+\begin{scope}
+  \clip (l4.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{\node at (l4.center){\includegraphics[scale=0.14]{images/folder.jpg}};}{}
+\end{scope}
+
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l1) -- (l2);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70, dashed] (l2) -- (l3);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l3) -- (l4);
+
+% =========================================================
+% CENTER RECTANGLE (empty)
+% =========================================================
+\coordinate (cA) at ([xshift=3.30cm,yshift=0.60cm]O);
+\coordinate (cB) at ([xshift=8.00cm,yshift=-3.85cm]O);
+\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (cA) rectangle (cB);
+
+% =========================
+% Nodes + lines inside (cA,cB)
+% (RL + Bridge are clipped images)
+% =========================
+
+% Pre-trainer (rounded rectangle, text only)
+\node[
+  draw=linec!60, line width=0.8pt, rounded corners=10pt,
+  minimum width=2.35cm, minimum height=0.62cm, fill=none
+] (pretrainer) at ($(cA)+(1.25cm,-0.55cm)$) {};
+\node[font=\fontsize{9}{10}\selectfont] at (pretrainer.center) {Pre-trainer};
+
+% Bridge (circle, clipped image)
+\node[
+  draw=linec!60, line width=0.8pt, circle,
+  minimum size=1.25cm, inner sep=0pt
+] (bridge) at ($(cA)+(3.95cm,-0.95cm)$) {};
+\begin{scope}
+  \clip (bridge.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{
+    \node at (bridge.center) {\includegraphics[scale=0.18]{images/bridge.jpg}};
+  }{}
+\end{scope}
+
+% RL (circle, clipped image)
+\node[
+  draw=linec!60, line width=0.8pt, circle,
+  minimum size=1.25cm, inner sep=0pt
+] (rl) at ($(cA)+(2.15cm,-2.00cm)$) {};
+\begin{scope}
+  \clip (rl.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{
+    \node at (rl.center) {\includegraphics[scale=0.18]{images/rl}};
+  }{}
+\end{scope}
+
+% RL Environment (rounded rectangle, text only)
+\node[
+  draw=linec!60, line width=0.8pt, rounded corners=8pt,
+  minimum width=1.75cm, minimum height=1.30cm, fill=none
+] (rlenv) at ($(cA)+(3.75cm,-2.5cm)$) {};
+\node[font=\fontsize{9}{10}\selectfont,align=center] at (rlenv.center) {RL\\Environ\\ment};
+
+% TCN Encoder (bottom rounded rectangle, text only)
+\node[
+  draw=linec!60, line width=0.8pt, rounded corners=10pt,
+  minimum width=2.75cm, minimum height=0.72cm, fill=none
+] (tcn) at ($(cA)+(2.45cm,-3.95cm)$) {};
+\node[font=\fontsize{11}{12}\selectfont] at (tcn.center) {TCN Encoder};
+
+% ---------- Lines / arrows ----------
+\draw[->,>=Stealth,line width=0.8pt,color=linec!70]
+([xshift=-0.5   cm]pretrainer.south) -- ++(0,-0.12) |- (tcn.west);
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] ([xshift=-0.3cm]tcn.north) -- (rl.south);
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] (rl) -- (bridge);
+\draw[->,>=Stealth,line width=0.8pt,color=linec!70]
+([xshift=0.5cm]rlenv.south) -- ++(0,-0.15) |- (tcn.east);
+\draw[->,>=Stealth,line width=0.8pt,color=linec!70]
+([xshift=0.8cm]tcn.north) -- ([xshift=-0.5cm]rlenv.south);
+
+% =========================================================
+% RIGHT RECTANGLE (empty)
+% =========================================================
+\coordinate (rA) at ([xshift=9.70cm,yshift=0.60cm]O);
+\coordinate (rB) at ([xshift=14.4cm,yshift=-4.00cm]O);
+\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (rA) rectangle (rB);
+
+% =========================================================
+% BOTTOM CENTER LARGE CIRCLE
+% =========================================================
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (hub)
+at ([xshift=3.75cm,yshift=-5.00cm]O) {};
+\begin{scope}
+  \clip (hub.center) circle (0.65cm);
+  \IfFileExists{images/do.jpg}{\node at (hub.center){\includegraphics[scale=0.15]{images/app.jpg}};}{}
+\end{scope}
+
+% =========================================================
+% Nodes + connectors INSIDE rectangle (rA,rB)
+% Uses: images/do.jpg as default clipped image for 1..5 squares
+% =========================================================
+
+% -------- top block: OSCIN CHOP --------
+\node[
+  draw=linec!60,line width=0.85pt,rounded corners=8pt,
+  minimum width=3.35cm,minimum height=0.66cm,fill=none
+] (oscin) at ($(rA)!0.5!(rB)+(0,1.65cm)$) {};
+\node[font=\fontsize{10}{11}\selectfont] at (oscin.center) {OSCIN CHOP};
+
+% -------- second block: select chop --------
+\node[
+  draw=linec!60,line width=0.85pt,rounded corners=8pt,
+  minimum width=3.35cm,minimum height=0.66cm,fill=none
+] (selchop) at ($(oscin.south)+(0,-0.6cm)$) {};
+\node[font=\fontsize{10}{11}\selectfont] at (selchop.center) {select chop};
+
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] (oscin.south) -- (selchop.north);
+
+% -------- 1..5 squares (centered/lower, unique image each, no text labels) --------
+\def\sq{0.66}
+\def\gap{0.20}
+\pgfmathsetmacro{\rowW}{5*\sq + 4*\gap}
+
+\coordinate (rowC) at ($(rA)!0.5!(rB)+(0.33,-0.25cm)$);
+\coordinate (rowL) at ($(rowC)+(-0.5*\rowW cm,0)$);
+
+% Put your 5 image paths here (left to right)
+% Replace filenames below with your actual files for 1..5
+\def\imgone{images/interaction_01.jpg}
+\def\imgtwo{images/interaction_02.jpg}
+\def\imgthree{images/interaction_03.jpg}
+\def\imgfour{images/interaction_04.jpg}
+\def\imgfive{images/interaction_05.jpg}
+
+\foreach \i/\img [count=\k from 0] in {
+  1/\imgone,
+  2/\imgtwo,
+  3/\imgthree,
+  4/\imgfour,
+  5/\imgfive
+}{
+  \pgfmathsetmacro{\xshiftval}{\k*(\sq+\gap)}
+  \node[
+    draw=linec!60,line width=0.85pt,rounded corners=2pt,
+    minimum width=\sq cm,minimum height=\sq cm,inner sep=0pt
+  ] (sq\i) at ($(rowL)+(\xshiftval cm,0)$) {};
+
+  \begin{scope}
+    \clip ([xshift=-0.5*\sq cm,yshift=-0.5*\sq cm]sq\i.center) rectangle
+          ([xshift= 0.5*\sq cm,yshift= 0.5*\sq cm]sq\i.center);
+
+    \IfFileExists{\img}{
+      \node at (sq\i.center){\includegraphics[width=\sq cm,height=\sq cm]{\img}};
+    }{
+      \IfFileExists{images/do.jpg}{
+        \node at (sq\i.center){\includegraphics[width=\sq cm,height=\sq cm]{images/do.jpg}};
+      }{}
+    }
+  \end{scope}
+}
+
+\foreach \i in {1,...,5}{
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] (selchop.south) -- (sq\i.north);
+}
+
+
+% -------- select block --------
+\node[
+  draw=linec!60,line width=0.85pt,rounded corners=4pt,
+  minimum width=2.55cm,minimum height=0.62cm,fill=none
+] (selectblk) at ($(selchop.south)+(0,-1.5cm)$) {};
+\node[font=\fontsize{11}{12}\selectfont] at (selectblk.center) {Select};
+
+\foreach \i in {1,...,5}{
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] (sq\i.south) -- (selectblk.north);
+}
+
+% -------- spout out block --------
+\node[
+  draw=linec!60,line width=0.85pt,rounded corners=3pt,
+  minimum width=2.95cm,minimum height=0.62cm,fill=none
+] (spout) at ($(selectblk.south)+(0,-0.48cm)$) {};
+\node[font=\fontsize{11}{12}\selectfont] at (spout.center) {Spout Out};
+
+\draw[->,>=Stealth,line width=0.75pt,color=linec!70] (selectblk.south) -- (spout.north);
+
+% =========================================================
+% RIGHT-SIDE CIRCLES (1 medium + 3 small)
+% =========================================================
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (rmid)
+at ([xshift=11.85cm,yshift=-4.95cm]O) {};
+\begin{scope}
+    \clip (rmid.center) circle (0.65cm);
+    \IfFileExists{images/do.jpg}{\node at (rmid.center){\includegraphics[scale=0.18]{images/streamer.jpg}};}{}
+\end{scope}
+
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (rs1)
+at ([xshift=9.95cm,yshift=-4.95cm]O) {};
+\begin{scope}
+    \clip (rs1.center) circle (0.65cm);
+    \IfFileExists{images/do.jpg}{\node at (rs1.center){\includegraphics[scale=0.18]{images/server1.jpg}};}{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (rs2)
+at ([xshift=8.85cm,yshift=-3.65cm]O) {};
+\begin{scope}
+    \clip (rs2.center) circle (0.65cm);
+    \IfFileExists{images/do.jpg}{\node at (rs2.center){\includegraphics[scale=0.18]{images/server2.jpg}};}{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=0.75cm,inner sep=0pt] (rs3)
+at ([xshift=13.55cm,yshift=-5.8cm]O) {};
+\begin{scope}
+    \clip (rs3.center) circle (0.38cm);
+    \IfFileExists{images/do.jpg}{\node at (rs3.center){\includegraphics[scale=0.09]{images/tailscale.jpeg}};}{}
+\end{scope}
+
+% =========================================================
+% BOTTOM-LEFT SMALL CIRCLE
+% =========================================================
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=0.75cm,inner sep=0pt] (bl)
+at ([xshift=0.10cm,yshift=-5.8cm]O) {};
+\begin{scope}
+  \clip (bl.center) circle (0.38cm);
+  \IfFileExists{images/do.jpg}{\node at (bl.center){\includegraphics[scale=0.09]{images/tailscale.jpeg}};}{}
+\end{scope}
+
+% Tailscale connection representation
+
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70,dashed]
+  ($(rs3.center)+(-0.35cm, 0.10cm)$) -- ($(bl.center)+(0.35cm, 0.10cm)$);
+
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70,dashed]
+  ($(bl.center)+(0.35cm,-0.10cm)$) -- ($(rs3.center)+(-0.35cm,-0.10cm)$);
+
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (rmid) -- (rs1);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70, dashed] (rs1) -- (hub);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70, dashed] (hub) -- (rs2);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l4) -- (hub);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70, dashed] (hub) -- (tcn);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (spout) -- (rmid);
 \end{tikzpicture}
 \end{frame}
 
 % ---------------------------------
+
 \begin{frame}{What has been built}
 \begin{columns}[T,totalwidth=\textwidth]
 \column{0.33\textwidth}
@@ -765,7 +1023,7 @@ at (\xD,\yBot-\boxH-0.10)
 \end{frame}
 
 % ---------------------------------
-\begin{frame}{Development through prototyping}
+\begin{frame}{Development through Prototyping}
 \hspace{0.7cm}
 \begin{minipage}{0.88\textwidth}
 \sectiontag{PROTOTYPING}
