@@ -279,6 +279,13 @@
 }
 }
 
+% ============================
+% Set Layers
+% ============================
+
+\pgfdeclarelayer{bg}
+\pgfsetlayers{bg,main}
+
 % =========================
 % Metadata
 % =========================
@@ -698,9 +705,11 @@ at (\xD,\yBot-\boxH-0.10)
 
 % ---------------------------------
 
-% ---------------------------------
 \begin{frame}{System Architecture}
 \begin{tikzpicture}[remember picture,overlay]
+
+% Global text style for all TikZ nodes in this frame (same as footer)
+\tikzset{every node/.style={font=\fontsize{7}{8}\selectfont}}
 
 % =========================================================
 % Anchor (safe area under title and inside border)
@@ -747,21 +756,17 @@ at ([xshift=0.85cm,yshift=-4.80cm]O) {};
 % =========================================================
 \coordinate (cA) at ([xshift=3.30cm,yshift=0.60cm]O);
 \coordinate (cB) at ([xshift=8.00cm,yshift=-3.85cm]O);
-\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (cA) rectangle (cB);
+%\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (cA) rectangle (cB);
 
 % =========================
 % Nodes + lines inside (cA,cB)
-% (RL + Bridge are clipped images)
 % =========================
-
-% Pre-trainer (rounded rectangle, text only)
 \node[
   draw=linec!60, line width=0.8pt, rounded corners=10pt,
   minimum width=2.35cm, minimum height=0.62cm, fill=none
 ] (pretrainer) at ($(cA)+(1.25cm,-0.55cm)$) {};
-\node[font=\fontsize{9}{10}\selectfont] at (pretrainer.center) {Pre-trainer};
+\node at (pretrainer.center) {Pre-trainer};
 
-% Bridge (circle, clipped image)
 \node[
   draw=linec!60, line width=0.8pt, circle,
   minimum size=1.25cm, inner sep=0pt
@@ -773,7 +778,6 @@ at ([xshift=0.85cm,yshift=-4.80cm]O) {};
   }{}
 \end{scope}
 
-% RL (circle, clipped image)
 \node[
   draw=linec!60, line width=0.8pt, circle,
   minimum size=1.25cm, inner sep=0pt
@@ -785,23 +789,20 @@ at ([xshift=0.85cm,yshift=-4.80cm]O) {};
   }{}
 \end{scope}
 
-% RL Environment (rounded rectangle, text only)
 \node[
   draw=linec!60, line width=0.8pt, rounded corners=8pt,
-  minimum width=1.75cm, minimum height=1.30cm, fill=none
+  minimum width=1.75cm, minimum height=1.00cm, fill=none
 ] (rlenv) at ($(cA)+(3.75cm,-2.5cm)$) {};
-\node[font=\fontsize{9}{10}\selectfont,align=center] at (rlenv.center) {RL\\Environ\\ment};
+\node[align=center] at (rlenv.center) {RL\\Environment};
 
-% TCN Encoder (bottom rounded rectangle, text only)
 \node[
   draw=linec!60, line width=0.8pt, rounded corners=10pt,
   minimum width=2.75cm, minimum height=0.72cm, fill=none
 ] (tcn) at ($(cA)+(2.45cm,-3.95cm)$) {};
-\node[font=\fontsize{11}{12}\selectfont] at (tcn.center) {TCN Encoder};
+\node at (tcn.center) {TCN Encoder};
 
-% ---------- Lines / arrows ----------
 \draw[->,>=Stealth,line width=0.8pt,color=linec!70]
-([xshift=-0.5   cm]pretrainer.south) -- ++(0,-0.12) |- (tcn.west);
+([xshift=-0.5cm]pretrainer.south) -- ++(0,-0.12) |- (tcn.west);
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] ([xshift=-0.3cm]tcn.north) -- (rl.south);
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] (rl) -- (bridge);
 \draw[->,>=Stealth,line width=0.8pt,color=linec!70]
@@ -814,7 +815,7 @@ at ([xshift=0.85cm,yshift=-4.80cm]O) {};
 % =========================================================
 \coordinate (rA) at ([xshift=9.70cm,yshift=0.60cm]O);
 \coordinate (rB) at ([xshift=14.4cm,yshift=-4.00cm]O);
-\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (rA) rectangle (rB);
+%\draw[draw=linec!60,line width=0.9pt,rounded corners=8pt] (rA) rectangle (rB);
 
 % =========================================================
 % BOTTOM CENTER LARGE CIRCLE
@@ -826,28 +827,23 @@ at ([xshift=3.75cm,yshift=-5.00cm]O) {};
   \IfFileExists{images/do.jpg}{\node at (hub.center){\includegraphics[scale=0.15]{images/app.jpg}};}{}
 \end{scope}
 
-% =========================================================
-% Nodes + connectors INSIDE rectangle (rA,rB)
-% Uses: images/do.jpg as default clipped image for 1..5 squares
-% =========================================================
-
 % -------- top block: OSCIN CHOP --------
 \node[
   draw=linec!60,line width=0.85pt,rounded corners=8pt,
   minimum width=3.35cm,minimum height=0.66cm,fill=none
 ] (oscin) at ($(rA)!0.5!(rB)+(0,1.65cm)$) {};
-\node[font=\fontsize{10}{11}\selectfont] at (oscin.center) {OSCIN CHOP};
+\node at (oscin.center) {OSCIN CHOP};
 
 % -------- second block: select chop --------
 \node[
   draw=linec!60,line width=0.85pt,rounded corners=8pt,
   minimum width=3.35cm,minimum height=0.66cm,fill=none
 ] (selchop) at ($(oscin.south)+(0,-0.6cm)$) {};
-\node[font=\fontsize{10}{11}\selectfont] at (selchop.center) {select chop};
+\node at (selchop.center) {select chop};
 
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] (oscin.south) -- (selchop.north);
 
-% -------- 1..5 squares (centered/lower, unique image each, no text labels) --------
+% -------- 1..5 squares --------
 \def\sq{0.66}
 \def\gap{0.20}
 \pgfmathsetmacro{\rowW}{5*\sq + 4*\gap}
@@ -855,8 +851,6 @@ at ([xshift=3.75cm,yshift=-5.00cm]O) {};
 \coordinate (rowC) at ($(rA)!0.5!(rB)+(0.33,-0.25cm)$);
 \coordinate (rowL) at ($(rowC)+(-0.5*\rowW cm,0)$);
 
-% Put your 5 image paths here (left to right)
-% Replace filenames below with your actual files for 1..5
 \def\imgone{images/interaction_01.jpg}
 \def\imgtwo{images/interaction_02.jpg}
 \def\imgthree{images/interaction_03.jpg}
@@ -894,13 +888,12 @@ at ([xshift=3.75cm,yshift=-5.00cm]O) {};
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] (selchop.south) -- (sq\i.north);
 }
 
-
 % -------- select block --------
 \node[
   draw=linec!60,line width=0.85pt,rounded corners=4pt,
   minimum width=2.55cm,minimum height=0.62cm,fill=none
 ] (selectblk) at ($(selchop.south)+(0,-1.5cm)$) {};
-\node[font=\fontsize{11}{12}\selectfont] at (selectblk.center) {Select};
+\node at (selectblk.center) {Select};
 
 \foreach \i in {1,...,5}{
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] (sq\i.south) -- (selectblk.north);
@@ -911,7 +904,7 @@ at ([xshift=3.75cm,yshift=-5.00cm]O) {};
   draw=linec!60,line width=0.85pt,rounded corners=3pt,
   minimum width=2.95cm,minimum height=0.62cm,fill=none
 ] (spout) at ($(selectblk.south)+(0,-0.48cm)$) {};
-\node[font=\fontsize{11}{12}\selectfont] at (spout.center) {Spout Out};
+\node at (spout.center) {Spout Out};
 
 \draw[->,>=Stealth,line width=0.75pt,color=linec!70] (selectblk.south) -- (spout.north);
 
@@ -924,7 +917,6 @@ at ([xshift=11.85cm,yshift=-4.95cm]O) {};
     \clip (rmid.center) circle (0.65cm);
     \IfFileExists{images/do.jpg}{\node at (rmid.center){\includegraphics[scale=0.18]{images/streamer.jpg}};}{}
 \end{scope}
-
 
 \node[draw=linec!60,line width=0.8pt,circle,minimum size=1.25cm,inner sep=0pt] (rs1)
 at ([xshift=9.95cm,yshift=-4.95cm]O) {};
@@ -958,7 +950,6 @@ at ([xshift=0.10cm,yshift=-5.8cm]O) {};
 \end{scope}
 
 % Tailscale connection representation
-
 \draw[->,>=Stealth,line width=0.7pt,color=linec!70,dashed]
   ($(rs3.center)+(-0.35cm, 0.10cm)$) -- ($(bl.center)+(0.35cm, 0.10cm)$);
 
@@ -971,6 +962,40 @@ at ([xshift=0.10cm,yshift=-5.8cm]O) {};
 \draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l4) -- (hub);
 \draw[->,>=Stealth,line width=0.7pt,color=linec!70, dashed] (hub) -- (tcn);
 \draw[->,>=Stealth,line width=0.7pt,color=linec!70] (spout) -- (rmid);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (rs2) -- ([yshift=-0.25cm]sq1.south) -- (sq4.south);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (bridge) -- (oscin.west);
+
+
+% --- Consistent annotation text style (same as footer size) ---
+\tikzset{
+  ann/.style={font=\fontsize{6}{7}\selectfont,text=text,align=center},
+  annmuted/.style={font=\fontsize{6}{7}\selectfont,text=muted,align=center}
+}
+
+% Left column labels
+\node[ann] at ($(l1.east)+(0.05cm,-0.80cm)$) {Physiology};
+\node[ann] at ($(l2.east)+(0.35cm,-0.8cm)$) {(9 streams of data)};
+\node[ann] at ($(l3.east)+(0.45cm,-0.85cm)$) {HR, HRV, BR and\\TS get logged};
+
+% Center box labels
+\node[annmuted,rotate=90] at ($(pretrainer.west)+(0.5cm,-1.80cm)$) {Daily new data and pre-training};
+\node[annmuted,rotate=90] at ($(rl.south)+(-0.15cm,-0.5cm)$) {Data};
+\node[annmuted] at ($(rlenv.south)+(-0.95cm,-0.30cm)$) {Triggers};
+
+% Bottom transport labels
+\node[ann,rotate=-4] at ($(l4.east)+(0.80cm,-0.3cm)$) {HR, HRV, BR, TS};
+
+\node[annmuted,align=left, rotate=15] at ($(hub)!0.4!(rs2)+(0.25cm,0.05cm)$)
+{nginx server via hls protocol\\(my camera feed from phone)};
+
+\node[annmuted,align=left] at ($(hub)!0.45!(rs1)+(0.95cm,0.02cm)$)
+{Touch Designer stream via WebRTC\\Video stream from mediamtx server};
+
+\node[annmuted,align=left, rotate=41] at ($(hub)!0.45!(tcn)+(0.05cm,0.02cm)$)
+{Data\\Triggers};
+
+\node[annmuted] at ($(bl)!0.5!(rs3)+(0,-0.28cm)$)
+{Tailscale private VPN for communication between server (laptop and phone). Installed on both devices};
 \end{tikzpicture}
 \end{frame}
 

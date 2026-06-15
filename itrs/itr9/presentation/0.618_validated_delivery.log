@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2025) (preloaded format=xelatex 2026.2.2)  15 JUN 2026 00:18
+This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2025) (preloaded format=xelatex 2026.2.2)  15 JUN 2026 01:34
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -848,29 +848,32 @@ Package fontspec Info:
 (fontspec)             Modern
 (fontspec)             Mono/BI/OT:script=latn;language=dflt;mapping=tex-text;"
 
- (c:/texlive/2025/texmf-dist/tex/latex/beamer/beamerinnerthemerounded.sty) (./0.618_validated_delivery.aux)
+ (c:/texlive/2025/texmf-dist/tex/latex/beamer/beamerinnerthemerounded.sty)
+\pgf@layerbox@bg=\box135
+\pgf@layerboxsaved@bg=\box136
+ (./0.618_validated_delivery.aux)
 \openout1 = `0.618_validated_delivery.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 290.
-LaTeX Font Info:    ... okay on input line 290.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 297.
+LaTeX Font Info:    ... okay on input line 297.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: xetex
@@ -906,53 +909,53 @@ LaTeX Font Info:    ... okay on input line 290.
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-Package hyperref Info: Link coloring OFF on input line 290.
+Package hyperref Info: Link coloring OFF on input line 297.
 (./0.618_validated_delivery.out) (./0.618_validated_delivery.out)
 \@outlinefile=\write5
 \openout5 = `0.618_validated_delivery.out'.
 
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  OT1/cmr/m/n --> OT1/cmss/m/n on input line 290.
+(Font)                  OT1/cmr/m/n --> OT1/cmss/m/n on input line 297.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 290.
+(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 297.
 \symnumbers=\mathgroup6
 \sympureletters=\mathgroup7
 LaTeX Font Info:    Overwriting math alphabet `\mathrm' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
-LaTeX Font Info:    Redeclaring math alphabet \mathbf on input line 290.
+(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
+LaTeX Font Info:    Redeclaring math alphabet \mathbf on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
-(Font)                  OT1/cmr/bx/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  OT1/cmr/bx/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `bold'
-(Font)                  OT1/cmr/bx/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
-LaTeX Font Info:    Redeclaring math alphabet \mathsf on input line 290.
+(Font)                  OT1/cmr/bx/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
+LaTeX Font Info:    Redeclaring math alphabet \mathsf on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
+(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
-LaTeX Font Info:    Redeclaring math alphabet \mathit on input line 290.
+(Font)                  OT1/cmss/bx/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
+LaTeX Font Info:    Redeclaring math alphabet \mathit on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
-(Font)                  OT1/cmr/m/it --> TU/TeXGyreHeros(0)/m/it on input line 290.
+(Font)                  OT1/cmr/m/it --> TU/TeXGyreHeros(0)/m/it on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  OT1/cmr/bx/it --> TU/TeXGyreHeros(0)/m/it on input line 290.
-LaTeX Font Info:    Redeclaring math alphabet \mathtt on input line 290.
+(Font)                  OT1/cmr/bx/it --> TU/TeXGyreHeros(0)/m/it on input line 297.
+LaTeX Font Info:    Redeclaring math alphabet \mathtt on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> TU/LatinModernMono(0)/m/n on input line 290.
+(Font)                  OT1/cmtt/m/n --> TU/LatinModernMono(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> TU/LatinModernMono(0)/m/n on input line 290.
+(Font)                  OT1/cmtt/m/n --> TU/LatinModernMono(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting symbol font `numbers' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting symbol font `pureletters' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/b/it on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/b/it on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathrm' in version `bold'
-(Font)                  OT1/cmss/b/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  OT1/cmss/b/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/b/it on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/b/it on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  TU/LatinModernMono(0)/m/n --> TU/LatinModernMono(0)/b/n on input line 290.
+(Font)                  TU/LatinModernMono(0)/m/n --> TU/LatinModernMono(0)/b/n on input line 297.
  (c:/texlive/2025/texmf-dist/tex/latex/translator/translator-basic-dictionary-English.dict
 Dictionary: translator-basic-dictionary, Language: English 
 ) (c:/texlive/2025/texmf-dist/tex/latex/translator/translator-bibliography-dictionary-English.dict
@@ -973,76 +976,454 @@ Package fontspec Info:
 
 \symlegacymaths=\mathgroup8
 LaTeX Font Info:    Overwriting symbol font `legacymaths' in version `bold'
-(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 290.
-LaTeX Font Info:    Redeclaring math accent \acute on input line 290.
-LaTeX Font Info:    Redeclaring math accent \grave on input line 290.
-LaTeX Font Info:    Redeclaring math accent \ddot on input line 290.
-LaTeX Font Info:    Redeclaring math accent \tilde on input line 290.
-LaTeX Font Info:    Redeclaring math accent \bar on input line 290.
-LaTeX Font Info:    Redeclaring math accent \breve on input line 290.
-LaTeX Font Info:    Redeclaring math accent \check on input line 290.
-LaTeX Font Info:    Redeclaring math accent \hat on input line 290.
-LaTeX Font Info:    Redeclaring math accent \dot on input line 290.
-LaTeX Font Info:    Redeclaring math accent \mathring on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Delta on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Theta on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Xi on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Pi on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Phi on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Psi on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \Omega on input line 290.
-LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 290.
-LaTeX Font Info:    Redeclaring symbol font `operators' on input line 290.
+(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 297.
+LaTeX Font Info:    Redeclaring math accent \acute on input line 297.
+LaTeX Font Info:    Redeclaring math accent \grave on input line 297.
+LaTeX Font Info:    Redeclaring math accent \ddot on input line 297.
+LaTeX Font Info:    Redeclaring math accent \tilde on input line 297.
+LaTeX Font Info:    Redeclaring math accent \bar on input line 297.
+LaTeX Font Info:    Redeclaring math accent \breve on input line 297.
+LaTeX Font Info:    Redeclaring math accent \check on input line 297.
+LaTeX Font Info:    Redeclaring math accent \hat on input line 297.
+LaTeX Font Info:    Redeclaring math accent \dot on input line 297.
+LaTeX Font Info:    Redeclaring math accent \mathring on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 297.
+LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 297.
+LaTeX Font Info:    Redeclaring symbol font `operators' on input line 297.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `normal' on input line 290.
+(Font)              `operators' in the math version `normal' on input line 297.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
+(Font)                  OT1/cmss/m/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `bold' on input line 290.
+(Font)              `operators' in the math version `bold' on input line 297.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  OT1/cmss/b/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
+(Font)                  OT1/cmss/b/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
-LaTeX Font Info:    Redeclaring math alphabet \mathrm on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
+LaTeX Font Info:    Redeclaring math alphabet \mathrm on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
-(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/m/it on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/it --> TU/TeXGyreHeros(0)/m/it on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
-(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/m/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  TU/LatinModernMono(0)/m/n --> TU/LatinModernMono(0)/m/n on input line 290.
+(Font)                  TU/LatinModernMono(0)/m/n --> TU/LatinModernMono(0)/m/n on input line 297.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/m/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/b/it --> TU/TeXGyreHeros(0)/b/it on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/b/it --> TU/TeXGyreHeros(0)/b/it on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 290.
+(Font)                  TU/TeXGyreHeros(0)/b/n --> TU/TeXGyreHeros(0)/b/n on input line 297.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  TU/LatinModernMono(0)/b/n --> TU/LatinModernMono(0)/b/n on input line 290.
+(Font)                  TU/LatinModernMono(0)/b/n --> TU/LatinModernMono(0)/b/n on input line 297.
  (./0.618_validated_delivery.nav)
 File: images/cover_bg.jpg Graphic file (type bmp)
 <images/cover_bg.jpg>
 
-Underfull \hbox (badness 5787) in paragraph at lines 295--295
+Underfull \hbox (badness 5787) in paragraph at lines 302--302
 []\TU/TeXGyreHeros(0)/b/n/30 0.618 - Immediate
  []
 
-LaTeX Font Info:    Trying to load font information for U+msa on input line 295.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 302.
 (c:/texlive/2025/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 295.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 302.
  (c:/texlive/2025/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 ) [1
 
 ]
-LaTeX Font Info:    Calculating math sizes for size <20> on input line 311.
+LaTeX Font Info:    Calculating math sizes for size <20> on input line 318.
 
 
-LaTeX Fo
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <20> not available
+(Font)              size <20.74> substituted on input line 318.
+
+
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <13.99994> not available
+(Font)              size <14.4> substituted on input line 318.
+
+
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <20> not available
+(Font)              size <20.74> substituted on input line 318.
+
+
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <13.99994> not available
+(Font)              size <14.4> substituted on input line 318.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <20> not available
+(Font)              size <20.74> substituted on input line 318.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <13.99994> not available
+(Font)              size <14.4> substituted on input line 318.
+
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 318--318
+[]$ 
+ []
+
+[2
+
+]
+File: images/tool_platform.jpg Graphic file (type bmp)
+<images/tool_platform.jpg>
+File: images/current_output.jpeg Graphic file (type bmp)
+<images/current_output.jpeg>
+File: images/intervention_set.jpg Graphic file (type bmp)
+<images/intervention_set.jpg>
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 429--429
+[]$ 
+ []
+
+[3
+
+]
+Underfull \hbox (badness 1009) in paragraph at lines 440--440
+[]\TU/TeXGyreHeros(0)/m/it/18 ”Research by psychologist Dr. Russell
+ []
+
+
+Underfull \hbox (badness 1331) in paragraph at lines 440--440
+\TU/TeXGyreHeros(0)/m/it/18 demonstrates that ADHD has a []signifi-
+ []
+
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 440--440
+[]$ 
+ []
+
+[4
+
+]
+File: images/prescribed.jpg Graphic file (type bmp)
+<images/prescribed.jpg>
+File: images/discovery.jpg Graphic file (type bmp)
+<images/discovery.jpg>
+File: images/retrospective.jpg Graphic file (type bmp)
+<images/retrospective.jpg>
+File: images/inthemoment.jpg Graphic file (type bmp)
+<images/inthemoment.jpg>
+File: images/ramp.jpg Graphic file (type bmp)
+<images/ramp.jpg>
+File: images/3mins.jpg Graphic file (type bmp)
+<images/3mins.jpg>
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 608--608
+[]$ 
+ []
+
+[5
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 618--618
+[]$ 
+ []
+
+[6
+
+]
+File: images/do.jpg Graphic file (type bmp)
+<images/do.jpg>
+
+Underfull \hbox (badness 3482) in paragraph at lines 624--624
+\TU/TeXGyreHeros(0)/b/n/19 terventions []through immediate feed-
+ []
+
+[7
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 634--634
+[]$ 
+ []
+
+[8
+
+]
+File: images/current_output.jpeg Graphic file (type bmp)
+<images/current_output.jpeg>
+File: images/intervention_set.jpg Graphic file (type bmp)
+<images/intervention_set.jpg>
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 704--704
+[]$ 
+ []
+
+[9
+
+]
+File: images/users.jpg Graphic file (type bmp)
+<images/users.jpg>
+File: images/tool_platform.jpg Graphic file (type bmp)
+<images/tool_platform.jpg>
+File: images/psl.jpg Graphic file (type bmp)
+<images/psl.jpg>
+File: images/folder.jpg Graphic file (type bmp)
+<images/folder.jpg>
+File: images/bridge.jpg Graphic file (type bmp)
+<images/bridge.jpg>
+File: images/rl.jpg Graphic file (type bmp)
+<images/rl.jpg>
+File: images/app.jpg Graphic file (type bmp)
+<images/app.jpg>
+File: images/interaction_01.jpg Graphic file (type bmp)
+<images/interaction_01.jpg>
+File: images/interaction_02.jpg Graphic file (type bmp)
+<images/interaction_02.jpg>
+File: images/interaction_03.jpg Graphic file (type bmp)
+<images/interaction_03.jpg>
+File: images/interaction_04.jpg Graphic file (type bmp)
+<images/interaction_04.jpg>
+File: images/interaction_05.jpg Graphic file (type bmp)
+<images/interaction_05.jpg>
+File: images/streamer.jpg Graphic file (type bmp)
+<images/streamer.jpg>
+File: images/server1.jpg Graphic file (type bmp)
+<images/server1.jpg>
+File: images/server2.jpg Graphic file (type bmp)
+<images/server2.jpg>
+File: images/tailscale.jpeg Graphic file (type bmp)
+<images/tailscale.jpeg>
+File: images/tailscale.jpeg Graphic file (type bmp)
+<images/tailscale.jpeg>
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1000--1000
+[]$ 
+ []
+
+[10
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1048--1048
+[]$ 
+ []
+
+[11
+
+]
+Underfull \hbox (badness 10000) in paragraph at lines 1068--1068
+[]|\TU/TeXGyreHeros(0)/b/n/10 Signal proto-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1068--1068
+[]|\TU/TeXGyreHeros(0)/b/n/10 System proto-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1068--1068
+[]|\TU/TeXGyreHeros(0)/b/n/10 Intervention
+ []
+
+
+Underfull \hbox (badness 2005) in paragraph at lines 1068--1068
+[]|\TU/TeXGyreHeros(0)/b/n/10 Interaction pro-
+ []
+
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1068--1068
+[]$ 
+ []
+
+[12
+
+]
+File: images/interaction_01.jpg Graphic file (type bmp)
+<images/interaction_01.jpg>
+
+Underfull \hbox (badness 2012) in paragraph at lines 1075--1075
+[][]\TU/TeXGyreHeros(0)/m/n/9 Dummy image placeholder — replace
+ []
+
+[13
+
+]
+File: images/interaction_02.jpg Graphic file (type bmp)
+<images/interaction_02.jpg>
+
+Underfull \hbox (badness 2012) in paragraph at lines 1081--1081
+[][]\TU/TeXGyreHeros(0)/m/n/9 Dummy image placeholder — replace
+ []
+
+[14
+
+]
+File: images/interaction_03.jpg Graphic file (type bmp)
+<images/interaction_03.jpg>
+
+Underfull \hbox (badness 1412) in paragraph at lines 1087--1087
+[]\TU/TeXGyreHeros(0)/b/n/22 Intervention 03
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1087--1087
+\TU/TeXGyreHeros(0)/b/n/22 — Video Rip-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1087--1087
+[]\TU/TeXGyreHeros(0)/m/n/10.5 A more embodied intervention
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1087--1087
+\TU/TeXGyreHeros(0)/m/n/10.5 mode using live camera input
+ []
+
+[15
+
+]
+File: images/interaction_04.jpg Graphic file (type bmp)
+<images/interaction_04.jpg>
+
+Underfull \hbox (badness 2012) in paragraph at lines 1093--1093
+[][]\TU/TeXGyreHeros(0)/m/n/9 Dummy image placeholder — replace
+ []
+
+[16
+
+]
+File: images/interaction_05.jpg Graphic file (type bmp)
+<images/interaction_05.jpg>
+
+Underfull \hbox (badness 2012) in paragraph at lines 1099--1099
+[][]\TU/TeXGyreHeros(0)/m/n/9 Dummy image placeholder — replace
+ []
+
+[17
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1120--1120
+[]$ 
+ []
+
+[18
+
+]
+File: images/validation.jpg Graphic file (type bmp)
+<images/validation.jpg>
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1143--1143
+[]$ 
+ []
+
+[19
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1163--1163
+[]$ 
+ []
+
+[20
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1181--1181
+[]$ 
+ []
+
+[21
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1198--1198
+[]$ 
+ []
+
+[22
+
+]
+Underfull \hbox (badness 10000) in paragraph at lines 1232--1232
+[]\TU/TeXGyreHeros(0)/m/n/10 Future hardware development in-
+ []
+
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1232--1232
+[]$ 
+ []
+
+[23
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1252--1252
+[]$ 
+ []
+
+[24
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1270--1270
+[]$ 
+ []
+
+[25
+
+]
+File: images/cover_bg.jpg Graphic file (type bmp)
+<images/cover_bg.jpg>
+ [26
+
+]
+Underfull \hbox (badness 5036) in paragraph at lines 1316--1316
+[]\TU/TeXGyreHeros(0)/m/n/10 The intervention window is intentionally
+ []
+
+
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1316--1316
+[]$ 
+ []
+
+[27
+
+]
+Overfull \hbox (25.60728pt too wide) in paragraph at lines 1351--1351
+[]$ 
+ []
+
+[28
+
+]
+\tf@nav=\write6
+\openout6 = `0.618_validated_delivery.nav'.
+
+\tf@toc=\write7
+\openout7 = `0.618_validated_delivery.toc'.
+
+\tf@snm=\write8
+\openout8 = `0.618_validated_delivery.snm'.
+
+ (./0.618_validated_delivery.aux)
+ ***********
+LaTeX2e <2025-11-01>
+L3 programming layer <2026-01-19>
+ ***********
+
+
+LaTeX Font Warning: Size substitutions with differences
+(Font)              up to 0.74pt have occurred.
+
+Package rerunfilecheck Info: File `0.618_validated_delivery.out' has not changed.
+(rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
+ ) 
+Here is how much of TeX's memory you used:
+ 29777 strings out of 468174
+ 645271 string characters out of 5436828
+ 1186636 words of memory out of 5000000
+ 57873 multiletter control sequences out of 15000+600000
+ 633343 words of font info for 120 fonts, out of 8000000 for 9000
+ 1348 hyphenation exceptions out of 8191
+ 128i,14n,123p,468b,1042s stack positions out of 10000i,1000n,20000p,200000b,200000s
+
+Output written on 0.618_validated_delivery.pdf (28 pages).
