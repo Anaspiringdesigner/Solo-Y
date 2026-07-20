@@ -3,3 +3,5 @@
 build/ 
 *.tflite 
 *.csv 
+*.mov
+*.pdf

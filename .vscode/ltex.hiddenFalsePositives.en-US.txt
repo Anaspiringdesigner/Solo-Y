@@ -1,0 +1,2 @@
+{"rule":"EN_WORD_COHERENCY","sentence":"^\\QCurrent limitations user testing is still to be completed personalization is a project direction, not yet a validated outcome the current sensing setup still relies on the Polar H10 the ring has not yet been built intervention effectiveness has not yet been comparatively evaluated with users\\E$"}
+{"rule":"UPPERCASE_SENTENCE_START","sentence":"^\\Qimages/cover_bg.jpg 0.618 - Immediate and Actionable A tool that helps people identify their ADHD patterns and Design their own interventions.\\E$"}

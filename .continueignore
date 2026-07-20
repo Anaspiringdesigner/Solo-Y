@@ -1,0 +1,17 @@
+# Ignore build & platform wrappers
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+
+# Ignore lockfiles and metadata
+*.lock
+*.toml
+*.aux
+*.nav
+*.snm
+*.synctex.gz
+*.toc
+.metadata
