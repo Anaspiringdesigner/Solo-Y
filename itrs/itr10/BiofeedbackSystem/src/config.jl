@@ -21,6 +21,13 @@ Base.@kwdef struct Settings
 
     # Trigger defaults
     event_stream_duration_sec::Int = parse(Int, get(ENV, "BFS_EVENT_STREAM_SEC", "180"))
+
+    # Phase 2.5 Hardening
+    max_payload_bytes::Int = parse(Int, get(ENV, "BFS_MAX_PAYLOAD_BYTES", "512000"))
+    ingest_rate_limit_per_min::Int = parse(Int, get(ENV, "BFS_INGEST_RATE_LIMIT_PER_MIN", "120"))
+    trigger_rate_limit_per_min::Int = parse(Int, get(ENV, "BFS_TRIGGER_RATE_LIMIT_PER_MIN", "30"))
+    trigger_cooldown_sec::Int = parse(Int, get(ENV, "BFS_TRIGGER_COOLDOWN_SEC", "15"))
+    enforce_monotonic_seq::Bool = lowercase(get(ENV, "BFS_ENFORCE_MONO_SEQ", "true")) == "true"
 end
 
 load_settings() = Settings()
