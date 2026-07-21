@@ -5,94 +5,99 @@ import '../constants.dart';
 import '../models/biofeedback_model.dart';
 
 class ApiService {
-  static final ApiService _instance =
-      ApiService._internal();
+  static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
 
-  // ── Fetch Status ──────────────────────────────
-  Future<BiofeedbackStatus?> fetchStatus()
-      async {
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'X-Gateway-Secret': AppConstants.gatewaySecret,
+        'X-Verified-User-Id': AppConstants.verifiedUserId,
+        'X-Auth-Issuer': AppConstants.authIssuer,
+      };
+
+  Uri _u(String path) => Uri.parse('${AppConstants.apiBaseUrl}$path');
+
+  Future<BiofeedbackStatus?> fetchStatus() async {
     try {
-      debugPrint('[API] GET '
-          '${AppConstants.serverBase}/status');
-
       final resp = await http
-          .get(
-            Uri.parse(
-                '${AppConstants.serverBase}'
-                '/status'),
-            headers: {
-              'Content-Type':
-                  'application/json',
-            },
-          )
-          .timeout(
-              const Duration(seconds: 10));
-
-      debugPrint('[API] Status response: '
-          '${resp.statusCode}');
+          .get(_u('/v1/status'), headers: _headers)
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       if (resp.statusCode == 200) {
-        final json = jsonDecode(resp.body)
-            as Map<String, dynamic>;
-        return BiofeedbackStatus
-            .fromJson(json);
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        return BiofeedbackStatus.fromJson(json);
       }
+
+      debugPrint('[API] status failed: ${resp.statusCode} ${resp.body}');
     } catch (e) {
-      debugPrint('[API] Status error: $e');
+      debugPrint('[API] status error: $e');
     }
     return null;
   }
 
-  // ── Fire Trigger ──────────────────────────────
   Future<Map<String, dynamic>?> fireTrigger({
-    int triggerType = 2,
+    String triggerType = 'manual',
+    int streamDurationSec = AppConstants.triggerStreamDurationSec,
   }) async {
     try {
-      final url =
-          '${AppConstants.serverBase}/trigger';
-      debugPrint('[API] POST $url');
-      debugPrint('[API] trigger_type='
-          '$triggerType');
+      final body = jsonEncode({
+        'trigger_type': triggerType,
+        'stream_duration_sec': streamDurationSec,
+      });
 
       final resp = await http
-          .post(
-            Uri.parse(url),
-            headers: {
-              'Content-Type':
-                  'application/json',
-            },
-            body: jsonEncode(
-                {'trigger_type': triggerType}),
-          )
-          .timeout(
-              const Duration(seconds: 15));
+          .post(_u('/v1/events/trigger'), headers: _headers, body: body)
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
-      debugPrint('[API] Trigger response: '
-          '${resp.statusCode} ${resp.body}');
+      final parsed = resp.body.isNotEmpty
+          ? jsonDecode(resp.body) as Map<String, dynamic>
+          : <String, dynamic>{};
 
-      if (resp.statusCode == 200) {
-        return jsonDecode(resp.body)
-            as Map<String, dynamic>;
-      }
+      if (resp.statusCode == 200) return parsed;
 
       return {
-        'ok':    false,
-        'reason': 'HTTP ${resp.statusCode}',
+        'ok': false,
+        'error': 'HTTP ${resp.statusCode}',
+        'body': parsed,
       };
-
     } catch (e) {
-      debugPrint('[API] Trigger error: $e');
-      return {
-        'ok':    false,
-        'error': e.toString(),
-      };
+      return {'ok': false, 'error': e.toString()};
     }
   }
 
-  // ── Fire Calendar Trigger ─────────────────────
-  Future<void> fireCalendarTrigger() async {
-    await fireTrigger(triggerType: 0);
+  // For ring periodic sync
+  Future<Map<String, dynamic>?> postBatch(Map<String, dynamic> payload) async {
+    try {
+      final resp = await http
+          .post(_u('/v1/ingest/batch'),
+              headers: _headers, body: jsonEncode(payload))
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+
+      return {
+        'status': resp.statusCode,
+        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
+      };
+    } catch (e) {
+      return {'status': 0, 'error': e.toString()};
+    }
+  }
+
+  // For event-time continuous streaming
+  Future<Map<String, dynamic>?> postRealtime(
+      Map<String, dynamic> payload) async {
+    try {
+      final resp = await http
+          .post(_u('/v1/ingest/realtime'),
+              headers: _headers, body: jsonEncode(payload))
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+
+      return {
+        'status': resp.statusCode,
+        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
+      };
+    } catch (e) {
+      return {'status': 0, 'error': e.toString()};
+    }
   }
 }
