@@ -5,109 +5,94 @@ import '../services/api_service.dart';
 import '../services/data_transfer_service.dart';
 import '../constants.dart';
 import '../services/mjpeg_server.dart';
+import '../services/ring_ingest_service.dart';
 
-class BiofeedbackProvider
-    extends ChangeNotifier {
+class BiofeedbackProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
+  final RingIngestService _ring = RingIngestService();
 
-  // ── State ─────────────────────────────────────
   BiofeedbackStatus? status;
-  bool   isConnected          = false;
-  bool   isTriggerLoading     = false;
-  bool   isDataTransferActive = false;
-  String triggerMessage       = '';
-  String calendarMessage      = '';
-  String dataTransferStatus   = 'Stopped';
+  bool isConnected = false;
+  bool isTriggerLoading = false;
+  bool isDataTransferActive = false;
+  String triggerMessage = '';
+  String calendarMessage = '';
+  String dataTransferStatus = 'Stopped';
 
   final List<double> hrvHistory = [];
-  final List<double> hrHistory  = [];
+  final List<double> hrHistory = [];
 
   Timer? _statusTimer;
 
-  // ── Start Polling ─────────────────────────────
   void startPolling() {
-    // Immediate first fetch
     _fetchStatus();
-
     _statusTimer = Timer.periodic(
-      const Duration(
-          milliseconds:
-              AppConstants.statusPollMs),
+      const Duration(milliseconds: AppConstants.statusPollMs),
       (_) => _fetchStatus(),
     );
   }
 
-  void stopPolling() {
-    _statusTimer?.cancel();
-  }
+  void stopPolling() => _statusTimer?.cancel();
 
-  // ── Data Transfer ─────────────────────────────
   Future<void> startDataTransfer() async {
     await DataTransferService.start();
     isDataTransferActive = true;
-    dataTransferStatus   = 'Running';
+    dataTransferStatus = 'Running';
     notifyListeners();
   }
 
   Future<void> stopDataTransfer() async {
     await DataTransferService.stop();
     isDataTransferActive = false;
-    dataTransferStatus   = 'Stopped';
+    dataTransferStatus = 'Stopped';
     notifyListeners();
   }
 
-  Future<void> checkDataTransferStatus()
-      async {
-    final running =
-        await DataTransferService.isRunning();
+  Future<void> checkDataTransferStatus() async {
+    final running = await DataTransferService.isRunning();
     isDataTransferActive = running;
-    dataTransferStatus   =
-        running ? 'Running' : 'Stopped';
+    dataTransferStatus = running ? 'Running' : 'Stopped';
     notifyListeners();
   }
 
-  // ── Fetch Status ──────────────────────────────
+  Future<void> startRingBatchSync() async {
+    _ring.configure(deviceId: 'ringA', schemaVersion: '1');
+    _ring.startBatchSync(interval: const Duration(seconds: 30));
+  }
+
+  Future<void> startRingRealtime() async {
+    _ring.startRealtime(interval: const Duration(seconds: 2));
+  }
+
+  Future<void> stopRingRealtime() async {
+    _ring.stopRealtime();
+  }
+
   Future<void> _fetchStatus() async {
     final result = await _api.fetchStatus();
     if (result != null) {
-      final prevInteraction =
-          status?.activeInteraction ?? -1;
-      final newInteraction =
-          result.activeInteraction;
+      final prevInteraction = status?.activeInteraction ?? -1;
+      final newInteraction = result.activeInteraction;
 
-      status      = result;
+      status = result;
       isConnected = true;
 
-      // ── Auto camera control ─────────────
-      if (newInteraction == 3 &&
-          prevInteraction != 3) {
-        // Switched TO Video Ripples
-        debugPrint('[APP] Interaction 3 '
-            'active — starting camera');
+      if (newInteraction == 3 && prevInteraction != 3) {
         _startCamera();
-      } else if (newInteraction != 3 &&
-                 prevInteraction == 3) {
-        // Switched AWAY from Video Ripples
-        debugPrint('[APP] Left interaction 3 '
-            '— stopping camera');
+      } else if (newInteraction != 3 && prevInteraction == 3) {
         _stopCamera();
       }
 
       hrvHistory.add(result.avgHrv);
       hrHistory.add(result.avgHr);
-      if (hrvHistory.length > 60) {
-        hrvHistory.removeAt(0);
-      }
-      if (hrHistory.length > 60) {
-        hrHistory.removeAt(0);
-      }
+      if (hrvHistory.length > 60) hrvHistory.removeAt(0);
+      if (hrHistory.length > 60) hrHistory.removeAt(0);
     } else {
       isConnected = false;
     }
     notifyListeners();
   }
 
-  // ── Camera Control ──────────────────────────
   Future<void> _startCamera() async {
     final server = MjpegServer();
     if (!server.isRunning) {
@@ -116,8 +101,6 @@ class BiofeedbackProvider
     }
     if (!server.isStreaming) {
       await server.startStreaming();
-      debugPrint('[APP] Camera streaming → '
-          '${server.streamUrl}');
     }
   }
 
@@ -125,64 +108,48 @@ class BiofeedbackProvider
     final server = MjpegServer();
     if (server.isStreaming) {
       await server.stopStreaming();
-      debugPrint('[APP] Camera stopped');
     }
   }
-  // ── Manual Trigger ────────────────────────────
+
   Future<void> fireManualTrigger() async {
     isTriggerLoading = true;
-    triggerMessage   = '';
+    triggerMessage = '';
     notifyListeners();
 
-    debugPrint('[PROVIDER] Firing trigger '
-        'to ${AppConstants.serverBase}');
-
-    final result =
-        await _api.fireTrigger(
-            triggerType: 2);
+    final result = await _api.fireTrigger(
+      triggerType: 'manual',
+      streamDurationSec: AppConstants.triggerStreamDurationSec,
+    );
 
     isTriggerLoading = false;
 
-    if (result != null &&
-        result['ok'] == true) {
-      triggerMessage =
-          '✅ ${result['name']} selected';
-    } else if (result != null) {
-      final reason =
-          result['reason'] ??
-          result['error']  ??
-          'Unknown error';
-      triggerMessage = '⚠️ $reason';
-      debugPrint('[PROVIDER] Trigger failed: '
-          '$reason');
+    if (result != null && result['ok'] == true) {
+      triggerMessage = '✅ Trigger fired (${result['state'] ?? 'EVENT_STREAMING'})';
+
+      await startRingRealtime();
+      Future.delayed(
+        const Duration(seconds: AppConstants.triggerStreamDurationSec),
+        () => stopRingRealtime(),
+      );
     } else {
-      triggerMessage =
-          '❌ No response from server\n'
-          '${AppConstants.serverBase}';
-      debugPrint('[PROVIDER] No response '
-          'from ${AppConstants.serverBase}');
+      final reason = result?['error'] ?? result?['reason'] ?? 'Unknown error';
+      triggerMessage = '⚠️ $reason';
     }
 
     notifyListeners();
 
-    Future.delayed(
-        const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 5), () {
       triggerMessage = '';
       notifyListeners();
     });
   }
 
-  // ── Calendar Trigger ──────────────────────────
-  Future<void> fireCalendarTrigger(
-      String eventName) async {
-    await _api.fireCalendarTrigger();
-    calendarMessage =
-        '📅 $eventName — '
-        'interaction selected';
+  Future<void> fireCalendarTrigger(String eventName) async {
+    await _api.fireTrigger(triggerType: 'calendar');
+    calendarMessage = '📅 $eventName — trigger sent';
     notifyListeners();
 
-    Future.delayed(
-        const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 5), () {
       calendarMessage = '';
       notifyListeners();
     });
@@ -191,6 +158,8 @@ class BiofeedbackProvider
   @override
   void dispose() {
     stopPolling();
+    _ring.stopBatchSync();
+    _ring.stopRealtime();
     super.dispose();
   }
 }
