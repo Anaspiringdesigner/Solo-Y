@@ -19,11 +19,8 @@ struct SignalChunk
     seq_no::Int
     sample_rate_hz::Float32
     hr::Vector{Float32}
-    spo2::Vector{Float32}
-    ppg::Vector{Float32}
-    accel_x::Vector{Float32}
-    accel_y::Vector{Float32}
-    accel_z::Vector{Float32}
+    hrv::Vector{Float32}
+    br::Vector{Float32}
     schema_version::Int
     idempotency_key::String
 end
@@ -31,7 +28,7 @@ end
 mutable struct SessionContext
     user_id::String
     last_seen::DateTime
-    state::Symbol                      # :IDLE, :BATCH_SYNCING, :EVENT_STREAMING, etc.
+    state::Symbol
     ring_buffer::Vector{SignalChunk}
     latest_features::Dict{String, Float32}
     active_interaction::Int
@@ -47,8 +44,8 @@ SessionContext(user_id::String) = SessionContext(
     SignalChunk[],
     Dict{String, Float32}(
         "avg_hr" => 0f0,
-        "avg_spo2" => 0f0,
-        "avg_ppg" => 0f0
+        "avg_hrv" => 0f0,
+        "avg_br" => 0f0
     ),
     0,
     false,
@@ -64,8 +61,8 @@ Base.@kwdef struct SessionStatusDTO
     is_holding::Bool
     hold_steps_left::Int
     avg_hr::Float32
-    avg_spo2::Float32
-    avg_ppg::Float32
+    avg_hrv::Float32
+    avg_br::Float32
     buffered_chunks::Int
     last_seen::String
 end

@@ -1,11 +1,25 @@
 class AppConstants {
-  // ===== API =====
-  static const String apiBaseUrl = 'http://127.0.0.1:8000';
+  // ===== API / Media =====
+  static const String apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8000',
+  );
 
-  // Dev gateway headers (temporary; move to secure auth later)
-  static const String gatewaySecret = 'super_secret_gateway_key';
-  static const String verifiedUserId = 'user123';
-  static const String authIssuer = 'local-gateway';
+  static const String whepHost = String.fromEnvironment(
+    'WHEP_HOST',
+    defaultValue: '100.67.125.12',
+  );
+
+  static const String whepPath = String.fromEnvironment(
+    'WHEP_PATH',
+    defaultValue: 'live',
+  );
+
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue:
+        '760908125337-sfppi17rht5mkv6ckcm28q2g25r5ru5i.apps.googleusercontent.com',
+  );
 
   // Polling / timeouts
   static const int statusPollMs = 2000;

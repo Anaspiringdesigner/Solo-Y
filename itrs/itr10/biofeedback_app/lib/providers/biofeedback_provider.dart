@@ -6,23 +6,63 @@ import '../services/data_transfer_service.dart';
 import '../constants.dart';
 import '../services/mjpeg_server.dart';
 import '../services/ring_ingest_service.dart';
+import '../services/auth_service.dart';
 
 class BiofeedbackProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   final RingIngestService _ring = RingIngestService();
+  final AuthService _auth = AuthService();
 
   BiofeedbackStatus? status;
   bool isConnected = false;
   bool isTriggerLoading = false;
   bool isDataTransferActive = false;
+  bool isSigningIn = false;
+  bool isAuthenticated = false;
   String triggerMessage = '';
   String calendarMessage = '';
+  String authMessage = '';
   String dataTransferStatus = 'Stopped';
 
   final List<double> hrvHistory = [];
   final List<double> hrHistory = [];
 
   Timer? _statusTimer;
+
+  Future<void> initializeAuth() async {
+    isSigningIn = true;
+    notifyListeners();
+
+    final ok = await _auth.tryRestoreSession();
+    isAuthenticated = ok;
+    isSigningIn = false;
+    authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
+    notifyListeners();
+  }
+
+  Future<bool> signInWithGoogle() async {
+    isSigningIn = true;
+    authMessage = '';
+    notifyListeners();
+
+    final ok = await _auth.signIn();
+    isAuthenticated = ok;
+    isSigningIn = false;
+    authMessage = ok
+        ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}'
+        : 'Google sign-in failed';
+    notifyListeners();
+    return ok;
+  }
+
+  Future<void> signOut() async {
+    await _auth.signOut();
+    isAuthenticated = false;
+    authMessage = 'Signed out';
+    status = null;
+    isConnected = false;
+    notifyListeners();
+  }
 
   void startPolling() {
     _fetchStatus();
@@ -69,6 +109,12 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchStatus() async {
+    if (!isAuthenticated) {
+      isConnected = false;
+      notifyListeners();
+      return;
+    }
+
     final result = await _api.fetchStatus();
     if (result != null) {
       final prevInteraction = status?.activeInteraction ?? -1;
@@ -112,6 +158,12 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> fireManualTrigger() async {
+    if (!isAuthenticated) {
+      triggerMessage = 'Please sign in first';
+      notifyListeners();
+      return;
+    }
+
     isTriggerLoading = true;
     triggerMessage = '';
     notifyListeners();
@@ -145,6 +197,8 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> fireCalendarTrigger(String eventName) async {
+    if (!isAuthenticated) return;
+
     await _api.fireTrigger(triggerType: 'calendar');
     calendarMessage = '📅 $eventName — trigger sent';
     notifyListeners();

@@ -19,9 +19,6 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
   bool _hasError = false;
   String _errorText = '';
 
-  final String host = '100.67.125.12';
-  final String path = 'live';
-
   @override
   void initState() {
     super.initState();
@@ -51,7 +48,6 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
         }
       };
 
-      // recvonly transceiver is important for WHEP
       await _pc!.addTransceiver(
         kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
         init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
@@ -60,7 +56,6 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
       final offer = await _pc!.createOffer();
       await _pc!.setLocalDescription(offer);
 
-      // Wait a short moment so SDP includes ICE fields
       await Future.delayed(const Duration(milliseconds: 400));
 
       final local = await _pc!.getLocalDescription();
@@ -69,7 +64,9 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
         throw Exception('Local SDP is empty');
       }
 
-      final url = Uri.parse('http://$host:8889/$path/whep');
+      final url = Uri.parse(
+        'http://${AppConstants.whepHost}:8889/${AppConstants.whepPath}/whep',
+      );
       debugPrint('[WHEP] POST $url');
 
       final resp = await http.post(

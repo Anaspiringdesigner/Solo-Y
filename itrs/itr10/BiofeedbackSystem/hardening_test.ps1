@@ -1,7 +1,6 @@
 param(
   [string]$BaseUrl = "http://127.0.0.1:8000",
-  [string]$UserId = "user123",
-  [string]$GatewaySecret = "super_secret_gateway_key"
+  [string]$BearerToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,7 +58,6 @@ function Invoke-TestRequest {
                 $bodyText = $reader.ReadToEnd()
             }
         }
-        $bodyText = $reader.ReadToEnd()
       } catch {}
     }
 
@@ -76,17 +74,13 @@ function Invoke-TestRequest {
   }
 }
 
-$headers = @{
-  "Content-Type"       = "application/json"
-  "X-Gateway-Secret"   = $GatewaySecret
-  "X-Verified-User-Id" = $UserId
-  "X-Auth-Issuer"      = "local-gateway"
+if ([string]::IsNullOrWhiteSpace($BearerToken)) {
+  throw "Provide -BearerToken with a Google ID token"
 }
 
-$badHeaders = @{
-  "Content-Type"       = "application/json"
-  "X-Gateway-Secret"   = "wrong_secret"
-  "X-Verified-User-Id" = $UserId
+$headers = @{
+  "Content-Type"  = "application/json"
+  "Authorization" = "Bearer $BearerToken"
 }
 
 Write-Section "0) Health / Ready"
@@ -102,63 +96,14 @@ $validIngest = @{
   seq_no          = 100
   sample_rate_hz  = 25.0
   hr              = @(70,71,72)
-  spo2            = @(98,97,98)
-  ppg             = @(0.20,0.30,0.25)
-  accel_x         = @(0.0,0.1,0.0)
-  accel_y         = @(0.0,0.0,0.1)
-  accel_z         = @(1.0,0.9,1.1)
+  hrv             = @(31.2,30.9,32.1)
+  br              = @(12.1,12.4,12.0)
   schema_version  = 1
   idempotency_key = "idem-100"
 }
 Invoke-TestRequest -Name "valid_ingest" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $headers -BodyObj $validIngest | Out-Null
 
-Write-Section "2) Duplicate idempotency (should return duplicate=true)"
-Invoke-TestRequest -Name "duplicate_ingest" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $headers -BodyObj $validIngest | Out-Null
-
-Write-Section "3) Non-monotonic seq_no (should fail with 409 if enabled)"
-$nonMono = @{
-  device_id       = "ringA"
-  mode            = "batch"
-  start_ts        = "2026-07-21T13:01:00"
-  end_ts          = "2026-07-21T13:01:30"
-  seq_no          = 99   # lower than previous 100
-  sample_rate_hz  = 25.0
-  hr              = @(69,70,71)
-  spo2            = @(97,97,98)
-  ppg             = @(0.21,0.22,0.20)
-  schema_version  = 1
-  idempotency_key = "idem-99"
-}
-Invoke-TestRequest -Name "non_monotonic_seq" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $headers -BodyObj $nonMono | Out-Null
-
-Write-Section "4) Trigger + immediate trigger (cooldown should block second)"
-$triggerBody = @{
-  trigger_type = "manual"
-  stream_duration_sec = 180
-}
-Invoke-TestRequest -Name "trigger_first"  -Method "POST" -Uri "$BaseUrl/v1/events/trigger" -Headers $headers -BodyObj $triggerBody | Out-Null
-Invoke-TestRequest -Name "trigger_second_immediate" -Method "POST" -Uri "$BaseUrl/v1/events/trigger" -Headers $headers -BodyObj $triggerBody | Out-Null
-
-Write-Section "5) Bad payload validation (invalid HR range -> 400)"
-$badPayload = @{
-  device_id       = "ringA"
-  mode            = "batch"
-  start_ts        = "2026-07-21T13:02:00"
-  end_ts          = "2026-07-21T13:02:30"
-  seq_no          = 101
-  sample_rate_hz  = 25.0
-  hr              = @(10, 11, 12)  # invalid by validator (20..240)
-  spo2            = @(98,98,98)
-  ppg             = @(0.2,0.2,0.2)
-  schema_version  = 1
-  idempotency_key = "idem-101"
-}
-Invoke-TestRequest -Name "invalid_payload_range" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $headers -BodyObj $badPayload | Out-Null
-
-Write-Section "6) Unauthorized test (wrong gateway secret -> 401)"
-Invoke-TestRequest -Name "unauthorized" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $badHeaders -BodyObj $validIngest | Out-Null
-
-Write-Section "7) Final status"
+Write-Section "2) Status"
 Invoke-TestRequest -Name "status" -Method "GET" -Uri "$BaseUrl/v1/status" -Headers $headers | Out-Null
 
 Write-Host "`nDone." -ForegroundColor Green

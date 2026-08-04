@@ -9,12 +9,23 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'X-Gateway-Secret': AppConstants.gatewaySecret,
-        'X-Verified-User-Id': AppConstants.verifiedUserId,
-        'X-Auth-Issuer': AppConstants.authIssuer,
-      };
+  String? _bearerToken;
+
+  void setBearerToken(String? token) {
+    _bearerToken = token;
+  }
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+
+    if (_bearerToken != null && _bearerToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_bearerToken';
+    }
+
+    return headers;
+  }
 
   Uri _u(String path) => Uri.parse('${AppConstants.apiBaseUrl}$path');
 
@@ -66,12 +77,14 @@ class ApiService {
     }
   }
 
-  // For ring periodic sync
   Future<Map<String, dynamic>?> postBatch(Map<String, dynamic> payload) async {
     try {
       final resp = await http
-          .post(_u('/v1/ingest/batch'),
-              headers: _headers, body: jsonEncode(payload))
+          .post(
+            _u('/v1/ingest/batch'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {
@@ -83,13 +96,14 @@ class ApiService {
     }
   }
 
-  // For event-time continuous streaming
-  Future<Map<String, dynamic>?> postRealtime(
-      Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>?> postRealtime(Map<String, dynamic> payload) async {
     try {
       final resp = await http
-          .post(_u('/v1/ingest/realtime'),
-              headers: _headers, body: jsonEncode(payload))
+          .post(
+            _u('/v1/ingest/realtime'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {

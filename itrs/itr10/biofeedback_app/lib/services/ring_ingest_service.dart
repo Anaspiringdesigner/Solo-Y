@@ -32,8 +32,6 @@ class RingIngestService {
   int get currentSeq => _seq;
   bool get isRealtimeActive => _isRealtimeActive;
 
-  // ---- Public controls ----
-
   /// Periodic batch sync (e.g. every 30-60s)
   void startBatchSync({Duration interval = const Duration(seconds: 30)}) {
     _batchTimer?.cancel();
@@ -63,8 +61,6 @@ class RingIngestService {
     _isRealtimeActive = false;
   }
 
-  // ---- Internal payload builders ----
-
   Future<void> _sendBatchChunk() async {
     final payload = _buildPayload(mode: 'batch');
     final res = await _api.postBatch(payload);
@@ -82,7 +78,7 @@ class RingIngestService {
     final start = now.subtract(const Duration(seconds: 30));
     final seq = ++_seq;
 
-    // TODO: Replace these mock samples with real ring SDK data
+    // TODO: Replace mock samples with real ring sensor samples.
     final samples = _mockSamples();
 
     return {
@@ -100,8 +96,6 @@ class RingIngestService {
     };
   }
 
-  // ---- helpers ----
-
   String _iso(DateTime dt) => dt.toIso8601String().split('.').first;
 
   String _idempotencyKey(int seq) {
@@ -111,9 +105,13 @@ class RingIngestService {
 
   Map<String, List<num>> _mockSamples() {
     final r = Random();
-    final hr = List<num>.generate(12, (_) => 68 + r.nextInt(10)); // 68..77
-    final hrv = List<num>.generate(12, (_) => (28 + r.nextDouble() * 12)); // 28..40
-    final br = List<num>.generate(12, (_) => (11 + r.nextDouble() * 4)); // 11..15
-    return {'hr': hr, 'hrv': hrv, 'br': br};
+    final hr = List<num>.generate(12, (_) => 68 + r.nextInt(10));
+    final hrv = List<num>.generate(12, (_) => 28 + r.nextDouble() * 12);
+    final br = List<num>.generate(12, (_) => 11 + r.nextDouble() * 4);
+    return {
+      'hr': hr,
+      'hrv': hrv,
+      'br': br,
+    };
   }
 }

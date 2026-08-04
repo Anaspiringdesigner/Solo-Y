@@ -11,11 +11,8 @@ export validate_ingest_payload!, validate_trigger_payload!,
        HardeningStore, new_hardening_store
 
 mutable struct HardeningStore
-    # rate limit buckets: key => (window_start, count)
     rate_buckets::Dict{String, Tuple{DateTime, Int}}
-    # last trigger time per user
     last_trigger_at::Dict{String, DateTime}
-    # last seq per user/device
     last_seq::Dict{String, Int}
     lock::ReentrantLock
 end
@@ -27,7 +24,6 @@ new_hardening_store() = HardeningStore(
     ReentrantLock()
 )
 
-# ---------- Validation ----------
 function check_payload_size!(req_body; max_bytes::Int=512_000)
     n = try
         length(req_body)
@@ -63,7 +59,6 @@ function _range_check(v::AbstractVector, lo::Float64, hi::Float64, key::String)
 end
 
 function validate_ingest_payload!(payload)
-    # required fields
     for k in ("device_id","mode","start_ts","end_ts","seq_no","sample_rate_hz","schema_version","idempotency_key")
         _require(payload, k)
     end
@@ -83,18 +78,17 @@ function validate_ingest_payload!(payload)
     Int(payload["seq_no"]) >= 0 || error("invalid_seq_no")
     Float64(payload["sample_rate_hz"]) > 0 || error("invalid_sample_rate_hz")
 
-    # optional arrays + bounds
     if haskey(payload, "hr")
         _require_array(payload["hr"], "hr")
         _range_check(payload["hr"], 20.0, 240.0, "hr")
     end
-    if haskey(payload, "spo2")
-        _require_array(payload["spo2"], "spo2")
-        _range_check(payload["spo2"], 60.0, 100.0, "spo2")
+    if haskey(payload, "hrv")
+        _require_array(payload["hrv"], "hrv")
+        _range_check(payload["hrv"], 0.0, 500.0, "hrv")
     end
-    if haskey(payload, "ppg")
-        _require_array(payload["ppg"], "ppg")
-        _range_check(payload["ppg"], -1.0e6, 1.0e6, "ppg")
+    if haskey(payload, "br")
+        _require_array(payload["br"], "br")
+        _range_check(payload["br"], 1.0, 80.0, "br")
     end
 
     return nothing
@@ -112,17 +106,12 @@ function validate_trigger_payload!(payload)
     return nothing
 end
 
-# ---------- Rate Limit ----------
-"""
-Simple fixed-window limiter.
-limit requests per window_sec for key.
-"""
 function check_rate_limit!(hs::HardeningStore, key::String; limit::Int=60, window_sec::Int=60)
     nowt = now()
     lock(hs.lock) do
         tup = get(hs.rate_buckets, key, (nowt, 0))
         win_start, count = tup
-        if Dates.value(nowt - win_start) > window_sec*1000
+        if Dates.value(nowt - win_start) > window_sec * 1000
             hs.rate_buckets[key] = (nowt, 1)
             return true
         else
@@ -136,7 +125,6 @@ function check_rate_limit!(hs::HardeningStore, key::String; limit::Int=60, windo
     end
 end
 
-# ---------- Trigger Cooldown ----------
 function check_trigger_cooldown!(hs::HardeningStore, user_id::String; cooldown_sec::Int=15)
     nowt = now()
     lock(hs.lock) do
@@ -149,7 +137,6 @@ function check_trigger_cooldown!(hs::HardeningStore, user_id::String; cooldown_s
     end
 end
 
-# ---------- Sequence monotonicity ----------
 function check_sequence_monotonic!(hs::HardeningStore, user_id::String, device_id::String, seq_no::Int)
     key = "$user_id:$device_id"
     lock(hs.lock) do

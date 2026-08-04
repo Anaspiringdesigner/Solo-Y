@@ -34,15 +34,12 @@ function parse_chunk(payload, user_id::String)::Types.SignalChunk
     idempotency_key = String(payload["idempotency_key"])
 
     hr = haskey(payload, "hr") ? to_f32_vec(payload["hr"]) : Float32[]
-    spo2 = haskey(payload, "spo2") ? to_f32_vec(payload["spo2"]) : Float32[]
-    ppg = haskey(payload, "ppg") ? to_f32_vec(payload["ppg"]) : Float32[]
-    ax = haskey(payload, "accel_x") ? to_f32_vec(payload["accel_x"]) : Float32[]
-    ay = haskey(payload, "accel_y") ? to_f32_vec(payload["accel_y"]) : Float32[]
-    az = haskey(payload, "accel_z") ? to_f32_vec(payload["accel_z"]) : Float32[]
+    hrv = haskey(payload, "hrv") ? to_f32_vec(payload["hrv"]) : Float32[]
+    br = haskey(payload, "br") ? to_f32_vec(payload["br"]) : Float32[]
 
     return Types.SignalChunk(
         user_id, device_id, mode, start_ts, end_ts, seq_no, sample_rate_hz,
-        hr, spo2, ppg, ax, ay, az, schema_version, idempotency_key
+        hr, hrv, br, schema_version, idempotency_key
     )
 end
 
@@ -59,10 +56,9 @@ function apply_chunk!(sess::Types.SessionContext, chunk::Types.SignalChunk)
             sess.state = :EVENT_STREAMING
         end
 
-        # Phase-1 feature updates (simple rolling overwrite)
         sess.latest_features["avg_hr"] = mean_or_zero(chunk.hr)
-        sess.latest_features["avg_spo2"] = mean_or_zero(chunk.spo2)
-        sess.latest_features["avg_ppg"] = mean_or_zero(chunk.ppg)
+        sess.latest_features["avg_hrv"] = mean_or_zero(chunk.hrv)
+        sess.latest_features["avg_br"] = mean_or_zero(chunk.br)
     end
 end
 

@@ -25,17 +25,14 @@ class BiofeedbackApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title:                      'Biofeedback',
+        title: 'Biofeedback',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.dark(
-            primary: const Color(
-                AppConstants.accentColor),
-            surface: const Color(
-                AppConstants.surfaceColor),
+            primary: const Color(AppConstants.accentColor),
+            surface: const Color(AppConstants.surfaceColor),
           ),
-          scaffoldBackgroundColor:
-              const Color(AppConstants.bgColor),
+          scaffoldBackgroundColor: const Color(AppConstants.bgColor),
           useMaterial3: true,
         ),
         home: const HomeScreen(),
