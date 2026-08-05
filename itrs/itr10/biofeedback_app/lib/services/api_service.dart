@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../constants.dart';
 import '../models/biofeedback_model.dart';
+import '../models/vitals_point.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -77,14 +78,24 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> postBatch(Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>?> postPointsRealtime({
+    required String deviceId,
+    required int seqNo,
+    required String idempotencyKey,
+    required List<VitalsPoint> points,
+  }) async {
     try {
+      final body = jsonEncode({
+        'device_id': deviceId,
+        'mode': 'realtime',
+        'seq_no': seqNo,
+        'schema_version': 1,
+        'idempotency_key': idempotencyKey,
+        'points': points.map((p) => p.toJson()).toList(),
+      });
+
       final resp = await http
-          .post(
-            _u('/v1/ingest/batch'),
-            headers: _headers,
-            body: jsonEncode(payload),
-          )
+          .post(_u('/v1/ingest/realtime'), headers: _headers, body: body)
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {
@@ -96,14 +107,24 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> postRealtime(Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>?> postPointsBatch({
+    required String deviceId,
+    required int seqNo,
+    required String idempotencyKey,
+    required List<VitalsPoint> points,
+  }) async {
     try {
+      final body = jsonEncode({
+        'device_id': deviceId,
+        'mode': 'batch',
+        'seq_no': seqNo,
+        'schema_version': 1,
+        'idempotency_key': idempotencyKey,
+        'points': points.map((p) => p.toJson()).toList(),
+      });
+
       final resp = await http
-          .post(
-            _u('/v1/ingest/realtime'),
-            headers: _headers,
-            body: jsonEncode(payload),
-          )
+          .post(_u('/v1/ingest/batch'), headers: _headers, body: body)
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {

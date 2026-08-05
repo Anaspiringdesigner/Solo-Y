@@ -51,44 +51,47 @@ function _require_array(x, key::String)
     x isa AbstractVector || error("invalid_type:$key")
 end
 
-function _range_check(v::AbstractVector, lo::Float64, hi::Float64, key::String)
-    for x in v
-        (x isa Number) || error("invalid_elem_type:$key")
-        (x >= lo && x <= hi) || error("out_of_range:$key")
-    end
-end
-
 function validate_ingest_payload!(payload)
-    for k in ("device_id","mode","start_ts","end_ts","seq_no","sample_rate_hz","schema_version","idempotency_key")
-        _require(payload, k)
-    end
+    _require(payload, "device_id")
+    _require(payload, "mode")
+    _require(payload, "seq_no")
+    _require(payload, "schema_version")
+    _require(payload, "idempotency_key")
+    _require(payload, "points")
 
     _require_type_string(payload["device_id"], "device_id")
     _require_type_string(payload["mode"], "mode")
-    _require_type_string(payload["start_ts"], "start_ts")
-    _require_type_string(payload["end_ts"], "end_ts")
     _require_type_number(payload["seq_no"], "seq_no")
-    _require_type_number(payload["sample_rate_hz"], "sample_rate_hz")
     _require_type_number(payload["schema_version"], "schema_version")
     _require_type_string(payload["idempotency_key"], "idempotency_key")
+    _require_array(payload["points"], "points")
 
     mode = lowercase(String(payload["mode"]))
     (mode == "batch" || mode == "realtime") || error("invalid_mode")
 
     Int(payload["seq_no"]) >= 0 || error("invalid_seq_no")
-    Float64(payload["sample_rate_hz"]) > 0 || error("invalid_sample_rate_hz")
 
-    if haskey(payload, "hr")
-        _require_array(payload["hr"], "hr")
-        _range_check(payload["hr"], 20.0, 240.0, "hr")
-    end
-    if haskey(payload, "hrv")
-        _require_array(payload["hrv"], "hrv")
-        _range_check(payload["hrv"], 0.0, 500.0, "hrv")
-    end
-    if haskey(payload, "br")
-        _require_array(payload["br"], "br")
-        _range_check(payload["br"], 1.0, 80.0, "br")
+    pts = payload["points"]
+    length(pts) > 0 || error("empty_points")
+
+    for p in pts
+        haskey(p, "ts") || error("missing_field:points.ts")
+        haskey(p, "hr") || error("missing_field:points.hr")
+        haskey(p, "hrv") || error("missing_field:points.hrv")
+        haskey(p, "br") || error("missing_field:points.br")
+
+        _require_type_string(p["ts"], "points.ts")
+        _require_type_number(p["hr"], "points.hr")
+        _require_type_number(p["hrv"], "points.hrv")
+        _require_type_number(p["br"], "points.br")
+
+        hr = Float64(p["hr"])
+        hrv = Float64(p["hrv"])
+        br = Float64(p["br"])
+
+        (hr >= 30.0 && hr <= 220.0) || error("out_of_range:points.hr")
+        (hrv >= 0.0 && hrv <= 300.0) || error("out_of_range:points.hrv")
+        (br >= 4.0 && br <= 40.0) || error("out_of_range:points.br")
     end
 
     return nothing

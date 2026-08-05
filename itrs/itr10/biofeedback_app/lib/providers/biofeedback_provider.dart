@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/biofeedback_model.dart';
+import '../models/vitals_point.dart';
 import '../services/api_service.dart';
 import '../services/data_transfer_service.dart';
 import '../constants.dart';
@@ -128,26 +129,16 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> startRingBatchSync() async {
-    if (!AppConstants.useMockRing) {
-      debugPrint('[RING] Real ring mode not wired yet; batch sync skipped.');
-      return;
-    }
-
-    _ring.configure(deviceId: 'ringA', schemaVersion: '1');
-    _ring.startBatchSync(interval: const Duration(seconds: 30));
+    _ring.configure(deviceId: 'ringA', startSeq: _ring.currentSeq);
+    _ring.startBatchSync(interval: const Duration(minutes: 30));
   }
 
   Future<void> startRingRealtime() async {
-    if (!AppConstants.useMockRing) {
-      debugPrint('[RING] Real ring mode not wired yet; realtime sync skipped.');
-      return;
-    }
-
-    _ring.startRealtime(interval: const Duration(seconds: 2));
+    _ring.startRealtime(uploadInterval: const Duration(seconds: 2));
   }
 
   Future<void> stopRingRealtime() async {
-    _ring.stopRealtime();
+    await _ring.stopRealtime();
   }
 
   Future<void> _fetchStatus() async {
@@ -164,6 +155,15 @@ class BiofeedbackProvider extends ChangeNotifier {
 
       status = result;
       isConnected = true;
+
+      _ring.ingestComputedPoint(
+        VitalsPoint(
+          ts: DateTime.now().toUtc(),
+          hr: result.avgHr,
+          hrv: result.avgHrv,
+          br: result.avgBr,
+        ),
+      );
 
       if (AppConstants.enableCameraInteraction) {
         if (newInteraction == 3 && prevInteraction != 3) {
