@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 
@@ -43,7 +42,7 @@ class DataTransferService {
 
     final running = await _service.isRunning();
     if (running) {
-      await _service.invoke('heartbeat');
+      _service.invoke('heartbeat');
       return;
     }
 
@@ -54,7 +53,7 @@ class DataTransferService {
     final running = await _service.isRunning();
     if (!running) return;
 
-    await _service.invoke('stopService');
+    _service.invoke('stopService');
   }
 
   static Future<bool> isRunning() async {
@@ -68,8 +67,6 @@ class DataTransferService {
 
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) {
-    DartPluginRegistrant.ensureInitialized();
-
     if (service is AndroidServiceInstance) {
       service.setAsForegroundService();
       service.setForegroundNotificationInfo(
@@ -78,10 +75,8 @@ class DataTransferService {
       );
     }
 
-    Timer.periodic(const Duration(seconds: 20), (timer) async {
-      final running = await service.isForegroundService();
-      if (!running && service is AndroidServiceInstance) {
-        service.setAsForegroundService();
+    Timer.periodic(const Duration(seconds: 20), (timer) {
+      if (service is AndroidServiceInstance) {
         service.setForegroundNotificationInfo(
           title: 'Biofeedback session active',
           content: 'Streaming physiological data in background',

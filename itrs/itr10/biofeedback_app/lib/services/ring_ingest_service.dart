@@ -99,8 +99,8 @@ class RingIngestService {
   String _iso(DateTime dt) => dt.toIso8601String().split('.').first;
 
   String _idempotencyKey(int seq) {
-    final day = DateTime.now().toUtc().toIso8601String().substring(0, 10);
-    return '${_deviceId}_$day_$seq';
+  final day = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+  return '${_deviceId}_${day}_$seq';
   }
 
   Map<String, List<num>> _mockSamples() {
