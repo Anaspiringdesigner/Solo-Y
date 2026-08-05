@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../constants.dart';
 import 'api_service.dart';
 
 class RingIngestService {
@@ -32,7 +33,6 @@ class RingIngestService {
   int get currentSeq => _seq;
   bool get isRealtimeActive => _isRealtimeActive;
 
-  /// Periodic batch sync (e.g. every 30-60s)
   void startBatchSync({Duration interval = const Duration(seconds: 30)}) {
     _batchTimer?.cancel();
     _batchTimer = Timer.periodic(interval, (_) async {
@@ -45,7 +45,6 @@ class RingIngestService {
     _batchTimer = null;
   }
 
-  /// Event-triggered realtime (high-frequency, short-lived)
   void startRealtime({Duration interval = const Duration(seconds: 2)}) {
     _realtimeTimer?.cancel();
     _isRealtimeActive = true;
@@ -78,8 +77,9 @@ class RingIngestService {
     final start = now.subtract(const Duration(seconds: 30));
     final seq = ++_seq;
 
-    // TODO: Replace mock samples with real ring sensor samples.
-    final samples = _mockSamples();
+    final samples = AppConstants.useMockRing
+        ? _mockSamples()
+        : _placeholderRealRingSamples();
 
     return {
       'device_id': _deviceId,
@@ -112,6 +112,15 @@ class RingIngestService {
       'hr': hr,
       'hrv': hrv,
       'br': br,
+    };
+  }
+
+  Map<String, List<num>> _placeholderRealRingSamples() {
+    debugPrint('[RING] Real ring sample source not implemented yet.');
+    return {
+      'hr': <num>[],
+      'hrv': <num>[],
+      'br': <num>[],
     };
   }
 }

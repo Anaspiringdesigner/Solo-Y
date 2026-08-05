@@ -40,7 +40,6 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final bio = context.read<BiofeedbackProvider>();
       await bio.initializeAuth();
-      bio.startPolling();
 
       final notificationStatus = await Permission.notification.request();
       if (!mounted) return;
@@ -56,6 +55,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleCalendarSignIn() async {
+    if (!AppConstants.enableCalendar) {
+      _showSnack('Calendar integration is disabled for this build.');
+      return;
+    }
+
     final ok = await _calendar.signIn();
     if (ok && mounted) {
       setState(() => _calendarSignedIn = true);
@@ -173,76 +177,111 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: const Color(AppConstants.cardBorder),
                       ),
                     ),
-                    child: bio.isAuthenticated
+                    child: bio.isInitializing
                         ? Row(
                             children: [
-                              const Icon(
-                                Icons.verified_user,
-                                color: Color(AppConstants.calmColor),
-                                size: 18,
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  bio.authMessage.isNotEmpty
-                                      ? bio.authMessage
-                                      : 'Authenticated',
+                                  'Restoring session...',
                                   style: GoogleFonts.inter(
                                     color: const Color(AppConstants.textPrimary),
                                     fontSize: 13,
                                   ),
                                 ),
                               ),
-                              TextButton(
-                                onPressed: bio.signOut,
-                                child: const Text('Sign out'),
-                              ),
                             ],
                           )
-                        : SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: bio.isSigningIn
-                                  ? null
-                                  : () async {
-                                      final ok = await bio.signInWithGoogle();
-                                      if (!mounted) return;
-                                      _showSnack(
-                                        ok
-                                            ? 'Signed in successfully'
-                                            : 'Google sign-in failed',
-                                      );
-                                    },
-                              icon: bio.isSigningIn
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Color(AppConstants.accentColor),
+                        : bio.isAuthenticated
+                            ? Row(
+                                children: [
+                                  const Icon(
+                                    Icons.verified_user,
+                                    color: Color(AppConstants.calmColor),
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      bio.authMessage.isNotEmpty
+                                          ? bio.authMessage
+                                          : 'Authenticated',
+                                      style: GoogleFonts.inter(
+                                        color: const Color(AppConstants.textPrimary),
+                                        fontSize: 13,
                                       ),
-                                    )
-                                  : const Icon(Icons.login),
-                              label: Text(
-                                bio.isSigningIn
-                                    ? 'Signing in...'
-                                    : 'Sign in with Google',
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: bio.signOut,
+                                    child: const Text('Sign out'),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: bio.isSigningIn
+                                          ? null
+                                          : () async {
+                                              final ok = await bio.signInWithGoogle();
+                                              if (!mounted) return;
+                                              _showSnack(
+                                                ok
+                                                    ? 'Signed in successfully'
+                                                    : 'Google sign-in failed',
+                                              );
+                                            },
+                                      icon: bio.isSigningIn
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Color(AppConstants.accentColor),
+                                              ),
+                                            )
+                                          : const Icon(Icons.login),
+                                      label: Text(
+                                        bio.isSigningIn
+                                            ? 'Signing in...'
+                                            : 'Sign in with Google',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            const Color(AppConstants.accentColor)
+                                                .withValues(alpha: 0.15),
+                                        foregroundColor:
+                                            const Color(AppConstants.accentColor),
+                                        side: const BorderSide(
+                                          color: Color(AppConstants.accentColor),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (bio.startupError.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      bio.startupError,
+                                      style: GoogleFonts.inter(
+                                        color: const Color(AppConstants.stressColor),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    const Color(AppConstants.accentColor)
-                                        .withValues(alpha: 0.15),
-                                foregroundColor:
-                                    const Color(AppConstants.accentColor),
-                                side: const BorderSide(
-                                  color: Color(AppConstants.accentColor),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
                   ),
                 ),
               ),
@@ -295,7 +334,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (s != null && s.activeInteraction == 3) ...[
+                    if (AppConstants.enableCameraInteraction &&
+                        s != null &&
+                        s.activeInteraction == 3) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
                         duration: const Duration(milliseconds: 750),
@@ -399,71 +440,73 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    FadeInUp(
-                      duration: const Duration(milliseconds: 1000),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _calendarSignedIn || !bio.isAuthenticated
-                              ? null
-                              : _handleCalendarSignIn,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _calendarSignedIn
-                                ? Colors.purple.withValues(alpha: 0.05)
-                                : Colors.purple.withValues(alpha: 0.15),
-                            foregroundColor: Colors.purpleAccent,
-                            side: BorderSide(
-                              color: _calendarSignedIn
-                                  ? Colors.purple.withValues(alpha: 0.3)
-                                  : Colors.purpleAccent,
-                              width: 1,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(32),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: Text(
-                            _calendarSignedIn
-                                ? '📅  Calendar Connected'
-                                : '📅  Connect Calendar',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_calendarSignedIn) ...[
-                      const SizedBox(height: 8),
+                    if (AppConstants.enableCalendar) ...[
+                      const SizedBox(height: 12),
                       FadeInUp(
+                        duration: const Duration(milliseconds: 1000),
                         child: SizedBox(
                           width: double.infinity,
-                          child: TextButton(
-                            onPressed: () async {
-                              await _calendar.refreshToday();
-                              if (mounted) {
-                                _showSnack(
-                                  '🔄 Refreshed — '
-                                  '${_calendar.scheduledTriggerCount} '
-                                  'triggers scheduled',
-                                );
-                              }
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor:
-                                  const Color(AppConstants.textSecondary),
+                          child: ElevatedButton(
+                            onPressed: _calendarSignedIn || !bio.isAuthenticated
+                                ? null
+                                : _handleCalendarSignIn,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _calendarSignedIn
+                                  ? Colors.purple.withValues(alpha: 0.05)
+                                  : Colors.purple.withValues(alpha: 0.15),
+                              foregroundColor: Colors.purpleAccent,
+                              side: BorderSide(
+                                color: _calendarSignedIn
+                                    ? Colors.purple.withValues(alpha: 0.3)
+                                    : Colors.purpleAccent,
+                                width: 1,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(32),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             child: Text(
-                              '🔄  Refresh Today\'s Schedule',
-                              style: GoogleFonts.inter(fontSize: 13),
+                              _calendarSignedIn
+                                  ? '📅  Calendar Connected'
+                                  : '📅  Connect Calendar',
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
                       ),
+                      if (_calendarSignedIn) ...[
+                        const SizedBox(height: 8),
+                        FadeInUp(
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: TextButton(
+                              onPressed: () async {
+                                await _calendar.refreshToday();
+                                if (mounted) {
+                                  _showSnack(
+                                    '🔄 Refreshed — '
+                                    '${_calendar.scheduledTriggerCount} '
+                                    'triggers scheduled',
+                                  );
+                                }
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor:
+                                    const Color(AppConstants.textSecondary),
+                              ),
+                              child: Text(
+                                '🔄  Refresh Today\'s Schedule',
+                                style: GoogleFonts.inter(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                     const SizedBox(height: 24),
                   ],

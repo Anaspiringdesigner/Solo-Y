@@ -64,9 +64,7 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
         throw Exception('Local SDP is empty');
       }
 
-      final url = Uri.parse(
-        'http://${AppConstants.whepHost}:8889/${AppConstants.whepPath}/whep',
-      );
+      final url = Uri.parse(AppConstants.whepBaseUrl);
       debugPrint('[WHEP] POST $url');
 
       final resp = await http.post(
@@ -79,7 +77,6 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
       ).timeout(const Duration(seconds: 10));
 
       debugPrint('[WHEP] status=${resp.statusCode}');
-      debugPrint('[WHEP] body=${resp.body}');
 
       if (resp.statusCode != 201) {
         throw Exception('WHEP failed: ${resp.statusCode} ${resp.body}');
@@ -155,7 +152,7 @@ class _VideoStreamWidgetState extends State<VideoStreamWidget> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'WebRTC failed:\n$_errorText',
+                      'WebRTC failed:\n$_errorText\n\nEndpoint:\n${AppConstants.whepBaseUrl}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white),
                     ),

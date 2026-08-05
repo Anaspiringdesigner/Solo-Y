@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/biofeedback_model.dart';
 import '../services/api_service.dart';
@@ -19,10 +20,12 @@ class BiofeedbackProvider extends ChangeNotifier {
   bool isDataTransferActive = false;
   bool isSigningIn = false;
   bool isAuthenticated = false;
+  bool isInitializing = true;
   String triggerMessage = '';
   String calendarMessage = '';
   String authMessage = '';
   String dataTransferStatus = 'Stopped';
+  String startupError = '';
 
   final List<double> hrvHistory = [];
   final List<double> hrHistory = [];
@@ -30,19 +33,34 @@ class BiofeedbackProvider extends ChangeNotifier {
   Timer? _statusTimer;
 
   Future<void> initializeAuth() async {
+    isInitializing = true;
     isSigningIn = true;
+    startupError = '';
     notifyListeners();
 
-    final ok = await _auth.tryRestoreSession();
-    isAuthenticated = ok;
-    isSigningIn = false;
-    authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
-    notifyListeners();
+    try {
+      final ok = await _auth.tryRestoreSession();
+      isAuthenticated = ok;
+      authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
+      if (ok) {
+        startPolling();
+      }
+    } catch (e) {
+      startupError = 'Startup auth failed: $e';
+      if (kDebugMode) {
+        debugPrint('[BIO] initializeAuth error: $e');
+      }
+    } finally {
+      isSigningIn = false;
+      isInitializing = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> signInWithGoogle() async {
     isSigningIn = true;
     authMessage = '';
+    startupError = '';
     notifyListeners();
 
     final ok = await _auth.signIn();
@@ -51,20 +69,34 @@ class BiofeedbackProvider extends ChangeNotifier {
     authMessage = ok
         ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}'
         : 'Google sign-in failed';
+
+    if (ok) {
+      startPolling();
+      await startRingBatchSync();
+    }
+
     notifyListeners();
     return ok;
   }
 
   Future<void> signOut() async {
+    stopPolling();
+    _ring.stopBatchSync();
+    _ring.stopRealtime();
     await _auth.signOut();
     isAuthenticated = false;
     authMessage = 'Signed out';
     status = null;
     isConnected = false;
+    hrvHistory.clear();
+    hrHistory.clear();
     notifyListeners();
   }
 
   void startPolling() {
+    _statusTimer?.cancel();
+    if (!isAuthenticated) return;
+
     _fetchStatus();
     _statusTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.statusPollMs),
@@ -96,11 +128,21 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> startRingBatchSync() async {
+    if (!AppConstants.useMockRing) {
+      debugPrint('[RING] Real ring mode not wired yet; batch sync skipped.');
+      return;
+    }
+
     _ring.configure(deviceId: 'ringA', schemaVersion: '1');
     _ring.startBatchSync(interval: const Duration(seconds: 30));
   }
 
   Future<void> startRingRealtime() async {
+    if (!AppConstants.useMockRing) {
+      debugPrint('[RING] Real ring mode not wired yet; realtime sync skipped.');
+      return;
+    }
+
     _ring.startRealtime(interval: const Duration(seconds: 2));
   }
 
@@ -123,10 +165,12 @@ class BiofeedbackProvider extends ChangeNotifier {
       status = result;
       isConnected = true;
 
-      if (newInteraction == 3 && prevInteraction != 3) {
-        _startCamera();
-      } else if (newInteraction != 3 && prevInteraction == 3) {
-        _stopCamera();
+      if (AppConstants.enableCameraInteraction) {
+        if (newInteraction == 3 && prevInteraction != 3) {
+          _startCamera();
+        } else if (newInteraction != 3 && prevInteraction == 3) {
+          _stopCamera();
+        }
       }
 
       hrvHistory.add(result.avgHrv);
