@@ -52,12 +52,9 @@ function _require_array(x, key::String)
 end
 
 function validate_ingest_payload!(payload)
-    _require(payload, "device_id")
-    _require(payload, "mode")
-    _require(payload, "seq_no")
-    _require(payload, "schema_version")
-    _require(payload, "idempotency_key")
-    _require(payload, "points")
+    for k in ("device_id","mode","seq_no","schema_version","idempotency_key","points")
+        _require(payload, k)
+    end
 
     _require_type_string(payload["device_id"], "device_id")
     _require_type_string(payload["mode"], "mode")

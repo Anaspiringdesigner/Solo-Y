@@ -78,24 +78,29 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> postPointsRealtime({
+  Future<Map<String, dynamic>?> postPointsBatch({
     required String deviceId,
     required int seqNo,
+    required int schemaVersion,
     required String idempotencyKey,
     required List<VitalsPoint> points,
   }) async {
     try {
-      final body = jsonEncode({
+      final payload = {
         'device_id': deviceId,
-        'mode': 'realtime',
+        'mode': 'batch',
         'seq_no': seqNo,
-        'schema_version': 1,
+        'schema_version': schemaVersion,
         'idempotency_key': idempotencyKey,
         'points': points.map((p) => p.toJson()).toList(),
-      });
+      };
 
       final resp = await http
-          .post(_u('/v1/ingest/realtime'), headers: _headers, body: body)
+          .post(
+            _u('/v1/ingest/batch'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {
@@ -107,24 +112,29 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> postPointsBatch({
+  Future<Map<String, dynamic>?> postPointsRealtime({
     required String deviceId,
     required int seqNo,
+    required int schemaVersion,
     required String idempotencyKey,
     required List<VitalsPoint> points,
   }) async {
     try {
-      final body = jsonEncode({
+      final payload = {
         'device_id': deviceId,
-        'mode': 'batch',
+        'mode': 'realtime',
         'seq_no': seqNo,
-        'schema_version': 1,
+        'schema_version': schemaVersion,
         'idempotency_key': idempotencyKey,
         'points': points.map((p) => p.toJson()).toList(),
-      });
+      };
 
       final resp = await http
-          .post(_u('/v1/ingest/batch'), headers: _headers, body: body)
+          .post(
+            _u('/v1/ingest/realtime'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
       return {

@@ -87,19 +87,18 @@ Write-Section "0) Health / Ready"
 Invoke-TestRequest -Name "healthz" -Method "GET" -Uri "$BaseUrl/healthz" | Out-Null
 Invoke-TestRequest -Name "readyz"  -Method "GET" -Uri "$BaseUrl/readyz"  | Out-Null
 
-Write-Section "1) Valid ingest (should succeed)"
+Write-Section "1) Valid ingest (points-only schema)"
 $validIngest = @{
   device_id       = "ringA"
   mode            = "batch"
-  start_ts        = "2026-07-21T13:00:00"
-  end_ts          = "2026-07-21T13:00:30"
   seq_no          = 100
-  sample_rate_hz  = 25.0
-  hr              = @(70,71,72)
-  hrv             = @(31.2,30.9,32.1)
-  br              = @(12.1,12.4,12.0)
   schema_version  = 1
   idempotency_key = "idem-100"
+  points = @(
+    @{ ts = "2026-07-21T13:00:00Z"; hr = 70.0; hrv = 31.2; br = 12.1 },
+    @{ ts = "2026-07-21T13:00:05Z"; hr = 71.0; hrv = 30.9; br = 12.4 },
+    @{ ts = "2026-07-21T13:00:10Z"; hr = 72.0; hrv = 32.1; br = 12.0 }
+  )
 }
 Invoke-TestRequest -Name "valid_ingest" -Method "POST" -Uri "$BaseUrl/v1/ingest/batch" -Headers $headers -BodyObj $validIngest | Out-Null
 

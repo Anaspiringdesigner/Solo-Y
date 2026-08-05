@@ -1,111 +1,148 @@
-import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../constants.dart';
+import '../models/biofeedback_model.dart';
 import '../models/vitals_point.dart';
-import 'api_service.dart';
 
-class RingIngestService {
-  static final RingIngestService _instance = RingIngestService._internal();
-  factory RingIngestService() => _instance;
-  RingIngestService._internal();
+class ApiService {
+  static final ApiService _instance = ApiService._internal();
+  factory ApiService() => _instance;
+  ApiService._internal();
 
-  final ApiService _api = ApiService();
+  String? _bearerToken;
 
-  String _deviceId = 'ringA';
-  int _seq = 0;
-
-  final List<VitalsPoint> _buffer = [];
-  final List<VitalsPoint> _realtimeWindow = [];
-
-  Timer? _batchTimer;
-  Timer? _realtimeUploadTimer;
-
-  bool _isRealtimeActive = false;
-
-  void configure({
-    required String deviceId,
-    int startSeq = 0,
-  }) {
-    _deviceId = deviceId;
-    _seq = startSeq;
+  void setBearerToken(String? token) {
+    _bearerToken = token;
   }
 
-  int get currentSeq => _seq;
-  bool get isRealtimeActive => _isRealtimeActive;
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
 
-  void ingestComputedPoint(VitalsPoint p) {
-    _buffer.add(p);
-    if (_isRealtimeActive) {
-      _realtimeWindow.add(p);
+    if (_bearerToken != null && _bearerToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_bearerToken';
+    }
+
+    return headers;
+  }
+
+  Uri _u(String path) => Uri.parse('${AppConstants.apiBaseUrl}$path');
+
+  Future<BiofeedbackStatus?> fetchStatus() async {
+    try {
+      final resp = await http
+          .get(_u('/v1/status'), headers: _headers)
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        return BiofeedbackStatus.fromJson(json);
+      }
+
+      debugPrint('[API] status failed: ${resp.statusCode} ${resp.body}');
+    } catch (e) {
+      debugPrint('[API] status error: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> fireTrigger({
+    String triggerType = 'manual',
+    int streamDurationSec = AppConstants.triggerStreamDurationSec,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'trigger_type': triggerType,
+        'stream_duration_sec': streamDurationSec,
+      });
+
+      final resp = await http
+          .post(_u('/v1/events/trigger'), headers: _headers, body: body)
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+
+      final parsed = resp.body.isNotEmpty
+          ? jsonDecode(resp.body) as Map<String, dynamic>
+          : <String, dynamic>{};
+
+      if (resp.statusCode == 200) return parsed;
+
+      return {
+        'ok': false,
+        'error': 'HTTP ${resp.statusCode}',
+        'body': parsed,
+      };
+    } catch (e) {
+      return {'ok': false, 'error': e.toString()};
     }
   }
 
-  void startBatchSync({Duration interval = const Duration(minutes: 30)}) {
-    _batchTimer?.cancel();
-    _batchTimer = Timer.periodic(interval, (_) async {
-      await _flushBatch();
-    });
+  Future<Map<String, dynamic>?> postPointsBatch({
+    required String deviceId,
+    required int seqNo,
+    required int schemaVersion,
+    required String idempotencyKey,
+    required List<VitalsPoint> points,
+  }) async {
+    try {
+      final payload = {
+        'device_id': deviceId,
+        'mode': 'batch',
+        'seq_no': seqNo,
+        'schema_version': schemaVersion,
+        'idempotency_key': idempotencyKey,
+        'points': points.map((p) => p.toJson()).toList(),
+      };
+
+      final resp = await http
+          .post(
+            _u('/v1/ingest/batch'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+
+      return {
+        'status': resp.statusCode,
+        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
+      };
+    } catch (e) {
+      return {'status': 0, 'error': e.toString()};
+    }
   }
 
-  void stopBatchSync() {
-    _batchTimer?.cancel();
-    _batchTimer = null;
-  }
+  Future<Map<String, dynamic>?> postPointsRealtime({
+    required String deviceId,
+    required int seqNo,
+    required int schemaVersion,
+    required String idempotencyKey,
+    required List<VitalsPoint> points,
+  }) async {
+    try {
+      final payload = {
+        'device_id': deviceId,
+        'mode': 'realtime',
+        'seq_no': seqNo,
+        'schema_version': schemaVersion,
+        'idempotency_key': idempotencyKey,
+        'points': points.map((p) => p.toJson()).toList(),
+      };
 
-  void startRealtime({Duration uploadInterval = const Duration(seconds: 2)}) {
-    _realtimeTimerStop();
-    _isRealtimeActive = true;
-    _realtimeWindow.clear();
+      final resp = await http
+          .post(
+            _u('/v1/ingest/realtime'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
 
-    _realtimeUploadTimer = Timer.periodic(uploadInterval, (_) async {
-      await _flushRealtime();
-    });
-  }
-
-  Future<void> stopRealtime() async {
-    _isRealtimeActive = false;
-    _realtimeTimerStop();
-    await _flushRealtime();
-  }
-
-  void _realtimeTimerStop() {
-    _realtimeUploadTimer?.cancel();
-    _realtimeUploadTimer = null;
-  }
-
-  Future<void> _flushRealtime() async {
-    if (_realtimeWindow.isEmpty) return;
-
-    final points = List<VitalsPoint>.from(_realtimeWindow);
-    _realtimeWindow.clear();
-
-    final seq = ++_seq;
-    final res = await _api.postPointsRealtime(
-      deviceId: _deviceId,
-      seqNo: seq,
-      idempotencyKey: _idempotencyKey(seq),
-      points: points,
-    );
-    debugPrint('[RING][REALTIME] seq=$seq points=${points.length} -> $res');
-  }
-
-  Future<void> _flushBatch() async {
-    if (_buffer.isEmpty) return;
-
-    final points = List<VitalsPoint>.from(_buffer);
-    _buffer.clear();
-
-    final seq = ++_seq;
-    final res = await _api.postPointsBatch(
-      deviceId: _deviceId,
-      seqNo: seq,
-      idempotencyKey: _idempotencyKey(seq),
-      points: points,
-    );
-    debugPrint('[RING][BATCH] seq=$seq points=${points.length} -> $res');
-  }
-
-  String _idempotencyKey(int seq) {
-    final day = DateTime.now().toUtc().toIso8601String().substring(0, 10);
-    return '${_deviceId}_${day}_$seq';
+      return {
+        'status': resp.statusCode,
+        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
+      };
+    } catch (e) {
+      return {'status': 0, 'error': e.toString()};
+    }
   }
 }

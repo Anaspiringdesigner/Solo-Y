@@ -3,26 +3,28 @@ module Types
 using Dates
 using Base.Threads: ReentrantLock
 
-export IngestMode, SignalChunk, SessionContext, SessionStatusDTO
+export IngestMode, VitalsPoint, SignalChunk, SessionContext, SessionStatusDTO
 
 @enum IngestMode::UInt8 begin
     BATCH = 1
     REALTIME = 2
 end
 
+struct VitalsPoint
+    ts::DateTime
+    hr::Float32
+    hrv::Float32
+    br::Float32
+end
+
 struct SignalChunk
     user_id::String
     device_id::String
     mode::IngestMode
-    start_ts::DateTime
-    end_ts::DateTime
     seq_no::Int
-    sample_rate_hz::Float32
-    hr::Vector{Float32}
-    hrv::Vector{Float32}
-    br::Vector{Float32}
     schema_version::Int
     idempotency_key::String
+    points::Vector{VitalsPoint}
 end
 
 mutable struct SessionContext

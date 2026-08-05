@@ -83,7 +83,7 @@ class BiofeedbackProvider extends ChangeNotifier {
   Future<void> signOut() async {
     stopPolling();
     _ring.stopBatchSync();
-    _ring.stopRealtime();
+    await _ring.stopRealtime();
     await _auth.signOut();
     isAuthenticated = false;
     authMessage = 'Signed out';
@@ -129,12 +129,12 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> startRingBatchSync() async {
-    _ring.configure(deviceId: 'ringA', startSeq: _ring.currentSeq);
+    _ring.configure(deviceId: 'ringA', schemaVersion: 1);
     _ring.startBatchSync(interval: const Duration(minutes: 30));
   }
 
   Future<void> startRingRealtime() async {
-    _ring.startRealtime(uploadInterval: const Duration(seconds: 2));
+    _ring.startRealtime(interval: const Duration(seconds: 2));
   }
 
   Future<void> stopRingRealtime() async {
@@ -156,6 +156,7 @@ class BiofeedbackProvider extends ChangeNotifier {
       status = result;
       isConnected = true;
 
+      // Feed points-only ingest pipeline
       _ring.ingestComputedPoint(
         VitalsPoint(
           ts: DateTime.now().toUtc(),
