@@ -6,6 +6,8 @@ using .BiofeedbackSystem
 
 function main()
     settings = BiofeedbackSystem.Config.load_settings()
+    BiofeedbackSystem.Auth.init_google_verifier!(settings)
+
     store = BiofeedbackSystem.SessionManager.new_store(settings)
     redis = BiofeedbackSystem.RedisStore.init_redis(settings)
     hs = BiofeedbackSystem.Hardening.new_hardening_store()
@@ -18,6 +20,7 @@ function main()
     println("Host: $(settings.host)")
     println("Port: $(settings.port)")
     println("Auth mode: $(settings.auth_mode)")
+    println("Google audience: $(settings.google_audience)")
     println("Redis: $(settings.redis_host):$(settings.redis_port) | available=$(redis.available)")
     println("Redis fail mode: $(settings.redis_fail_mode)")
     println("Event stream default sec: $(settings.event_stream_duration_sec)")

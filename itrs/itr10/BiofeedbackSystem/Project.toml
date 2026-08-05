@@ -4,7 +4,22 @@ authors = ["vamsimadhavtata <208189974+Anaspiringdesigner@users.noreply.github.c
 version = "0.1.0"
 
 [deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39d64d3c8fbe"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+JWTs = "0f6e2cbe-2e8a-4cf0-b3b7-7d2b0f0d4f9a"
+OpenSSL = "4d8831e6-92b7-49fb-bdf8-b643e874388c"
 ReinforcementLearning = "158674fc-8238-5cab-b5ba-03dfc80d1318"
 
 [compat]
+julia = "1.11"
+HTTP = "1"
+JSON3 = "1"
+JWTs = "0.3"
+OpenSSL = "1"
 ReinforcementLearning = "0.11.0"
