@@ -36,6 +36,12 @@ mutable struct SessionContext
     active_interaction::Int
     is_holding::Bool
     hold_steps_left::Int
+    hold_started_at::Union{Nothing, DateTime}
+    hold_ends_at::Union{Nothing, DateTime}
+    last_rl_score::Float32
+    last_rl_action::Int
+    last_tcn_train_at::Union{Nothing, DateTime}
+    last_bio_trigger_at::Union{Nothing, DateTime}
     lock::ReentrantLock
 end
 
@@ -47,12 +53,18 @@ SessionContext(user_id::String) = SessionContext(
     Dict{String, Float32}(
         "avg_hr" => 0f0,
         "avg_hrv" => 0f0,
-        "avg_br" => 0f0
+        "avg_br" => 0f0,
     ),
     0,
     false,
     0,
-    ReentrantLock()
+    nothing,
+    nothing,
+    0f0,
+    0,
+    nothing,
+    nothing,
+    ReentrantLock(),
 )
 
 Base.@kwdef struct SessionStatusDTO

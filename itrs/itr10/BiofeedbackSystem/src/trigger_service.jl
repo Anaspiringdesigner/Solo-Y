@@ -5,21 +5,19 @@ using ..Types
 
 export trigger_types, apply_trigger!
 
-const trigger_types = Set(["manual", "calendar", "bio", "system"])
+const trigger_types = Set(["manual", "calendar", "bio"])
 
 function apply_trigger!(sess::Types.SessionContext, trigger_type::String, stream_duration_sec::Int)
     trigger_type ∉ trigger_types && error("invalid_trigger_type")
 
     lock(sess.lock) do
-        sess.last_seen = now()
+        now_dt = now()
+        sess.last_seen = now_dt
         sess.state = :EVENT_STREAMING
         sess.is_holding = true
-        # if your hold step size is 5s, convert duration to steps
-        sess.hold_steps_left = max(1, stream_duration_sec ÷ 5)
-
-        # placeholder: actual RL action selection later
-        # keep current interaction if already active, otherwise default 0
-        sess.active_interaction = sess.active_interaction
+        sess.hold_started_at = now_dt
+        sess.hold_ends_at = now_dt + Second(stream_duration_sec)
+        sess.hold_steps_left = max(1, cld(stream_duration_sec, 5))
 
         return Dict(
             "ok" => true,
@@ -28,7 +26,7 @@ function apply_trigger!(sess::Types.SessionContext, trigger_type::String, stream
             "stream_now" => true,
             "stream_duration_sec" => stream_duration_sec,
             "hold_steps_left" => sess.hold_steps_left,
-            "active_interaction" => sess.active_interaction
+            "active_interaction" => sess.active_interaction,
         )
     end
 end
