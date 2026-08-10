@@ -134,14 +134,13 @@ end
 function _to_dict(x)
     if x isa Dict
         return x
-    end
-    if x isa JSON3.Object
+    elseif x isa JSON3.Object
         return Dict{String, Any}(pairs(x))
-    end
-    if x isa NamedTuple
+    elseif x isa NamedTuple
         return Dict{String, Any}(string(k) => v for (k, v) in pairs(x))
+    else
+        error("claims_not_mappable")
     end
-    error("claims_not_mappable")
 end
 
 function _verify_google_id_token(token::String, settings::Config.Settings)::String
