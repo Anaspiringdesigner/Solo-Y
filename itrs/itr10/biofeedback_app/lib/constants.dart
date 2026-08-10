@@ -7,9 +7,13 @@ class AppConstants {
     defaultValue: 'dev',
   );
 
-  // IMPORTANT:
-  // - Android emulator should use 10.0.2.2
-  // - Physical phone should use your PC LAN IP (override via --dart-define)
+  /// Backend base URL resolution:
+  /// 1) Use --dart-define=API_BASE_URL=... when provided
+  /// 2) Otherwise use stable defaults per platform
+  ///
+  /// NOTE:
+  /// - Physical Android phone (your current setup) uses laptop Tailscale IP.
+  /// - Emulator uses 10.0.2.2 only if explicitly passed by dart-define.
   static String get apiBaseUrl {
     const envUrl = String.fromEnvironment(
       'API_BASE_URL',
@@ -18,7 +22,12 @@ class AppConstants {
     if (envUrl.isNotEmpty) return envUrl;
 
     if (kIsWeb) return 'http://127.0.0.1:8000';
-    if (Platform.isAndroid) return 'http://10.0.2.2:8000';
+
+    if (Platform.isAndroid) {
+      // Default for your physical phone + Tailscale backend on laptop
+      return 'http://100.67.125.12:8000';
+    }
+
     return 'http://127.0.0.1:8000';
   }
 
