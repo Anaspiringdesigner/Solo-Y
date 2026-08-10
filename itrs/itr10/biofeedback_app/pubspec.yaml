@@ -48,6 +48,9 @@ dependencies:
   google_fonts:                 ^6.2.1
   animate_do:                   ^3.3.4
 
+  #BLE
+  flutter_reactive_ble: ^5.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

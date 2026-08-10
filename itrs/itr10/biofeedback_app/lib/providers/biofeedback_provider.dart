@@ -9,11 +9,19 @@ import '../constants.dart';
 import '../services/mjpeg_server.dart';
 import '../services/ring_ingest_service.dart';
 import '../services/auth_service.dart';
+import '../services/ring_ble_service.dart';
+import '../services/ppg_feature_service.dart';
 
 class BiofeedbackProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   final RingIngestService _ring = RingIngestService();
   final AuthService _auth = AuthService();
+
+  final RingBleService _ble = RingBleService();
+  final PpgFeatureService _ppg = PpgFeatureService();
+
+  StreamSubscription? _blePktSub;
+  StreamSubscription? _ppgPointSub;
 
   BiofeedbackStatus? status;
   bool isConnected = false;
@@ -45,6 +53,8 @@ class BiofeedbackProvider extends ChangeNotifier {
       authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
       if (ok) {
         startPolling();
+        await startRingBatchSync();
+        await _startRingPipeline();
       }
     } catch (e) {
       startupError = 'Startup auth failed: $e';
@@ -74,6 +84,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     if (ok) {
       startPolling();
       await startRingBatchSync();
+      await _startRingPipeline();
     }
 
     notifyListeners();
@@ -84,6 +95,9 @@ class BiofeedbackProvider extends ChangeNotifier {
     stopPolling();
     _ring.stopBatchSync();
     await _ring.stopRealtime();
+
+    await _stopRingPipeline();
+
     await _auth.signOut();
     isAuthenticated = false;
     authMessage = 'Signed out';
@@ -141,6 +155,29 @@ class BiofeedbackProvider extends ChangeNotifier {
     await _ring.stopRealtime();
   }
 
+  Future<void> _startRingPipeline() async {
+    await _blePktSub?.cancel();
+    await _ppgPointSub?.cancel();
+
+    _blePktSub = _ble.packets.listen((pkt) {
+      _ppg.addPacket(pkt);
+    });
+
+    _ppgPointSub = _ppg.points.listen((VitalsPoint pt) {
+      _ring.ingestComputedPoint(pt);
+    });
+
+    await _ble.start();
+  }
+
+  Future<void> _stopRingPipeline() async {
+    await _ble.stop();
+    await _blePktSub?.cancel();
+    await _ppgPointSub?.cancel();
+    _blePktSub = null;
+    _ppgPointSub = null;
+  }
+
   Future<void> _fetchStatus() async {
     if (!isAuthenticated) {
       isConnected = false;
@@ -155,16 +192,6 @@ class BiofeedbackProvider extends ChangeNotifier {
 
       status = result;
       isConnected = true;
-
-      // Feed points-only ingest pipeline
-      _ring.ingestComputedPoint(
-        VitalsPoint(
-          ts: DateTime.now().toUtc(),
-          hr: result.avgHr,
-          hrv: result.avgHrv,
-          br: result.avgBr,
-        ),
-      );
 
       if (AppConstants.enableCameraInteraction) {
         if (newInteraction == 3 && prevInteraction != 3) {
@@ -259,6 +286,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     stopPolling();
     _ring.stopBatchSync();
     _ring.stopRealtime();
+    _stopRingPipeline();
     super.dispose();
   }
 }
