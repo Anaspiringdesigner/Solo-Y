@@ -32,42 +32,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void initState() {
-  super.initState();
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    // BLE / runtime permissions first
-    final btScan = await Permission.bluetoothScan.request();
-    final btConnect = await Permission.bluetoothConnect.request();
-    final bt = await Permission.bluetooth.request();
-    final loc = await Permission.locationWhenInUse.request();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final btScan = await Permission.bluetoothScan.request();
+      final btConnect = await Permission.bluetoothConnect.request();
+      await Permission.bluetooth.request();
+      final loc = await Permission.locationWhenInUse.request();
 
-    if (!(btScan.isGranted || btScan.isLimited) ||
-        !(btConnect.isGranted || btConnect.isLimited) ||
-        !(loc.isGranted || loc.isLimited)) {
-      if (mounted) {
-        _showSnack('Please grant Bluetooth + Location permissions');
+      if (!(btScan.isGranted || btScan.isLimited) ||
+          !(btConnect.isGranted || btConnect.isLimited) ||
+          !(loc.isGranted || loc.isLimited)) {
+        if (mounted) {
+          _showSnack('Please grant Bluetooth + Location permissions');
+        }
       }
-    }
 
-    final bio = context.read<BiofeedbackProvider>();
-    await bio.initializeAuth();
+      final bio = context.read<BiofeedbackProvider>();
+      await bio.initializeAuth();
 
-    final notificationStatus = await Permission.notification.request();
-    if (!mounted) return;
+      final notificationStatus = await Permission.notification.request();
+      if (!mounted) return;
 
-    if (notificationStatus.isGranted || notificationStatus.isLimited) {
-      await bio.startDataTransfer();
-    } else {
-      _showSnack(
-        'Notifications are recommended for reliable background transfer.',
-      );
-    }
-  });
-}
+      if (notificationStatus.isGranted || notificationStatus.isLimited) {
+        await bio.startDataTransfer();
+      } else {
+        _showSnack(
+          'Notifications are recommended for reliable background transfer.',
+        );
+      }
+    });
+  }
 
   Future<void> _handleCalendarSignIn() async {
     if (!AppConstants.enableCalendar) {
@@ -82,9 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context.read<BiofeedbackProvider>().fireCalendarTrigger(eventName);
       });
       _showSnack(
-        '📅 Calendar connected — '
-        '${_calendar.scheduledTriggerCount} '
-        'triggers scheduled today',
+        '📅 Calendar connected — ${_calendar.scheduledTriggerCount} triggers scheduled today',
       );
     } else {
       _showSnack('❌ Calendar sign in failed');
@@ -112,6 +109,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final bio = context.watch<BiofeedbackProvider>();
     final s = bio.status;
+
+    final hrText = s != null
+        ? s.avgHr.toStringAsFixed(0)
+        : (bio.liveHr > 0 ? bio.liveHr.toStringAsFixed(0) : '--');
+
+    final hrvText = s != null
+        ? s.avgHrv.toStringAsFixed(1)
+        : (bio.liveHrv > 0 ? bio.liveHrv.toStringAsFixed(1) : '--');
+
+    final brText = s != null
+        ? s.avgBr.toStringAsFixed(1)
+        : (bio.liveBr > 0 ? bio.liveBr.toStringAsFixed(1) : '--');
 
     return Scaffold(
       backgroundColor: const Color(AppConstants.bgColor),
@@ -316,21 +325,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           VitalsCard(
                             label: 'HR',
-                            value: s != null ? s.avgHr.toStringAsFixed(0) : '--',
+                            value: hrText,
                             unit: 'bpm',
                             color: const Color(AppConstants.stressColor),
                             isStressed: s != null && s.avgHr > 90,
                           ),
                           VitalsCard(
                             label: 'HRV',
-                            value: s != null ? s.avgHrv.toStringAsFixed(1) : '--',
+                            value: hrvText,
                             unit: 'ms',
                             color: const Color(AppConstants.calmColor),
                             isStressed: s != null && s.avgHrv < 20,
                           ),
                           VitalsCard(
                             label: 'BR',
-                            value: s != null ? s.avgBr.toStringAsFixed(1) : '--',
+                            value: brText,
                             unit: '/min',
                             color: const Color(AppConstants.accentColor),
                             isStressed: false,
@@ -504,9 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 await _calendar.refreshToday();
                                 if (mounted) {
                                   _showSnack(
-                                    '🔄 Refreshed — '
-                                    '${_calendar.scheduledTriggerCount} '
-                                    'triggers scheduled',
+                                    '🔄 Refreshed — ${_calendar.scheduledTriggerCount} triggers scheduled',
                                   );
                                 }
                               },
