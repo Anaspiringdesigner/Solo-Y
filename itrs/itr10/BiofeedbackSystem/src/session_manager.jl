@@ -6,7 +6,7 @@ using ..Types
 using ..Config
 
 export SessionStore, new_store, get_or_create_session!, get_session, cleanup_expired!,
-       mark_idempotency_local!, is_duplicate_idempotency_local!, store_stats, all_sessions
+       mark_idempotency_local!, is_duplicate_idempotency_local!, store_stats
 
 mutable struct SessionStore
     sessions::Dict{String, Types.SessionContext}
@@ -42,12 +42,6 @@ function get_or_create_session!(store::SessionStore, user_id::String)::Types.Ses
         end
         sess.last_seen = now()
         return sess
-    end
-end
-
-function all_sessions(store::SessionStore)
-    lock(store.lock) do
-        collect(values(store.sessions))
     end
 end
 

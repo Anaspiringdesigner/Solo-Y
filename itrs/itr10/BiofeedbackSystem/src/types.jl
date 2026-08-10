@@ -43,6 +43,11 @@ mutable struct SessionContext
     last_tcn_train_at::Union{Nothing, DateTime}
     last_bio_trigger_at::Union{Nothing, DateTime}
     last_trigger_type::String
+    last_reward::Float32
+    pending_eval_action::Int
+    pending_eval_started_at::Union{Nothing, DateTime}
+    pending_eval_baseline_hr::Float32
+    pending_eval_baseline_hrv::Float32
     lock::ReentrantLock
 end
 
@@ -55,6 +60,7 @@ SessionContext(user_id::String) = SessionContext(
         "avg_hr" => 0f0,
         "avg_hrv" => 0f0,
         "avg_br" => 0f0,
+        "stress_score" => 0f0,
     ),
     0,
     false,
@@ -66,6 +72,11 @@ SessionContext(user_id::String) = SessionContext(
     nothing,
     nothing,
     "none",
+    0f0,
+    -1,
+    nothing,
+    0f0,
+    0f0,
     ReentrantLock(),
 )
 

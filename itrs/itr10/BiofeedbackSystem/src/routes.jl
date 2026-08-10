@@ -12,6 +12,8 @@ using ..IngestService
 using ..RedisStore
 using ..TriggerService
 using ..Hardening
+using ..FeatureService
+using ..RLService
 
 export make_router
 
@@ -61,11 +63,7 @@ function idem_check_and_mark!(
     end
 end
 
-function touch_session_presence!(
-    redis::RedisStore.RedisClient,
-    settings::Config.Settings,
-    user_id::String
-)
+function touch_session_presence!(redis::RedisStore.RedisClient, settings::Config.Settings, user_id::String)
     ttl_sec = settings.session_ttl_minutes * 60
     if RedisStore.redis_available(redis)
         RedisStore.session_touch!(redis, user_id, ttl_sec)
@@ -83,34 +81,20 @@ function with_request_logging(handler_name::String, req::HTTP.Request, f::Functi
     catch e
         dt_ms = round((time() - t0) * 1000; digits = 2)
         println("[REQ_ERR] id=$req_id route=$handler_name err=$(string(e)) latency_ms=$dt_ms")
-        return json_response(
-            500,
-            Dict("ok" => false, "error" => "internal_error", "detail" => string(e));
-            req_id = req_id
-        )
+        return json_response(500, Dict("ok" => false, "error" => "internal_error", "detail" => string(e)); req_id = req_id)
     end
 end
 
-function handle_ingest(
-    req::HTTP.Request,
-    store::SessionManager.SessionStore,
-    redis::RedisStore.RedisClient,
-    hs::Hardening.HardeningStore,
-    settings::Config.Settings,
-    mode::String
-)
+function handle_ingest(req::HTTP.Request, store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
+                       hs::Hardening.HardeningStore, settings::Config.Settings, mode::String,
+                       agent::RLService.RLAgentState)
     return with_request_logging("ingest_$mode", req, req_id -> begin
         Hardening.check_payload_size!(req.body; max_bytes = settings.max_payload_bytes)
 
         user_id, err = require_user(req, settings)
         err !== nothing && return err
 
-        ok_rate = Hardening.check_rate_limit!(
-            hs,
-            "ingest:$user_id";
-            limit = settings.ingest_rate_limit_per_min,
-            window_sec = 60
-        )
+        ok_rate = Hardening.check_rate_limit!(hs, "ingest:$user_id"; limit = settings.ingest_rate_limit_per_min, window_sec = 60)
         ok_rate || return json_response(429, Dict("ok" => false, "error" => "rate_limited_ingest"); req_id = req_id)
 
         payload = try
@@ -148,11 +132,7 @@ function handle_ingest(
         end
 
         if duplicate
-            return json_response(
-                200,
-                Dict("ok" => true, "duplicate" => true, "idempotency_backend" => idem_backend);
-                req_id = req_id
-            )
+            return json_response(200, Dict("ok" => true, "duplicate" => true, "idempotency_backend" => idem_backend); req_id = req_id)
         end
 
         sess = try
@@ -161,9 +141,24 @@ function handle_ingest(
             return json_response(429, Dict("ok" => false, "error" => string(e)); req_id = req_id)
         end
 
-        runtime_info = IngestService.apply_chunk!(sess, chunk, settings)
+        IngestService.apply_chunk!(sess, chunk, settings)
         Hardening.track_sequence!(hs, user_id, chunk.device_id, chunk.seq_no)
         touch_session_presence!(redis, settings, user_id)
+
+        trained = false
+        td = Dict{String, Any}("ok" => false, "reason" => "not_run")
+        auto_bio = false
+
+        if chunk.mode == Types.BATCH
+            train_res = FeatureService.incremental_train_tcn!(sess)
+            trained = get(train_res, "trained_on_new_data", false)
+            auto_bio = IngestService.maybe_detect_bio_trigger!(sess, settings)
+            if auto_bio
+                TriggerService.apply_trigger!(sess, "bio", settings.event_stream_duration_sec, settings)
+            end
+        else
+            td = IngestService.maybe_run_live_pipeline!(sess, settings, agent)
+        end
 
         return json_response(
             200,
@@ -178,19 +173,16 @@ function handle_ingest(
                 "avg_hr" => sess.latest_features["avg_hr"],
                 "avg_hrv" => sess.latest_features["avg_hrv"],
                 "avg_br" => sess.latest_features["avg_br"],
-                "active_interaction" => sess.active_interaction,
-                "td_sent" => get(runtime_info, "td_sent", false),
+                "trained_incrementally" => trained,
+                "bio_triggered" => auto_bio,
+                "td_pipeline" => td,
             );
             req_id = req_id
         )
     end)
 end
 
-function handle_status(
-    req::HTTP.Request,
-    store::SessionManager.SessionStore,
-    settings::Config.Settings
-)
+function handle_status(req::HTTP.Request, store::SessionManager.SessionStore, settings::Config.Settings)
     return with_request_logging("status", req, req_id -> begin
         user_id, err = require_user(req, settings)
         err !== nothing && return err
@@ -199,7 +191,7 @@ function handle_status(
         sess === nothing && return json_response(404, Dict("ok" => false, "error" => "session_not_found"); req_id = req_id)
 
         lock(sess.lock) do
-            TriggerService.refresh_hold_state!(sess)
+            IngestService.refresh_hold_state!(sess, settings)
             dto = Types.SessionStatusDTO(
                 user_id = sess.user_id,
                 state = sess.state,
@@ -217,32 +209,18 @@ function handle_status(
     end)
 end
 
-function handle_trigger(
-    req::HTTP.Request,
-    store::SessionManager.SessionStore,
-    redis::RedisStore.RedisClient,
-    hs::Hardening.HardeningStore,
-    settings::Config.Settings
-)
+function handle_trigger(req::HTTP.Request, store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
+                        hs::Hardening.HardeningStore, settings::Config.Settings)
     return with_request_logging("trigger", req, req_id -> begin
         Hardening.check_payload_size!(req.body; max_bytes = 32_000)
 
         user_id, err = require_user(req, settings)
         err !== nothing && return err
 
-        ok_rate = Hardening.check_rate_limit!(
-            hs,
-            "trigger:$user_id";
-            limit = settings.trigger_rate_limit_per_min,
-            window_sec = 60
-        )
+        ok_rate = Hardening.check_rate_limit!(hs, "trigger:$user_id"; limit = settings.trigger_rate_limit_per_min, window_sec = 60)
         ok_rate || return json_response(429, Dict("ok" => false, "error" => "rate_limited_trigger"); req_id = req_id)
 
-        ok_cd = Hardening.check_trigger_cooldown!(
-            hs,
-            user_id;
-            cooldown_sec = settings.trigger_cooldown_sec
-        )
+        ok_cd = Hardening.check_trigger_cooldown!(hs, user_id; cooldown_sec = settings.trigger_cooldown_sec)
         ok_cd || return json_response(429, Dict("ok" => false, "error" => "trigger_cooldown_active"); req_id = req_id)
 
         payload = try
@@ -258,29 +236,25 @@ function handle_trigger(
         end
 
         trigger_type = String(payload["trigger_type"])
-        stream_sec = haskey(payload, "stream_duration_sec") ? Int(payload["stream_duration_sec"]) :
-                                                              settings.event_stream_duration_sec
+        stream_sec = haskey(payload, "stream_duration_sec") ? Int(payload["stream_duration_sec"]) : settings.event_stream_duration_sec
 
         sess = SessionManager.get_or_create_session!(store, user_id)
 
         result = try
-            TriggerService.apply_trigger!(sess, trigger_type, stream_sec)
+            TriggerService.apply_trigger!(sess, trigger_type, stream_sec, settings)
         catch e
             return json_response(400, Dict("ok" => false, "error" => string(e)); req_id = req_id)
         end
 
         touch_session_presence!(redis, settings, user_id)
-
         return json_response(200, merge(result, Dict("user_id" => user_id)); req_id = req_id)
     end)
 end
 
-function make_router(
-    store::SessionManager.SessionStore,
-    redis::RedisStore.RedisClient,
-    hs::Hardening.HardeningStore,
-    settings::Config.Settings
-)
+function make_router(store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
+                     hs::Hardening.HardeningStore, settings::Config.Settings)
+    agent = RLService.init_agent(settings)
+
     return function(req::HTTP.Request)
         target = req.target
         method = String(req.method)
@@ -289,21 +263,15 @@ function make_router(
             return json_response(200, Dict("ok" => true, "service" => "biofeedback-backend"))
 
         elseif method == "GET" && target == "/readyz"
-            return json_response(
-                200,
-                Dict(
-                    "ok" => true,
-                    "ready" => true,
-                    "store" => SessionManager.store_stats(store),
-                    "redis" => RedisStore.redis_stats(redis),
-                )
-            )
+            return json_response(200, Dict("ok" => true, "ready" => true,
+                                           "store" => SessionManager.store_stats(store),
+                                           "redis" => RedisStore.redis_stats(redis)))
 
         elseif method == "POST" && target == "/v1/ingest/batch"
-            return handle_ingest(req, store, redis, hs, settings, "batch")
+            return handle_ingest(req, store, redis, hs, settings, "batch", agent)
 
         elseif method == "POST" && target == "/v1/ingest/realtime"
-            return handle_ingest(req, store, redis, hs, settings, "realtime")
+            return handle_ingest(req, store, redis, hs, settings, "realtime", agent)
 
         elseif method == "POST" && target == "/v1/events/trigger"
             return handle_trigger(req, store, redis, hs, settings)

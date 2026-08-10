@@ -31,6 +31,7 @@ Base.@kwdef struct Settings
     event_stream_duration_sec::Int = parse(Int, get(ENV, "BFS_EVENT_STREAM_SEC", "180"))
     batch_window_minutes::Int = parse(Int, get(ENV, "BFS_BATCH_WINDOW_MIN", "30"))
     bio_trigger_lookback_minutes::Int = parse(Int, get(ENV, "BFS_BIO_LOOKBACK_MIN", "30"))
+    hold_step_sec::Int = parse(Int, get(ENV, "BFS_HOLD_STEP_SEC", "5"))
 
     max_payload_bytes::Int = parse(Int, get(ENV, "BFS_MAX_PAYLOAD_BYTES", "512000"))
     ingest_rate_limit_per_min::Int = parse(Int, get(ENV, "BFS_INGEST_RATE_LIMIT_PER_MIN", "120"))
@@ -43,6 +44,9 @@ Base.@kwdef struct Settings
     td_path::String = get(ENV, "BFS_TD_PATH", "/biofeedback")
 
     bio_stress_threshold::Float64 = parse(Float64, get(ENV, "BFS_BIO_STRESS_THRESHOLD", "0.65"))
+    rl_gamma::Float32 = parse(Float32, get(ENV, "BFS_RL_GAMMA", "0.99"))
+    rl_alpha::Float32 = parse(Float32, get(ENV, "BFS_RL_ALPHA", "0.10"))
+    rl_epsilon::Float32 = parse(Float32, get(ENV, "BFS_RL_EPSILON", "0.10"))
 end
 
 load_settings() = Settings()
