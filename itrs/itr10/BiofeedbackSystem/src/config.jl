@@ -39,7 +39,7 @@ Base.@kwdef struct Settings
     enforce_monotonic_seq::Bool = lowercase(get(ENV, "BFS_ENFORCE_MONO_SEQ", "true")) == "true"
 
     td_host::String = get(ENV, "BFS_TD_HOST", "127.0.0.1")
-    td_port::Int = parse(Int, get(ENV, "BFS_TD_PORT", "9980"))
+    td_port::Int = parse(Int, get(ENV, "BFS_TD_PORT", "9999"))
     td_path::String = get(ENV, "BFS_TD_PATH", "/biofeedback")
 
     bio_stress_threshold::Float64 = parse(Float64, get(ENV, "BFS_BIO_STRESS_THRESHOLD", "0.65"))

@@ -42,6 +42,7 @@ mutable struct SessionContext
     last_rl_action::Int
     last_tcn_train_at::Union{Nothing, DateTime}
     last_bio_trigger_at::Union{Nothing, DateTime}
+    last_trigger_type::String
     lock::ReentrantLock
 end
 
@@ -64,6 +65,7 @@ SessionContext(user_id::String) = SessionContext(
     0,
     nothing,
     nothing,
+    "none",
     ReentrantLock(),
 )
 

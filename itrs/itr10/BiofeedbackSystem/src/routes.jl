@@ -91,12 +91,6 @@ function with_request_logging(handler_name::String, req::HTTP.Request, f::Functi
     end
 end
 
-function _refresh_status!(sess)
-    lock(sess.lock) do
-        IngestService.refresh_hold_state!(sess)
-    end
-end
-
 function handle_ingest(
     req::HTTP.Request,
     store::SessionManager.SessionStore,
@@ -167,18 +161,9 @@ function handle_ingest(
             return json_response(429, Dict("ok" => false, "error" => string(e)); req_id = req_id)
         end
 
-        IngestService.apply_chunk!(sess, chunk, settings)
+        runtime_info = IngestService.apply_chunk!(sess, chunk, settings)
         Hardening.track_sequence!(hs, user_id, chunk.device_id, chunk.seq_no)
         touch_session_presence!(redis, settings, user_id)
-
-        if chunk.mode == Types.BATCH
-            should_trigger = IngestService.maybe_emit_bio_trigger!(sess, settings)
-            if should_trigger
-                TriggerService.apply_trigger!(sess, "bio", settings.event_stream_duration_sec)
-            end
-        end
-
-        _refresh_status!(sess)
 
         return json_response(
             200,
@@ -193,9 +178,8 @@ function handle_ingest(
                 "avg_hr" => sess.latest_features["avg_hr"],
                 "avg_hrv" => sess.latest_features["avg_hrv"],
                 "avg_br" => sess.latest_features["avg_br"],
-                "is_holding" => sess.is_holding,
-                "hold_steps_left" => sess.hold_steps_left,
                 "active_interaction" => sess.active_interaction,
+                "td_sent" => get(runtime_info, "td_sent", false),
             );
             req_id = req_id
         )
@@ -215,7 +199,7 @@ function handle_status(
         sess === nothing && return json_response(404, Dict("ok" => false, "error" => "session_not_found"); req_id = req_id)
 
         lock(sess.lock) do
-            IngestService.refresh_hold_state!(sess)
+            TriggerService.refresh_hold_state!(sess)
             dto = Types.SessionStatusDTO(
                 user_id = sess.user_id,
                 state = sess.state,
