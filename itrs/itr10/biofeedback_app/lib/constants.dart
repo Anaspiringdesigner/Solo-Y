@@ -1,13 +1,26 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 class AppConstants {
   static const String appEnv = String.fromEnvironment(
     'APP_ENV',
     defaultValue: 'dev',
   );
 
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
-  );
+  // IMPORTANT:
+  // - Android emulator should use 10.0.2.2
+  // - Physical phone should use your PC LAN IP (override via --dart-define)
+  static String get apiBaseUrl {
+    const envUrl = String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: '',
+    );
+    if (envUrl.isNotEmpty) return envUrl;
+
+    if (kIsWeb) return 'http://127.0.0.1:8000';
+    if (Platform.isAndroid) return 'http://10.0.2.2:8000';
+    return 'http://127.0.0.1:8000';
+  }
 
   static const String whepBaseUrl = String.fromEnvironment(
     'WHEP_BASE_URL',

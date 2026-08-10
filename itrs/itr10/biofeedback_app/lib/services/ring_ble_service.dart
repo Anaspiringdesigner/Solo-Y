@@ -18,16 +18,20 @@ class RingBleService {
   StreamSubscription<ConnectionStateUpdate>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
 
-  String? _connectedDeviceId;
-
   final _packetCtrl = StreamController<RingSamplePacket>.broadcast();
   Stream<RingSamplePacket> get packets => _packetCtrl.stream;
 
   Future<void> start() async {
     await stop();
+    debugPrint('[BLE] scan start');
 
-    _scanSub = _ble.scanForDevices(withServices: [serviceUuid]).listen((d) async {
-      if (d.name.contains("ESP32-MAX30102") || d.serviceUuids.contains(serviceUuid)) {
+    _scanSub = _ble.scanForDevices(withServices: []).listen((d) async {
+      final name = d.name.toLowerCase();
+      final hasName = name.contains("esp32-max30102") || name.contains("esp32");
+      final hasSvc = d.serviceUuids.contains(serviceUuid);
+
+      if (hasName || hasSvc) {
+        debugPrint('[BLE] candidate found: name=${d.name} id=${d.id} services=${d.serviceUuids}');
         await _scanSub?.cancel();
         _scanSub = null;
         await _connect(d.id);
@@ -38,21 +42,20 @@ class RingBleService {
   }
 
   Future<void> _connect(String deviceId) async {
-    _connSub?.cancel();
+    await _connSub?.cancel();
+    debugPrint('[BLE] connecting -> $deviceId');
+
     _connSub = _ble.connectToDevice(
       id: deviceId,
       connectionTimeout: const Duration(seconds: 10),
     ).listen((u) async {
       if (u.connectionState == DeviceConnectionState.connected) {
-        _connectedDeviceId = deviceId;
         debugPrint('[BLE] connected: $deviceId');
         await _subscribeSamples(deviceId);
       } else if (u.connectionState == DeviceConnectionState.disconnected) {
         debugPrint('[BLE] disconnected');
-        _connectedDeviceId = null;
         await _notifySub?.cancel();
         _notifySub = null;
-        // auto-reconnect
         Future.delayed(const Duration(seconds: 2), () => start());
       }
     }, onError: (e) {
@@ -68,7 +71,7 @@ class RingBleService {
       deviceId: deviceId,
     );
 
-    _notifySub?.cancel();
+    await _notifySub?.cancel();
     _notifySub = _ble.subscribeToCharacteristic(c).listen((data) {
       try {
         final pkt = RingSamplePacket.fromBytes(Uint8List.fromList(data));
@@ -88,6 +91,10 @@ class RingBleService {
     _connSub = null;
     await _notifySub?.cancel();
     _notifySub = null;
-    _connectedDeviceId = null;
+  }
+
+  Future<void> dispose() async {
+    await stop();
+    await _packetCtrl.close();
   }
 }

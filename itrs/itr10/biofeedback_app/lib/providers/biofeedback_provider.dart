@@ -95,7 +95,6 @@ class BiofeedbackProvider extends ChangeNotifier {
     stopPolling();
     _ring.stopBatchSync();
     await _ring.stopRealtime();
-
     await _stopRingPipeline();
 
     await _auth.signOut();
@@ -156,14 +155,17 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> _startRingPipeline() async {
+    debugPrint('[BIO] Starting ring pipeline...');
     await _blePktSub?.cancel();
     await _ppgPointSub?.cancel();
 
     _blePktSub = _ble.packets.listen((pkt) {
+      debugPrint('[BIO] pkt seq=${pkt.seq} ts=${pkt.tsMs} ir=${pkt.ir} red=${pkt.red}');
       _ppg.addPacket(pkt);
     });
 
     _ppgPointSub = _ppg.points.listen((VitalsPoint pt) {
+      debugPrint('[BIO] point hr=${pt.hr.toStringAsFixed(1)} hrv=${pt.hrv.toStringAsFixed(1)} br=${pt.br.toStringAsFixed(1)}');
       _ring.ingestComputedPoint(pt);
     });
 

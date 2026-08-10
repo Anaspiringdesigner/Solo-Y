@@ -12,26 +12,33 @@ static const int SDA_PIN = 21;
 static const int SCL_PIN = 22;
 static const uint32_t SAMPLE_INTERVAL_MS = 20; // ~50 Hz
 
-// Custom BLE service/characteristic UUIDs
+// BLE UUIDs
 static BLEUUID SERVICE_UUID("12345678-1234-1234-1234-1234567890ab");
 static BLEUUID SAMPLE_CHAR_UUID("12345678-1234-1234-1234-1234567890ac");
 static BLEUUID STATUS_CHAR_UUID("12345678-1234-1234-1234-1234567890ad");
 
-BLECharacteristic *sampleChar = nullptr;
-BLECharacteristic *statusChar = nullptr;
+BLECharacteristic* sampleChar = nullptr;
+BLECharacteristic* statusChar = nullptr;
 volatile bool deviceConnected = false;
 
 unsigned long lastSampleMs = 0;
 uint32_t seqNo = 0;
 
+// Saturation / signal health tracking
+uint32_t satCount = 0;
+uint32_t sampleCount = 0;
+unsigned long lastHealthMs = 0;
+
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
     deviceConnected = true;
+    Serial.println("[BLE] connected");
   }
 
   void onDisconnect(BLEServer* pServer) override {
     deviceConnected = false;
     BLEDevice::startAdvertising();
+    Serial.println("[BLE] disconnected, advertising restarted");
   }
 };
 
@@ -59,11 +66,12 @@ bool initSensor() {
     return false;
   }
 
-  byte ledBrightness = 0x7F;
+  // MAX30102 setup tuning for wearable finger contact, avoid clipping
+  byte ledBrightness = 0x24; // LOWER than 0x7F
   byte sampleAverage = 4;
   byte ledMode = 2;      // Red + IR
-  int sampleRate = 100;  // Sensor internal rate
-  int pulseWidth = 411;
+  int sampleRate = 100;  // sensor internal rate
+  int pulseWidth = 215;  // narrower pulse to reduce saturation
   int adcRange = 4096;
 
   particleSensor.setup(
@@ -75,20 +83,23 @@ bool initSensor() {
     adcRange
   );
 
-  particleSensor.setPulseAmplitudeRed(0x7F);
-  particleSensor.setPulseAmplitudeIR(0x7F);
-  particleSensor.setPulseAmplitudeGreen(0);
+  // Keep amplitudes moderate; reduce if still saturating
+  particleSensor.setPulseAmplitudeRed(0x24);
+  particleSensor.setPulseAmplitudeIR(0x24);
+  particleSensor.setPulseAmplitudeGreen(0x00);
 
+  // Optional slight settle delay
+  delay(200);
   return true;
 }
 
 void initBle() {
   BLEDevice::init("ESP32-MAX30102");
 
-  BLEServer *server = BLEDevice::createServer();
+  BLEServer* server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
 
-  BLEService *service = server->createService(SERVICE_UUID);
+  BLEService* service = server->createService(SERVICE_UUID);
 
   sampleChar = service->createCharacteristic(
     SAMPLE_CHAR_UUID,
@@ -105,7 +116,7 @@ void initBle() {
 
   service->start();
 
-  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  BLEAdvertising* advertising = BLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
   advertising->setMinPreferred(0x06);
@@ -127,6 +138,7 @@ void setup() {
   }
 
   updateStatus("ready");
+  Serial.println("[SENSOR] initialized");
 }
 
 void loop() {
@@ -135,12 +147,22 @@ void loop() {
   if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
     lastSampleMs = now;
 
+    int32_t ir = particleSensor.getIR();
+    int32_t red = particleSensor.getRed();
+
     SamplePacket pkt;
     pkt.seq = ++seqNo;
     pkt.ts_ms = now;
-    pkt.ir = particleSensor.getIR();
-    pkt.red = particleSensor.getRed();
+    pkt.ir = ir;
+    pkt.red = red;
 
+    // Health stats
+    sampleCount++;
+    if (ir >= 260000 || red >= 260000) {
+      satCount++;
+    }
+
+    // Print every sample (can reduce if too chatty)
     Serial.print(pkt.seq);
     Serial.print(',');
     Serial.print(pkt.ts_ms);
@@ -149,9 +171,30 @@ void loop() {
     Serial.print(',');
     Serial.println(pkt.red);
 
+    // BLE notify
     if (deviceConnected && sampleChar) {
       sampleChar->setValue((uint8_t*)&pkt, sizeof(pkt));
       sampleChar->notify();
     }
+  }
+
+  // Report health every 5s
+  if (now - lastHealthMs >= 5000) {
+    lastHealthMs = now;
+    float satPct = (sampleCount > 0) ? (100.0f * satCount / sampleCount) : 0.0f;
+
+    Serial.print("[HEALTH] sat_pct=");
+    Serial.print(satPct, 1);
+    Serial.print("% samples=");
+    Serial.println(sampleCount);
+
+    if (satPct > 20.0f) {
+      updateStatus("signal_saturated");
+    } else {
+      updateStatus("signal_ok");
+    }
+
+    satCount = 0;
+    sampleCount = 0;
   }
 }

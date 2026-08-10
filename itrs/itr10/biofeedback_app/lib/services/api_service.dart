@@ -1,148 +1,157 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import '../constants.dart';
-import '../models/biofeedback_model.dart';
-import '../models/vitals_point.dart';
+#include <Arduino.h>
+#include <Wire.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include "MAX30105.h"
 
-class ApiService {
-  static final ApiService _instance = ApiService._internal();
-  factory ApiService() => _instance;
-  ApiService._internal();
+MAX30105 particleSensor;
 
-  String? _bearerToken;
+static const int SDA_PIN = 21;
+static const int SCL_PIN = 22;
+static const uint32_t SAMPLE_INTERVAL_MS = 20; // ~50 Hz
 
-  void setBearerToken(String? token) {
-    _bearerToken = token;
+// Custom BLE service/characteristic UUIDs
+static BLEUUID SERVICE_UUID("12345678-1234-1234-1234-1234567890ab");
+static BLEUUID SAMPLE_CHAR_UUID("12345678-1234-1234-1234-1234567890ac");
+static BLEUUID STATUS_CHAR_UUID("12345678-1234-1234-1234-1234567890ad");
+
+BLECharacteristic *sampleChar = nullptr;
+BLECharacteristic *statusChar = nullptr;
+volatile bool deviceConnected = false;
+
+unsigned long lastSampleMs = 0;
+uint32_t seqNo = 0;
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) override {
+    deviceConnected = true;
   }
 
-  Map<String, String> get _headers {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+  void onDisconnect(BLEServer* pServer) override {
+    deviceConnected = false;
+    BLEDevice::startAdvertising();
+  }
+};
 
-    if (_bearerToken != null && _bearerToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $_bearerToken';
+#pragma pack(push, 1)
+struct SamplePacket {
+  uint32_t seq;
+  uint32_t ts_ms;
+  int32_t ir;
+  int32_t red;
+};
+#pragma pack(pop)
+
+void updateStatus(const char* text) {
+  if (statusChar) {
+    statusChar->setValue((uint8_t*)text, strlen(text));
+    statusChar->notify();
+  }
+  Serial.println(text);
+}
+
+bool initSensor() {
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
+    return false;
+  }
+
+  byte ledBrightness = 0x7F;
+  byte sampleAverage = 4;
+  byte ledMode = 2;      // Red + IR
+  int sampleRate = 100;  // Sensor internal rate
+  int pulseWidth = 411;
+  int adcRange = 4096;
+
+  particleSensor.setup(
+    ledBrightness,
+    sampleAverage,
+    ledMode,
+    sampleRate,
+    pulseWidth,
+    adcRange
+  );
+
+  particleSensor.setPulseAmplitudeRed(0x7F);
+  particleSensor.setPulseAmplitudeIR(0x7F);
+  particleSensor.setPulseAmplitudeGreen(0);
+
+  return true;
+}
+
+void initBle() {
+  BLEDevice::init("ESP32-MAX30102");
+
+  BLEServer *server = BLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+
+  BLEService *service = server->createService(SERVICE_UUID);
+
+  sampleChar = service->createCharacteristic(
+    SAMPLE_CHAR_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+  sampleChar->addDescriptor(new BLE2902());
+
+  statusChar = service->createCharacteristic(
+    STATUS_CHAR_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+  );
+  statusChar->addDescriptor(new BLE2902());
+  statusChar->setValue("booting");
+
+  service->start();
+
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  initBle();
+
+  if (!initSensor()) {
+    updateStatus("sensor_init_failed");
+    while (true) {
+      delay(1000);
     }
-
-    return headers;
   }
 
-  Uri _u(String path) => Uri.parse('${AppConstants.apiBaseUrl}$path');
+  updateStatus("ready");
+}
 
-  Future<BiofeedbackStatus?> fetchStatus() async {
-    try {
-      final resp = await http
-          .get(_u('/v1/status'), headers: _headers)
-          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
+void loop() {
+  const unsigned long now = millis();
 
-      if (resp.statusCode == 200) {
-        final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        return BiofeedbackStatus.fromJson(json);
-      }
+  if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+    lastSampleMs = now;
 
-      debugPrint('[API] status failed: ${resp.statusCode} ${resp.body}');
-    } catch (e) {
-      debugPrint('[API] status error: $e');
-    }
-    return null;
-  }
+    SamplePacket pkt;
+    pkt.seq = ++seqNo;
+    pkt.ts_ms = now;
+    pkt.ir = particleSensor.getIR();
+    pkt.red = particleSensor.getRed();
 
-  Future<Map<String, dynamic>?> fireTrigger({
-    String triggerType = 'manual',
-    int streamDurationSec = AppConstants.triggerStreamDurationSec,
-  }) async {
-    try {
-      final body = jsonEncode({
-        'trigger_type': triggerType,
-        'stream_duration_sec': streamDurationSec,
-      });
+    Serial.print(pkt.seq);
+    Serial.print(',');
+    Serial.print(pkt.ts_ms);
+    Serial.print(',');
+    Serial.print(pkt.ir);
+    Serial.print(',');
+    Serial.println(pkt.red);
 
-      final resp = await http
-          .post(_u('/v1/events/trigger'), headers: _headers, body: body)
-          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
-
-      final parsed = resp.body.isNotEmpty
-          ? jsonDecode(resp.body) as Map<String, dynamic>
-          : <String, dynamic>{};
-
-      if (resp.statusCode == 200) return parsed;
-
-      return {
-        'ok': false,
-        'error': 'HTTP ${resp.statusCode}',
-        'body': parsed,
-      };
-    } catch (e) {
-      return {'ok': false, 'error': e.toString()};
-    }
-  }
-
-  Future<Map<String, dynamic>?> postPointsBatch({
-    required String deviceId,
-    required int seqNo,
-    required int schemaVersion,
-    required String idempotencyKey,
-    required List<VitalsPoint> points,
-  }) async {
-    try {
-      final payload = {
-        'device_id': deviceId,
-        'mode': 'batch',
-        'seq_no': seqNo,
-        'schema_version': schemaVersion,
-        'idempotency_key': idempotencyKey,
-        'points': points.map((p) => p.toJson()).toList(),
-      };
-
-      final resp = await http
-          .post(
-            _u('/v1/ingest/batch'),
-            headers: _headers,
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
-
-      return {
-        'status': resp.statusCode,
-        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
-      };
-    } catch (e) {
-      return {'status': 0, 'error': e.toString()};
-    }
-  }
-
-  Future<Map<String, dynamic>?> postPointsRealtime({
-    required String deviceId,
-    required int seqNo,
-    required int schemaVersion,
-    required String idempotencyKey,
-    required List<VitalsPoint> points,
-  }) async {
-    try {
-      final payload = {
-        'device_id': deviceId,
-        'mode': 'realtime',
-        'seq_no': seqNo,
-        'schema_version': schemaVersion,
-        'idempotency_key': idempotencyKey,
-        'points': points.map((p) => p.toJson()).toList(),
-      };
-
-      final resp = await http
-          .post(
-            _u('/v1/ingest/realtime'),
-            headers: _headers,
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: AppConstants.httpTimeoutSec));
-
-      return {
-        'status': resp.statusCode,
-        'json': resp.body.isNotEmpty ? jsonDecode(resp.body) : {},
-      };
-    } catch (e) {
-      return {'status': 0, 'error': e.toString()};
+    if (deviceConnected && sampleChar) {
+      sampleChar->setValue((uint8_t*)&pkt, sizeof(pkt));
+      sampleChar->notify();
     }
   }
 }

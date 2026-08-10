@@ -31,28 +31,44 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final bio = context.read<BiofeedbackProvider>();
-      await bio.initializeAuth();
+  @override
+void initState() {
+  super.initState();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-      final notificationStatus = await Permission.notification.request();
-      if (!mounted) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    // BLE / runtime permissions first
+    final btScan = await Permission.bluetoothScan.request();
+    final btConnect = await Permission.bluetoothConnect.request();
+    final bt = await Permission.bluetooth.request();
+    final loc = await Permission.locationWhenInUse.request();
 
-      if (notificationStatus.isGranted || notificationStatus.isLimited) {
-        await bio.startDataTransfer();
-      } else {
-        _showSnack(
-          'Notifications are recommended for reliable background transfer.',
-        );
+    if (!(btScan.isGranted || btScan.isLimited) ||
+        !(btConnect.isGranted || btConnect.isLimited) ||
+        !(loc.isGranted || loc.isLimited)) {
+      if (mounted) {
+        _showSnack('Please grant Bluetooth + Location permissions');
       }
-    });
-  }
+    }
+
+    final bio = context.read<BiofeedbackProvider>();
+    await bio.initializeAuth();
+
+    final notificationStatus = await Permission.notification.request();
+    if (!mounted) return;
+
+    if (notificationStatus.isGranted || notificationStatus.isLimited) {
+      await bio.startDataTransfer();
+    } else {
+      _showSnack(
+        'Notifications are recommended for reliable background transfer.',
+      );
+    }
+  });
+}
 
   Future<void> _handleCalendarSignIn() async {
     if (!AppConstants.enableCalendar) {

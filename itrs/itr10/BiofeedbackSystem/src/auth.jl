@@ -17,7 +17,6 @@ mutable struct GoogleVerifier
 end
 
 GoogleVerifier() = GoogleVerifier(Dict{String, Any}(), nothing, ReentrantLock())
-
 const _google_verifier_ref = Ref{GoogleVerifier}(GoogleVerifier())
 
 function init_google_verifier!(settings::Config.Settings)
