@@ -31,8 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  @override
-void initState() {
+  void initState() {
   super.initState();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

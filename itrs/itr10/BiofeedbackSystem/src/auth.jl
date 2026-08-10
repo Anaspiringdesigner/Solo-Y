@@ -131,6 +131,19 @@ function _aud_matches(aud_claim, expected::String)::Bool
     end
 end
 
+function _to_dict(x)
+    if x isa Dict
+        return x
+    end
+    if x isa JSON3.Object
+        return Dict{String, Any}(pairs(x))
+    end
+    if x isa NamedTuple
+        return Dict{String, Any}(string(k) => v for (k, v) in pairs(x))
+    end
+    error("claims_not_mappable")
+end
+
 function _verify_google_id_token(token::String, settings::Config.Settings)::String
     isempty(settings.google_audience) && error("google_audience_not_configured")
 
@@ -144,11 +157,13 @@ function _verify_google_id_token(token::String, settings::Config.Settings)::Stri
     jwk = _jwk_for_kid(gv, kid, settings)
     jwks = _public_key_from_jwk(jwk)
 
-    claims = try
+    claims_raw = try
         JWTs.decode(token, jwks; validate = false)
     catch e
         error("jwt_decode_failed:$(string(e))")
     end
+
+    claims = _to_dict(claims_raw)
 
     iss = haskey(claims, "iss") ? String(claims["iss"]) : ""
     iss in settings.google_issuers || error("invalid_issuer")

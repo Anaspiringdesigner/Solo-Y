@@ -36,6 +36,11 @@ class BiofeedbackProvider extends ChangeNotifier {
   String dataTransferStatus = 'Stopped';
   String startupError = '';
 
+  // Live BLE-derived vitals for dashboard fallback
+  double liveHr = 0;
+  double liveHrv = 0;
+  double liveBr = 0;
+
   final List<double> hrvHistory = [];
   final List<double> hrHistory = [];
 
@@ -104,6 +109,9 @@ class BiofeedbackProvider extends ChangeNotifier {
     isConnected = false;
     hrvHistory.clear();
     hrHistory.clear();
+    liveHr = 0;
+    liveHrv = 0;
+    liveBr = 0;
     notifyListeners();
   }
 
@@ -143,7 +151,8 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   Future<void> startRingBatchSync() async {
     _ring.configure(deviceId: 'ringA', schemaVersion: 1);
-    _ring.startBatchSync(interval: const Duration(minutes: 30));
+    // faster in dev; change back to 30m for production if needed
+    _ring.startBatchSync(interval: const Duration(seconds: 15));
   }
 
   Future<void> startRingRealtime() async {
@@ -166,7 +175,18 @@ class BiofeedbackProvider extends ChangeNotifier {
 
     _ppgPointSub = _ppg.points.listen((VitalsPoint pt) {
       debugPrint('[BIO] point hr=${pt.hr.toStringAsFixed(1)} hrv=${pt.hrv.toStringAsFixed(1)} br=${pt.br.toStringAsFixed(1)}');
+
+      liveHr = pt.hr;
+      liveHrv = pt.hrv;
+      liveBr = pt.br;
+
+      hrvHistory.add(pt.hrv);
+      hrHistory.add(pt.hr);
+      if (hrvHistory.length > 60) hrvHistory.removeAt(0);
+      if (hrHistory.length > 60) hrHistory.removeAt(0);
+
       _ring.ingestComputedPoint(pt);
+      notifyListeners();
     });
 
     await _ble.start();
@@ -203,6 +223,7 @@ class BiofeedbackProvider extends ChangeNotifier {
         }
       }
 
+      // Keep server trends too
       hrvHistory.add(result.avgHrv);
       hrHistory.add(result.avgHr);
       if (hrvHistory.length > 60) hrvHistory.removeAt(0);
@@ -258,8 +279,14 @@ class BiofeedbackProvider extends ChangeNotifier {
         () => stopRingRealtime(),
       );
     } else {
-      final reason = result?['error'] ?? result?['reason'] ?? 'Unknown error';
-      triggerMessage = '⚠️ $reason';
+      final err = result?['error']?.toString() ?? '';
+      if (err.contains('HTTP 401')) {
+        await signOut();
+        triggerMessage = 'Session expired. Please sign in again.';
+      } else {
+        final reason = result?['error'] ?? result?['reason'] ?? 'Unknown error';
+        triggerMessage = '⚠️ $reason';
+      }
     }
 
     notifyListeners();
@@ -289,6 +316,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     _ring.stopBatchSync();
     _ring.stopRealtime();
     _stopRingPipeline();
+    _ppg.dispose();
     super.dispose();
   }
 }
