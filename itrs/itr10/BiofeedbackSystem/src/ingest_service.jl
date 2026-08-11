@@ -2,6 +2,7 @@ module IngestService
 
 using Dates
 using Statistics
+using Base.Threads: ReentrantLock
 using ..Types
 using ..Config
 using ..FeatureService
@@ -9,13 +10,46 @@ using ..RLService
 using ..TDBridgeService
 using ..TriggerService
 
-export process_batch!, process_realtime!, refresh_hold_state!, maybe_run_live_pipeline!
+export process_batch!, process_realtime!, refresh_hold_state!, maybe_run_live_pipeline!, init_rl_runtime!
+
+const _agent_ref = Ref{Union{Nothing, RLService.RLAgentState}}(nothing)
+const _agent_lock = ReentrantLock()
+const _last_save_ref = Ref{DateTime}(DateTime(1970,1,1))
+
+function init_rl_runtime!(settings::Config.Settings)
+    lock(_agent_lock) do
+        if _agent_ref[] === nothing
+            agent = RLService.init_agent(settings)
+            RLService.load_agent!(agent, settings.rl_state_file)
+            _agent_ref[] = agent
+            _last_save_ref[] = now()
+        end
+    end
+    return nothing
+end
+
+function _get_agent(settings::Config.Settings)
+    if _agent_ref[] === nothing
+        init_rl_runtime!(settings)
+    end
+    return _agent_ref[]::RLService.RLAgentState
+end
+
+function _autosave_if_due!(settings::Config.Settings)
+    nowt = now()
+    if Dates.value(nowt - _last_save_ref[]) >= settings.rl_autosave_sec * 1000
+        lock(_agent_lock) do
+            agent = _agent_ref[]
+            if agent !== nothing
+                RLService.save_agent!(agent, settings.rl_state_file)
+                _last_save_ref[] = now()
+            end
+        end
+    end
+end
 
 function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settings)
-    if !sess.is_holding
-        return
-    end
-    if sess.hold_ends_at === nothing
+    if !sess.is_holding || sess.hold_ends_at === nothing
         return
     end
     if now() >= sess.hold_ends_at || sess.hold_steps_left <= 0
@@ -26,14 +60,10 @@ function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settin
 end
 
 function _update_features_from_points!(sess::Types.SessionContext, points::Vector{Types.VitalsPoint})
-    if isempty(points)
-        return
-    end
-
+    isempty(points) && return
     hrs = Float32[p.hr for p in points]
     hrvs = Float32[p.hrv for p in points]
     brs = Float32[p.br for p in points]
-
     sess.latest_features["avg_hr"] = mean(hrs)
     sess.latest_features["avg_hrv"] = mean(hrvs)
     sess.latest_features["avg_br"] = mean(brs)
@@ -71,42 +101,36 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         return Dict("ok" => false, "reason" => "not_holding")
     end
 
-    # TCN-like features from FeatureService
     tcn = FeatureService.encode_tcn_features(sess)
     feats["tcn_hr"] = get(tcn, "tcn_hr", get(feats, "avg_hr", 0f0))
     feats["tcn_hrv"] = get(tcn, "tcn_hrv", get(feats, "avg_hrv", 0f0))
     feats["tcn_br"] = get(tcn, "tcn_br", get(feats, "avg_br", 0f0))
     feats["stress_score"] = get(tcn, "stress_score", get(feats, "stress_score", 0f0))
 
-    # Hold RL action steady during active hold
     local action = -1
     local score = 0f0
-    local state_key = ""
 
     lock(sess.lock) do
         if sess.active_interaction >= 0 && sess.pending_eval_action >= 0
             action = sess.active_interaction
             score = sess.last_rl_score
-            state_key = sess.last_rl_state_key
         end
     end
 
     if action < 0
         trig = TDBridgeService.trigger_code(trig_type)
+        agent = _get_agent(settings)
 
-        # NOTE: RLService in your project expects an agent.
-        # If you have a shared agent elsewhere, wire it in.
-        # For now, create a lightweight one per call (works functionally).
-        agent = RLService.init_agent(settings)
-
-        rl = RLService.choose_action!(
-            agent,
-            feats,
-            trig;
-            prev_state_key = prev_state_key,
-            prev_action = prev_action,
-            reward = prev_state_key === nothing ? nothing : reward,
-        )
+        rl = lock(_agent_lock) do
+            RLService.choose_action!(
+                agent,
+                feats,
+                trig;
+                prev_state_key = prev_state_key,
+                prev_action = prev_action,
+                reward = prev_state_key === nothing ? nothing : reward,
+            )
+        end
 
         action = Int(rl["action"])
         score = Float32(rl["score"])
@@ -133,7 +157,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         hold_steps_left = sess.hold_steps_left
     end
 
-    td_payload = Dict(
+    td_ok = TDBridgeService.send_td_payload(Dict(
         "ok" => true,
         "hr" => get(feats, "tcn_hr", 0f0),
         "hrv" => get(feats, "tcn_hrv", 0f0),
@@ -142,9 +166,9 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         "hold_steps_left" => hold_steps_left,
         "trigger_type" => trig_type,
         "score" => score,
-    )
+    ), settings)
 
-    td_ok = TDBridgeService.send_td_payload(td_payload, settings)
+    _autosave_if_due!(settings)
 
     return Dict(
         "ok" => true,
@@ -162,15 +186,9 @@ function process_realtime!(sess::Types.SessionContext, chunk::Types.SignalChunk,
         _update_features_from_points!(sess, chunk.points)
         sess.last_seen = now()
     end
-
     _ = TriggerService.maybe_auto_trigger_bio!(sess, settings)
     pipe = maybe_run_live_pipeline!(sess, settings)
-
-    return Dict(
-        "ok" => true,
-        "mode" => "realtime",
-        "td_pipeline" => pipe,
-    )
+    return Dict("ok" => true, "mode" => "realtime", "td_pipeline" => pipe)
 end
 
-end # module
+end
