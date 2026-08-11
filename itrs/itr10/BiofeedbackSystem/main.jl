@@ -7,6 +7,7 @@ using .BiofeedbackSystem
 function main()
     settings = BiofeedbackSystem.Config.load_settings()
     BiofeedbackSystem.Auth.init_google_verifier!(settings)
+    BiofeedbackSystem.IngestService.init_rl_runtime!(settings)
 
     store = BiofeedbackSystem.SessionManager.new_store(settings)
     redis = BiofeedbackSystem.RedisStore.init_redis(settings)
