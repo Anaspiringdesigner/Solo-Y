@@ -48,7 +48,6 @@ mutable struct SessionContext
     pending_eval_started_at::Union{Nothing, DateTime}
     pending_eval_baseline_hr::Float32
     pending_eval_baseline_hrv::Float32
-    last_rl_state_key::String
     lock::ReentrantLock
 end
 
@@ -78,7 +77,6 @@ SessionContext(user_id::String) = SessionContext(
     nothing,
     0f0,
     0f0,
-    "",
     ReentrantLock(),
 )
 
@@ -89,12 +87,12 @@ Base.@kwdef struct SessionStatusDTO
     active_interaction::Int
     is_holding::Bool
     hold_steps_left::Int
+    trigger_type::String
     avg_hr::Float32
     avg_hrv::Float32
     avg_br::Float32
     buffered_chunks::Int
     last_seen::String
-    trigger_type::String
 end
 
 end # module

@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/biofeedback_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/data_transfer_service.dart';
-import 'services/local_ring_store.dart';
+import 'services/store.dart';
 import 'constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  await Hive.initFlutter();
   await LocalRingStore().init();
   await DataTransferService.initialize();
   runApp(const BiofeedbackApp());

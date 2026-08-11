@@ -360,7 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 12),
                     if (AppConstants.enableCameraInteraction &&
                         s != null &&
-                        s.activeInteraction == 3) ...[
+                        s.activeInteraction == 4) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
                         duration: const Duration(milliseconds: 750),

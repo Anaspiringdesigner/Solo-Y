@@ -1,3 +1,5 @@
+import '../constants.dart';
+
 class BiofeedbackStatus {
   final double avgHr;
   final double avgHrv;
@@ -34,14 +36,15 @@ class BiofeedbackStatus {
   }
 
   double get holdProgress {
-    const totalSteps = 36;
-    if (!isHolding) return 0.0;
+    final totalSteps =
+        AppConstants.triggerStreamDurationSec ~/ AppConstants.holdStepSec;
+    if (!isHolding || totalSteps <= 0) return 0.0;
     final p = 1.0 - (holdStepsLeft / totalSteps);
     return p.clamp(0.0, 1.0);
   }
 
   String get holdTimeRemaining {
-    final seconds = holdStepsLeft * 5;
+    final seconds = holdStepsLeft * AppConstants.holdStepSec;
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';

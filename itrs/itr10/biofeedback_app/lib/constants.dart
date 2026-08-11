@@ -60,6 +60,7 @@ class AppConstants {
     'Noise Crumpling',
     'Noise in Circle',
     'Video Ripples',
+    'Flowery Noise',
   ];
 
   static const List<String> interactionIcons = [
@@ -68,6 +69,7 @@ class AppConstants {
     '◈',
     '◉',
     '✦',
+    '✿',
   ];
 
   static const int bgColor = 0xFF0C0F14;
