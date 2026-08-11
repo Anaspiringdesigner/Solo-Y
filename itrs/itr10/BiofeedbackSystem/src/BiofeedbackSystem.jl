@@ -8,7 +8,7 @@ include("redis_store.jl")
 include("feature_service.jl")
 include("rl_service.jl")
 include("td_bridge_service.jl")
-include("trigger_service.jl")   # trigger before ingest
+include("trigger_service.jl")
 include("ingest_service.jl")
 include("hardening.jl")
 include("routes.jl")
