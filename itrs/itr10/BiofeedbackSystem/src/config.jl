@@ -11,15 +11,8 @@ Base.@kwdef struct Settings
     idempotency_ttl_minutes::Int = parse(Int, get(ENV, "BFS_IDEMP_TTL_MIN", "120"))
 
     auth_mode::String = get(ENV, "BFS_AUTH_MODE", "google_id_token")
-    google_audience::String = get(
-        ENV,
-        "BFS_GOOGLE_AUDIENCE",
-        "760908125337-sfppi17rht5mkv6ckcm28q2g25r5ru5i.apps.googleusercontent.com",
-    )
-    google_issuers::Vector{String} = split(
-        get(ENV, "BFS_GOOGLE_ISSUERS", "https://accounts.google.com,accounts.google.com"),
-        ","
-    )
+    google_audience::String = get(ENV, "BFS_GOOGLE_AUDIENCE", "")
+    google_issuers::Vector{String} = split(get(ENV, "BFS_GOOGLE_ISSUERS", "https://accounts.google.com,accounts.google.com"), ",")
     google_jwks_url::String = get(ENV, "BFS_GOOGLE_JWKS_URL", "https://www.googleapis.com/oauth2/v3/certs")
     google_jwks_refresh_sec::Int = parse(Int, get(ENV, "BFS_GOOGLE_JWKS_REFRESH_SEC", "3600"))
     google_clock_skew_sec::Int = parse(Int, get(ENV, "BFS_GOOGLE_CLOCK_SKEW_SEC", "120"))
@@ -29,8 +22,6 @@ Base.@kwdef struct Settings
     redis_fail_mode::String = get(ENV, "BFS_REDIS_FAIL_MODE", "degraded")
 
     event_stream_duration_sec::Int = parse(Int, get(ENV, "BFS_EVENT_STREAM_SEC", "180"))
-    batch_window_minutes::Int = parse(Int, get(ENV, "BFS_BATCH_WINDOW_MIN", "30"))
-    bio_trigger_lookback_minutes::Int = parse(Int, get(ENV, "BFS_BIO_LOOKBACK_MIN", "30"))
     hold_step_sec::Int = parse(Int, get(ENV, "BFS_HOLD_STEP_SEC", "5"))
 
     max_payload_bytes::Int = parse(Int, get(ENV, "BFS_MAX_PAYLOAD_BYTES", "512000"))
@@ -44,11 +35,16 @@ Base.@kwdef struct Settings
     td_path::String = get(ENV, "BFS_TD_PATH", "/biofeedback")
 
     bio_stress_threshold::Float64 = parse(Float64, get(ENV, "BFS_BIO_STRESS_THRESHOLD", "0.65"))
+
     rl_gamma::Float32 = parse(Float32, get(ENV, "BFS_RL_GAMMA", "0.99"))
     rl_alpha::Float32 = parse(Float32, get(ENV, "BFS_RL_ALPHA", "0.10"))
     rl_epsilon::Float32 = parse(Float32, get(ENV, "BFS_RL_EPSILON", "0.10"))
+
+    # persistence
+    rl_state_file::String = get(ENV, "BFS_RL_STATE_FILE", "data/rl_state.json")
+    rl_autosave_sec::Int = parse(Int, get(ENV, "BFS_RL_AUTOSAVE_SEC", "10"))
 end
 
 load_settings() = Settings()
 
-end # module
+end
