@@ -90,9 +90,7 @@ class ApiService {
     final uri = _u('/healthz');
     try {
       final resp = await _sendWithRetry(
-        () => http
-            .get(uri, headers: _headers)
-            .timeout(const Duration(seconds: 6)),
+        () => http.get(uri, headers: _headers).timeout(const Duration(seconds: 6)),
         allowAuthRefresh: false,
         networkRetries: 1,
       );
@@ -107,25 +105,11 @@ class ApiService {
         'body': body,
       };
     } on TimeoutException {
-      return {
-        'ok': false,
-        'status': 0,
-        'error': 'health_timeout',
-      };
+      return {'ok': false, 'status': 0, 'error': 'health_timeout'};
     } on SocketException catch (e) {
-      return {
-        'ok': false,
-        'status': 0,
-        'error': 'health_socket',
-        'detail': e.message,
-      };
+      return {'ok': false, 'status': 0, 'error': 'health_socket', 'detail': e.message};
     } catch (e) {
-      return {
-        'ok': false,
-        'status': 0,
-        'error': 'health_unknown',
-        'detail': e.toString(),
-      };
+      return {'ok': false, 'status': 0, 'error': 'health_unknown', 'detail': e.toString()};
     }
   }
 
@@ -133,9 +117,9 @@ class ApiService {
     final uri = _u('/v1/status');
     try {
       final resp = await _sendWithRetry(
-        () => http
-            .get(uri, headers: _headers)
-            .timeout(const Duration(seconds: AppConstants.httpTimeoutSec)),
+        () => http.get(uri, headers: _headers).timeout(
+              const Duration(seconds: AppConstants.httpTimeoutSec),
+            ),
         allowAuthRefresh: true,
         networkRetries: 1,
       );
@@ -165,7 +149,6 @@ class ApiService {
     String triggerType = 'manual',
     int streamDurationSec = AppConstants.triggerStreamDurationSec,
   }) async {
-    // Production guard: preflight health to avoid long user-facing hangs
     final health = await pingHealth();
     if (health['ok'] != true) {
       return {
@@ -183,9 +166,7 @@ class ApiService {
 
     try {
       final resp = await _sendWithRetry(
-        () => http
-            .post(uri, headers: _headers, body: body)
-            .timeout(const Duration(seconds: 8)),
+        () => http.post(uri, headers: _headers, body: body).timeout(const Duration(seconds: 8)),
         allowAuthRefresh: true,
         networkRetries: 1,
       );
@@ -202,22 +183,11 @@ class ApiService {
         'body': parsed,
       };
     } on TimeoutException {
-      return {
-        'ok': false,
-        'error': 'trigger_timeout',
-      };
+      return {'ok': false, 'error': 'trigger_timeout'};
     } on SocketException catch (e) {
-      return {
-        'ok': false,
-        'error': 'trigger_socket',
-        'detail': e.message,
-      };
+      return {'ok': false, 'error': 'trigger_socket', 'detail': e.message};
     } catch (e) {
-      return {
-        'ok': false,
-        'error': 'trigger_unknown',
-        'detail': e.toString(),
-      };
+      return {'ok': false, 'error': 'trigger_unknown', 'detail': e.toString()};
     }
   }
 
@@ -240,9 +210,9 @@ class ApiService {
 
     try {
       final resp = await _sendWithRetry(
-        () => http
-            .post(uri, headers: _headers, body: jsonEncode(payload))
-            .timeout(const Duration(seconds: AppConstants.httpTimeoutSec)),
+        () => http.post(uri, headers: _headers, body: jsonEncode(payload)).timeout(
+              const Duration(seconds: AppConstants.httpTimeoutSec),
+            ),
         allowAuthRefresh: true,
         networkRetries: 1,
       );
@@ -279,9 +249,9 @@ class ApiService {
 
     try {
       final resp = await _sendWithRetry(
-        () => http
-            .post(uri, headers: _headers, body: jsonEncode(payload))
-            .timeout(const Duration(seconds: AppConstants.httpTimeoutSec)),
+        () => http.post(uri, headers: _headers, body: jsonEncode(payload)).timeout(
+              const Duration(seconds: AppConstants.httpTimeoutSec),
+            ),
         allowAuthRefresh: true,
         networkRetries: 1,
       );

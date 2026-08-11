@@ -56,13 +56,17 @@ class BiofeedbackProvider extends ChangeNotifier {
       final ok = await _auth.tryRestoreSession();
       isAuthenticated = ok;
       authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
+
       if (ok) {
         startPolling();
         await startRingBatchSync();
         await _startRingPipeline();
+      } else {
+        isConnected = false;
       }
     } catch (e) {
       startupError = 'Startup auth failed: $e';
+      isConnected = false;
       if (kDebugMode) {
         debugPrint('[BIO] initializeAuth error: $e');
       }
@@ -91,6 +95,9 @@ class BiofeedbackProvider extends ChangeNotifier {
       startPolling();
       await startRingBatchSync();
       await _startRingPipeline();
+      await _fetchStatus();
+    } else {
+      isConnected = false;
     }
 
     notifyListeners();
@@ -153,7 +160,9 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   Future<void> startRingBatchSync() async {
     _ring.configure(deviceId: 'ringA', schemaVersion: 1);
-    _ring.startBatchSync(interval: const Duration(minutes: AppConstants.batchUploadMinutes));
+    _ring.startBatchSync(
+      interval: const Duration(minutes: AppConstants.batchUploadMinutes),
+    );
   }
 
   Future<void> _startRingPipeline() async {
@@ -204,9 +213,12 @@ class BiofeedbackProvider extends ChangeNotifier {
 
       status = result;
       isConnected = true;
+      startupError = '';
 
       if (result.isHolding && !_ring.isRealtimeActive) {
-        await _ring.startRealtime(interval: const Duration(seconds: AppConstants.realtimeUploadSeconds));
+        await _ring.startRealtime(
+          interval: const Duration(seconds: AppConstants.realtimeUploadSeconds),
+        );
         _startRealtimeWatchdog();
       } else if (!result.isHolding && _ring.isRealtimeActive) {
         await _ring.stopRealtime();
@@ -298,6 +310,7 @@ class BiofeedbackProvider extends ChangeNotifier {
         final s = await _api.fetchStatus();
         if (s != null) {
           status = s;
+          isConnected = true;
           if (s.isHolding) {
             confirmed = true;
             break;
@@ -307,7 +320,9 @@ class BiofeedbackProvider extends ChangeNotifier {
 
       if (confirmed) {
         triggerMessage = '✅ $label';
-        await _ring.startRealtime(interval: const Duration(seconds: AppConstants.realtimeUploadSeconds));
+        await _ring.startRealtime(
+          interval: const Duration(seconds: AppConstants.realtimeUploadSeconds),
+        );
         _startRealtimeWatchdog();
       } else {
         triggerMessage = '⚠️ Trigger acknowledged but hold not confirmed';

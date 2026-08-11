@@ -129,10 +129,6 @@ function _decode_claims_unverified(token::String)
 end
 
 function _verify_signature_compat!(token::String, jwk)::Nothing
-    # JWTs.jl 0.3.x API compatibility varies across environments.
-    # We attempt available verification entry points only for signature validation.
-    # Claims validation is handled separately below.
-
     if isdefined(JWTs, :verify)
         try
             JWTs.verify(token, jwk)
@@ -184,10 +180,7 @@ function _verify_google_id_token(token::String, settings::Config.Settings)::Stri
     gv = _google_verifier_ref[]
     jwk = _jwk_for_kid(gv, kid, settings)
 
-    # First ensure signature verification succeeds with the installed JWTs.jl API.
     _verify_signature_compat!(token, jwk)
-
-    # Then decode claims from the token payload and validate them explicitly.
     claims = _decode_claims_unverified(token)
 
     iss = haskey(claims, "iss") ? String(claims["iss"]) : ""
@@ -216,6 +209,10 @@ function _verify_google_id_token(token::String, settings::Config.Settings)::Stri
     return sub
 end
 
+function _verify_google_id_token(token::String, settings::Config.Settings, _legacy)::String
+    return _verify_google_id_token(token, settings)
+end
+
 function extract_user_id(req::HTTP.Request, settings::Config.Settings)::Union{String, Nothing}
     if settings.auth_mode != "google_id_token"
         return nothing
@@ -230,7 +227,7 @@ function extract_user_id(req::HTTP.Request, settings::Config.Settings)::Union{St
     try
         return _verify_google_id_token(token, settings)
     catch e
-        println("[AUTH] token verification failed: $(string(e))")
+        println("[AUTH] token verification failed: $(typeof(e)) :: $(string(e))")
         return nothing
     end
 end

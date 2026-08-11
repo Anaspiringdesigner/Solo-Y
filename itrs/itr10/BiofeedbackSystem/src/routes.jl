@@ -193,18 +193,18 @@ function handle_status(req::HTTP.Request, store::SessionManager.SessionStore, se
         lock(sess.lock) do
             IngestService.refresh_hold_state!(sess, settings)
             dto = Types.SessionStatusDTO(
-                user_id = sess.user_id,
-                state = sess.state,
-                active_interaction = sess.active_interaction,
-                is_holding = sess.is_holding,
-                hold_steps_left = sess.hold_steps_left,
-                trigger_type = sess.last_trigger_type,
-                avg_hr = get(sess.latest_features, "avg_hr", 0f0),
-                avg_hrv = get(sess.latest_features, "avg_hrv", 0f0),
-                avg_br = get(sess.latest_features, "avg_br", 0f0),
-                buffered_chunks = length(sess.ring_buffer),
-                last_seen = string(sess.last_seen),
-            )
+                    user_id = sess.user_id,
+                    state = sess.state,
+                    active_interaction = sess.active_interaction,
+                    is_holding = sess.is_holding,
+                    hold_steps_left = sess.hold_steps_left,
+                    trigger_type = sess.last_trigger_type,
+                    avg_hr = get(sess.latest_features, "avg_hr", 0f0),
+                    avg_hrv = get(sess.latest_features, "avg_hrv", 0f0),
+                    avg_br = get(sess.latest_features, "avg_br", 0f0),
+                    buffered_chunks = length(sess.ring_buffer),
+                    last_seen = string(sess.last_seen),
+                )
             return json_response(200, dto; req_id = req_id)
         end
     end)
