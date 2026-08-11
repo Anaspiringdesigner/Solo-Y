@@ -203,6 +203,7 @@ function handle_status(req::HTTP.Request, store::SessionManager.SessionStore, se
                 avg_br = get(sess.latest_features, "avg_br", 0f0),
                 buffered_chunks = length(sess.ring_buffer),
                 last_seen = string(sess.last_seen),
+                trigger_type = sess.last_trigger_type,
             )
             return json_response(200, dto; req_id = req_id)
         end

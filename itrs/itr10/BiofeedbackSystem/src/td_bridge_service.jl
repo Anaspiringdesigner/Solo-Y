@@ -42,6 +42,7 @@ function send_td_payload(settings::Config.Settings, payload::Dict{String, Any}):
         _send_line(sock, host, port, string(base, "/holding"), get(payload, "holding", 0))
         _send_line(sock, host, port, string(base, "/hold_steps"), get(payload, "hold_steps", 0))
         _send_line(sock, host, port, string(base, "/hold_progress"), get(payload, "hold_progress", 0))
+        println("[TD] sent hr=$(get(payload, "hr", 0)) hrv=$(get(payload, "hrv", 0)) interaction=$(get(payload, "interaction", 0)) holding=$(get(payload, "holding", 0))")
         return true
     catch e
         println("[TD] bridge error: $(string(e))")

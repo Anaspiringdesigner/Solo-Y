@@ -17,4 +17,13 @@ class VitalsPoint {
         'hrv': hrv,
         'br': br,
       };
+
+  factory VitalsPoint.fromJson(Map<dynamic, dynamic> json) {
+    return VitalsPoint(
+      ts: DateTime.parse((json['ts'] ?? DateTime.now().toUtc().toIso8601String()).toString()).toUtc(),
+      hr: (json['hr'] ?? 0).toDouble(),
+      hrv: (json['hrv'] ?? 0).toDouble(),
+      br: (json['br'] ?? 0).toDouble(),
+    );
+  }
 }

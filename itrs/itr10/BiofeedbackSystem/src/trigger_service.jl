@@ -22,6 +22,7 @@ function apply_trigger!(sess::Types.SessionContext, trigger_type::String, stream
         sess.last_trigger_type = trigger_type
         sess.pending_eval_action = -1
         sess.pending_eval_started_at = nothing
+        sess.last_rl_state_key = ""
 
         return Dict(
             "ok" => true,
@@ -31,6 +32,7 @@ function apply_trigger!(sess::Types.SessionContext, trigger_type::String, stream
             "stream_duration_sec" => stream_duration_sec,
             "hold_steps_left" => sess.hold_steps_left,
             "active_interaction" => sess.active_interaction,
+            "is_holding" => true,
         )
     end
 end

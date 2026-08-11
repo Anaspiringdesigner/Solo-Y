@@ -16,7 +16,6 @@ class BiofeedbackProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   final RingIngestService _ring = RingIngestService();
   final AuthService _auth = AuthService();
-
   final RingBleService _ble = RingBleService();
   final PpgFeatureService _ppg = PpgFeatureService();
 
@@ -36,7 +35,6 @@ class BiofeedbackProvider extends ChangeNotifier {
   String dataTransferStatus = 'Stopped';
   String startupError = '';
 
-  // Live BLE-derived vitals for dashboard fallback
   double liveHr = 0;
   double liveHrv = 0;
   double liveBr = 0;
@@ -45,6 +43,7 @@ class BiofeedbackProvider extends ChangeNotifier {
   final List<double> hrHistory = [];
 
   Timer? _statusTimer;
+  Timer? _realtimeWatchdogTimer;
 
   Future<void> initializeAuth() async {
     isInitializing = true;
@@ -53,6 +52,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await _ring.init();
       final ok = await _auth.tryRestoreSession();
       isAuthenticated = ok;
       authMessage = ok ? 'Signed in as ${_auth.currentUser?.email ?? 'user'}' : '';
@@ -87,6 +87,7 @@ class BiofeedbackProvider extends ChangeNotifier {
         : 'Google sign-in failed';
 
     if (ok) {
+      await _ring.init();
       startPolling();
       await startRingBatchSync();
       await _startRingPipeline();
@@ -100,6 +101,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     stopPolling();
     _ring.stopBatchSync();
     await _ring.stopRealtime();
+    _realtimeWatchdogTimer?.cancel();
     await _stopRingPipeline();
 
     await _auth.signOut();
@@ -151,16 +153,7 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   Future<void> startRingBatchSync() async {
     _ring.configure(deviceId: 'ringA', schemaVersion: 1);
-    // faster in dev; change back to 30m for production if needed
-    _ring.startBatchSync(interval: const Duration(seconds: 15));
-  }
-
-  Future<void> startRingRealtime() async {
-    _ring.startRealtime(interval: const Duration(seconds: 2));
-  }
-
-  Future<void> stopRingRealtime() async {
-    await _ring.stopRealtime();
+    _ring.startBatchSync(interval: const Duration(minutes: AppConstants.batchUploadMinutes));
   }
 
   Future<void> _startRingPipeline() async {
@@ -169,13 +162,10 @@ class BiofeedbackProvider extends ChangeNotifier {
     await _ppgPointSub?.cancel();
 
     _blePktSub = _ble.packets.listen((pkt) {
-      debugPrint('[BIO] pkt seq=${pkt.seq} ts=${pkt.tsMs} ir=${pkt.ir} red=${pkt.red}');
       _ppg.addPacket(pkt);
     });
 
-    _ppgPointSub = _ppg.points.listen((VitalsPoint pt) {
-      debugPrint('[BIO] point hr=${pt.hr.toStringAsFixed(1)} hrv=${pt.hrv.toStringAsFixed(1)} br=${pt.br.toStringAsFixed(1)}');
-
+    _ppgPointSub = _ppg.points.listen((VitalsPoint pt) async {
       liveHr = pt.hr;
       liveHrv = pt.hrv;
       liveBr = pt.br;
@@ -185,7 +175,7 @@ class BiofeedbackProvider extends ChangeNotifier {
       if (hrvHistory.length > 60) hrvHistory.removeAt(0);
       if (hrHistory.length > 60) hrHistory.removeAt(0);
 
-      _ring.ingestComputedPoint(pt);
+      await _ring.ingestComputedPoint(pt);
       notifyListeners();
     });
 
@@ -210,20 +200,32 @@ class BiofeedbackProvider extends ChangeNotifier {
     final result = await _api.fetchStatus();
     if (result != null) {
       final prevInteraction = status?.activeInteraction ?? -1;
-      final newInteraction = result.activeInteraction;
+      final prevHolding = status?.isHolding ?? false;
 
       status = result;
       isConnected = true;
 
+      if (result.isHolding && !_ring.isRealtimeActive) {
+        await _ring.startRealtime(interval: const Duration(seconds: AppConstants.realtimeUploadSeconds));
+        _startRealtimeWatchdog();
+      } else if (!result.isHolding && _ring.isRealtimeActive) {
+        await _ring.stopRealtime();
+        _realtimeWatchdogTimer?.cancel();
+      }
+
+      final newInteraction = result.activeInteraction;
       if (AppConstants.enableCameraInteraction) {
-        if (newInteraction == 3 && prevInteraction != 3) {
+        if (newInteraction == 4 && prevInteraction != 4) {
           _startCamera();
-        } else if (newInteraction != 3 && prevInteraction == 3) {
+        } else if (newInteraction != 4 && prevInteraction == 4) {
           _stopCamera();
         }
       }
 
-      // Keep server trends too
+      if (prevHolding && !result.isHolding) {
+        _realtimeWatchdogTimer?.cancel();
+      }
+
       hrvHistory.add(result.avgHrv);
       hrHistory.add(result.avgHr);
       if (hrvHistory.length > 60) hrvHistory.removeAt(0);
@@ -232,6 +234,17 @@ class BiofeedbackProvider extends ChangeNotifier {
       isConnected = false;
     }
     notifyListeners();
+  }
+
+  void _startRealtimeWatchdog() {
+    _realtimeWatchdogTimer?.cancel();
+    _realtimeWatchdogTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      final s = status;
+      if (s == null || !s.isHolding) {
+        await _ring.stopRealtime();
+        _realtimeWatchdogTimer?.cancel();
+      }
+    });
   }
 
   Future<void> _startCamera() async {
@@ -253,6 +266,14 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> fireManualTrigger() async {
+    await _fireTrigger(triggerType: 'manual', label: 'Manual trigger fired');
+  }
+
+  Future<void> fireCalendarTrigger(String eventName) async {
+    await _fireTrigger(triggerType: 'calendar', label: '📅 $eventName — trigger sent');
+  }
+
+  Future<void> _fireTrigger({required String triggerType, required String label}) async {
     if (!isAuthenticated) {
       triggerMessage = 'Please sign in first';
       notifyListeners();
@@ -264,20 +285,33 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
 
     final result = await _api.fireTrigger(
-      triggerType: 'manual',
+      triggerType: triggerType,
       streamDurationSec: AppConstants.triggerStreamDurationSec,
     );
 
     isTriggerLoading = false;
 
     if (result != null && result['ok'] == true) {
-      triggerMessage = '✅ Trigger fired (${result['state'] ?? 'EVENT_STREAMING'})';
+      bool confirmed = false;
+      for (int i = 0; i < 6; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        final s = await _api.fetchStatus();
+        if (s != null) {
+          status = s;
+          if (s.isHolding) {
+            confirmed = true;
+            break;
+          }
+        }
+      }
 
-      await startRingRealtime();
-      Future.delayed(
-        const Duration(seconds: AppConstants.triggerStreamDurationSec),
-        () => stopRingRealtime(),
-      );
+      if (confirmed) {
+        triggerMessage = '✅ $label';
+        await _ring.startRealtime(interval: const Duration(seconds: AppConstants.realtimeUploadSeconds));
+        _startRealtimeWatchdog();
+      } else {
+        triggerMessage = '⚠️ Trigger acknowledged but hold not confirmed';
+      }
     } else {
       final err = result?['error']?.toString() ?? '';
       if (err.contains('HTTP 401')) {
@@ -297,24 +331,12 @@ class BiofeedbackProvider extends ChangeNotifier {
     });
   }
 
-  Future<void> fireCalendarTrigger(String eventName) async {
-    if (!isAuthenticated) return;
-
-    await _api.fireTrigger(triggerType: 'calendar');
-    calendarMessage = '📅 $eventName — trigger sent';
-    notifyListeners();
-
-    Future.delayed(const Duration(seconds: 5), () {
-      calendarMessage = '';
-      notifyListeners();
-    });
-  }
-
   @override
   void dispose() {
     stopPolling();
     _ring.stopBatchSync();
     _ring.stopRealtime();
+    _realtimeWatchdogTimer?.cancel();
     _stopRingPipeline();
     _ppg.dispose();
     super.dispose();

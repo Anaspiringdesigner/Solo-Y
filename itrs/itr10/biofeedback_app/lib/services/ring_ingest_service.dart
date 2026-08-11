@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../constants.dart';
 import '../models/vitals_point.dart';
 import 'api_service.dart';
+import 'local_ring_store.dart';
 
 class RingIngestService {
   static final RingIngestService _instance = RingIngestService._internal();
@@ -9,8 +11,8 @@ class RingIngestService {
   RingIngestService._internal();
 
   final ApiService _api = ApiService();
+  final LocalRingStore _store = LocalRingStore();
 
-  int _seq = 0;
   String _deviceId = 'ringA';
   int _schemaVersion = 1;
 
@@ -18,34 +20,34 @@ class RingIngestService {
   Timer? _realtimeTimer;
 
   bool _isRealtimeActive = false;
-
-  final List<VitalsPoint> _buffer = [];
   final List<VitalsPoint> _realtimeWindow = [];
 
   void configure({
     required String deviceId,
     int schemaVersion = 1,
-    int startSeq = 0,
   }) {
     _deviceId = deviceId;
     _schemaVersion = schemaVersion;
-    _seq = startSeq;
   }
 
-  int get currentSeq => _seq;
   bool get isRealtimeActive => _isRealtimeActive;
 
-  void ingestComputedPoint(VitalsPoint p) {
-    _buffer.add(p);
+  Future<void> init() async {
+    await _store.init();
+    _isRealtimeActive = await _store.getRealtimeActive();
+  }
+
+  Future<void> ingestComputedPoint(VitalsPoint p) async {
+    await _store.appendPoint(p);
     if (_isRealtimeActive) {
       _realtimeWindow.add(p);
     }
   }
 
-  void startBatchSync({Duration interval = const Duration(minutes: 30)}) {
+  void startBatchSync({Duration interval = const Duration(minutes: AppConstants.batchUploadMinutes)}) {
     _batchTimer?.cancel();
     _batchTimer = Timer.periodic(interval, (_) async {
-      await _sendBatchChunk();
+      await sendBatchNow();
     });
   }
 
@@ -54,10 +56,11 @@ class RingIngestService {
     _batchTimer = null;
   }
 
-  void startRealtime({Duration interval = const Duration(seconds: 2)}) {
+  Future<void> startRealtime({Duration interval = const Duration(seconds: AppConstants.realtimeUploadSeconds)}) async {
     _realtimeTimer?.cancel();
     _isRealtimeActive = true;
     _realtimeWindow.clear();
+    await _store.setRealtimeActive(true);
 
     _realtimeTimer = Timer.periodic(interval, (_) async {
       await _sendRealtimeChunk();
@@ -68,16 +71,16 @@ class RingIngestService {
     _realtimeTimer?.cancel();
     _realtimeTimer = null;
     _isRealtimeActive = false;
+    await _store.setRealtimeActive(false);
     await _sendRealtimeChunk();
   }
 
-  Future<void> _sendBatchChunk() async {
-    if (_buffer.isEmpty) return;
+  Future<void> sendBatchNow() async {
+    final pending = await _store.getPendingBatchPoints();
+    if (pending.isEmpty) return;
 
-    final points = List<VitalsPoint>.from(_buffer);
-    _buffer.clear();
-
-    final seq = ++_seq;
+    final seq = await _store.nextSequence();
+    final points = pending.map((e) => e.point).toList();
     final res = await _api.postPointsBatch(
       deviceId: _deviceId,
       seqNo: seq,
@@ -85,6 +88,11 @@ class RingIngestService {
       idempotencyKey: _idempotencyKey(seq),
       points: points,
     );
+
+    final status = res?['status'] ?? 0;
+    if (status == 200) {
+      await _store.markBatchUploaded(pending.map((e) => e.key).toList());
+    }
 
     debugPrint('[RING][BATCH] seq=$seq points=${points.length} -> $res');
   }
@@ -95,7 +103,7 @@ class RingIngestService {
     final points = List<VitalsPoint>.from(_realtimeWindow);
     _realtimeWindow.clear();
 
-    final seq = ++_seq;
+    final seq = await _store.nextSequence();
     final res = await _api.postPointsRealtime(
       deviceId: _deviceId,
       seqNo: seq,

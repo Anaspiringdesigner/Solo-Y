@@ -7,13 +7,6 @@ class AppConstants {
     defaultValue: 'dev',
   );
 
-  /// Backend base URL resolution:
-  /// 1) Use --dart-define=API_BASE_URL=... when provided
-  /// 2) Otherwise use stable defaults per platform
-  ///
-  /// NOTE:
-  /// - Physical Android phone (your current setup) uses laptop Tailscale IP.
-  /// - Emulator uses 10.0.2.2 only if explicitly passed by dart-define.
   static String get apiBaseUrl {
     const envUrl = String.fromEnvironment(
       'API_BASE_URL',
@@ -22,12 +15,7 @@ class AppConstants {
     if (envUrl.isNotEmpty) return envUrl;
 
     if (kIsWeb) return 'http://127.0.0.1:8000';
-
-    if (Platform.isAndroid) {
-      // Default for your physical phone + Tailscale backend on laptop
-      return 'http://100.67.125.12:8000';
-    }
-
+    if (Platform.isAndroid) return 'http://100.67.125.12:8000';
     return 'http://127.0.0.1:8000';
   }
 
@@ -62,12 +50,16 @@ class AppConstants {
 
   static const int calendarLookAheadMin = 5;
   static const int triggerStreamDurationSec = 180;
+  static const int holdStepSec = 5;
+  static const int batchUploadMinutes = 30;
+  static const int realtimeUploadSeconds = 2;
 
   static const List<String> interactionNames = [
     'Idle',
-    'Breathing',
-    'Visual',
-    'Camera',
+    'Paper Crumpling',
+    'Noise Crumpling',
+    'Noise in Circle',
+    'Video Ripples',
   ];
 
   static const List<String> interactionIcons = [
@@ -75,6 +67,7 @@ class AppConstants {
     '◔',
     '◈',
     '◉',
+    '✦',
   ];
 
   static const int bgColor = 0xFF0C0F14;

@@ -201,46 +201,10 @@ function extract_user_id(req::HTTP.Request, settings::Config.Settings)::Union{St
     token = strip(authz[8:end])
     isempty(token) && return nothing
 
-    # TEMP STABLE FALLBACK:
-    # Parse JWT payload (no signature verification) to unblock pipeline
-    # while _verify_google_id_token method mismatch is being corrected.
     try
-        parts = split(token, '.')
-        length(parts) == 3 || return nothing
-
-        payload_raw = parts[2]
-        payload_b64 = replace(payload_raw, '-' => '+', '_' => '/')
-        pad = mod(4 - mod(length(payload_b64), 4), 4)
-        if pad > 0
-            payload_b64 *= repeat("=", pad)
-        end
-
-        payload_json = String(Base64.base64decode(payload_b64))
-        claims = JSON3.read(payload_json)
-
-        sub = haskey(claims, "sub") ? String(claims["sub"]) : ""
-        isempty(sub) && return nothing
-
-        # Optional audience check
-        aud = haskey(claims, "aud") ? String(claims["aud"]) : ""
-        if !isempty(settings.google_audience) && aud != settings.google_audience
-            println("[AUTH] fallback invalid_audience")
-            return nothing
-        end
-
-        # Optional expiry check
-        if haskey(claims, "exp")
-            expv = Int(claims["exp"])
-            now_unix = round(Int, time())
-            if expv < now_unix
-                println("[AUTH] fallback token_expired")
-                return nothing
-            end
-        end
-
-        return sub
+        return _verify_google_id_token(token, settings)
     catch e
-        println("[AUTH] token verification failed (fallback path): $(string(e))")
+        println("[AUTH] token verification failed: $(string(e))")
         return nothing
     end
 end

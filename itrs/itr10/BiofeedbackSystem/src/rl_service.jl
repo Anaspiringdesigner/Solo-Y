@@ -6,7 +6,6 @@ using ..Config
 export RLAgentState, init_agent, choose_action!, compute_reward
 
 const ACTION_COUNT = 5
-const STATE_DIM = 8
 
 mutable struct RLAgentState
     q_table::Dict{String, Vector{Float32}}
@@ -55,7 +54,7 @@ function choose_action!(agent::RLAgentState, features::Dict{String, Float32}, tr
     state_key = _state_key(features, trigger_code)
     qvals = _ensure_state!(agent, state_key)
 
-    if prev_state_key !== nothing && prev_action !== nothing && reward !== nothing
+    if prev_state_key !== nothing && !isempty(prev_state_key) && prev_action !== nothing && reward !== nothing
         prev_q = _ensure_state!(agent, prev_state_key)
         target = reward + agent.gamma * maximum(qvals)
         prev_q[prev_action + 1] = prev_q[prev_action + 1] + agent.alpha * (target - prev_q[prev_action + 1])
@@ -67,7 +66,7 @@ function choose_action!(agent::RLAgentState, features::Dict{String, Float32}, tr
         argmax(qvals) - 1
     end
 
-    score = isempty(qvals) ? 0f0 : maximum(qvals)
+    score = maximum(qvals)
     agent.step += 1
 
     return Dict(

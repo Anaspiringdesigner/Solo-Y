@@ -57,7 +57,7 @@ mean_or_zero(v::Vector{Float32}) = isempty(v) ? 0f0 : Float32(mean(v))
 
 function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settings)
     now_dt = now()
-    if sess.hold_ends_at === nothing
+    if sess.hold_ends_at === nothing || sess.hold_started_at === nothing
         sess.is_holding = false
         sess.hold_steps_left = 0
         if sess.state == :EVENT_STREAMING
@@ -73,6 +73,7 @@ function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settin
         sess.hold_ends_at = nothing
         sess.pending_eval_action = -1
         sess.pending_eval_started_at = nothing
+        sess.last_rl_state_key = ""
         sess.state = :IDLE
         return
     end
@@ -80,7 +81,7 @@ function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settin
     remaining_ms = Dates.value(sess.hold_ends_at - now_dt)
     step_ms = settings.hold_step_sec * 1000
     sess.is_holding = true
-    sess.hold_steps_left = max(0, cld(remaining_ms, step_ms))
+    sess.hold_steps_left = max(1, cld(remaining_ms, step_ms))
     sess.state = :EVENT_STREAMING
 end
 
@@ -140,7 +141,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         prev_state_key = nothing
         prev_action = nothing
 
-        if sess.pending_eval_action >= 0 && sess.pending_eval_started_at !== nothing
+        if sess.pending_eval_action >= 0 && sess.pending_eval_started_at !== nothing && !isempty(sess.last_rl_state_key)
             reward = RLService.compute_reward(
                 sess.pending_eval_baseline_hr,
                 sess.pending_eval_baseline_hrv,
@@ -149,7 +150,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
             )
             sess.last_reward = reward
             prev_action = sess.pending_eval_action
-            prev_state_key = haskey(sess.latest_features, "rl_state_key") ? string(sess.latest_features["rl_state_key"]) : nothing
+            prev_state_key = sess.last_rl_state_key
         end
 
         trig = TDBridgeService.trigger_code(sess.last_trigger_type)
@@ -169,7 +170,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         sess.active_interaction = action
         sess.last_rl_action = action
         sess.last_rl_score = score
-        sess.latest_features["rl_state_key_hash"] = Float32(length(state_key))
+        sess.last_rl_state_key = state_key
         sess.pending_eval_action = action
         sess.pending_eval_started_at = now()
         sess.pending_eval_baseline_hr = get(feats, "tcn_hr", 0f0)
@@ -186,7 +187,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
             "interaction" => action,
             "reward" => reward,
             "trigger" => trig,
-            "holding" => sess.is_holding ? 1 : 0,
+            "holding" => 1,
             "hold_steps" => sess.hold_steps_left,
             "hold_progress" => hold_progress,
         )
@@ -200,6 +201,10 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
             "reward" => reward,
             "score" => score,
             "hold_steps_left" => sess.hold_steps_left,
+            "holding" => true,
+            "hr" => get(feats, "tcn_hr", 0f0),
+            "hrv" => get(feats, "tcn_hrv", 0f0),
+            "br" => get(feats, "tcn_br", 0f0),
         )
     end
 end
