@@ -4,7 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'providers/biofeedback_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/data_transfer_service.dart';
-import 'services/store.dart';
+import 'services/local_ring_store.dart';
 import 'constants.dart';
 
 void main() async {
