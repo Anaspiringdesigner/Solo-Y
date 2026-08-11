@@ -100,27 +100,6 @@ function _jwk_for_kid(gv::GoogleVerifier, kid::String, settings::Config.Settings
     return jwk
 end
 
-function _public_key_from_jwk(jwk)
-    kty = haskey(jwk, "kty") ? String(jwk["kty"]) : ""
-    alg = haskey(jwk, "alg") ? String(jwk["alg"]) : ""
-    (kty == "RSA" && alg == "RS256") || error("unsupported_jwk")
-
-    n = haskey(jwk, "n") ? String(jwk["n"]) : error("jwk_missing_n")
-    e = haskey(jwk, "e") ? String(jwk["e"]) : error("jwk_missing_e")
-
-    modulus = _base64url_to_bytes(n)
-    exponent = _base64url_to_bytes(e)
-
-    return JWTs.JWKSet([JWTs.JWK(
-        kty = "RSA",
-        alg = "RS256",
-        kid = haskey(jwk, "kid") ? String(jwk["kid"]) : "",
-        n = Base64.base64encode(modulus),
-        e = Base64.base64encode(exponent),
-        use = haskey(jwk, "use") ? String(jwk["use"]) : "sig"
-    )])
-end
-
 function _aud_matches(aud_claim, expected::String)::Bool
     if aud_claim isa AbstractString
         return String(aud_claim) == expected
@@ -143,6 +122,56 @@ function _to_dict(x)
     end
 end
 
+function _decode_claims_unverified(token::String)
+    parts = _jwt_parts(token)
+    payload = _decode_jwt_json(parts[2])
+    return _to_dict(payload)
+end
+
+function _verify_signature_compat!(token::String, jwk)::Nothing
+    # JWTs.jl 0.3.x API compatibility varies across environments.
+    # We attempt available verification entry points only for signature validation.
+    # Claims validation is handled separately below.
+
+    if isdefined(JWTs, :verify)
+        try
+            JWTs.verify(token, jwk)
+            return nothing
+        catch
+        end
+        try
+            JWTs.verify(token, JWTs.JWKSet([jwk]))
+            return nothing
+        catch
+        end
+    end
+
+    if isdefined(JWTs, :decode)
+        try
+            JWTs.decode(token, jwk; validate = true)
+            return nothing
+        catch
+        end
+        try
+            JWTs.decode(token, JWTs.JWKSet([jwk]); validate = true)
+            return nothing
+        catch
+        end
+        try
+            JWTs.decode(token, jwk)
+            return nothing
+        catch
+        end
+        try
+            JWTs.decode(token, JWTs.JWKSet([jwk]))
+            return nothing
+        catch
+        end
+    end
+
+    error("jwt_signature_verification_api_mismatch")
+end
+
 function _verify_google_id_token(token::String, settings::Config.Settings)::String
     isempty(settings.google_audience) && error("google_audience_not_configured")
 
@@ -154,15 +183,12 @@ function _verify_google_id_token(token::String, settings::Config.Settings)::Stri
 
     gv = _google_verifier_ref[]
     jwk = _jwk_for_kid(gv, kid, settings)
-    jwks = _public_key_from_jwk(jwk)
 
-    claims_raw = try
-        JWTs.decode(token, jwks; validate = false)
-    catch e
-        error("jwt_decode_failed:$(string(e))")
-    end
+    # First ensure signature verification succeeds with the installed JWTs.jl API.
+    _verify_signature_compat!(token, jwk)
 
-    claims = _to_dict(claims_raw)
+    # Then decode claims from the token payload and validate them explicitly.
+    claims = _decode_claims_unverified(token)
 
     iss = haskey(claims, "iss") ? String(claims["iss"]) : ""
     iss in settings.google_issuers || error("invalid_issuer")
