@@ -3,159 +3,102 @@ module IngestService
 using Dates
 using Statistics
 using ..Types
-using ..FeatureService
+using ..Config
+using ..ModelBridgeService
 using ..RLService
 using ..TDBridgeService
-using ..Config
+using ..TriggerService
 
-export parse_chunk, apply_chunk!, to_mode, refresh_hold_state!, maybe_run_live_pipeline!, maybe_detect_bio_trigger!
-
-function to_mode(mode_str::AbstractString)::Types.IngestMode
-    m = lowercase(strip(mode_str))
-    if m == "batch"
-        return Types.BATCH
-    elseif m == "realtime"
-        return Types.REALTIME
-    else
-        error("invalid_mode")
-    end
-end
-
-function parse_ts(x)
-    s = String(x)
-    s = replace(s, "Z" => "")
-    if occursin(".", s)
-        s = split(s, ".")[1]
-    end
-    return DateTime(s)
-end
-
-function parse_chunk(payload, user_id::String)::Types.SignalChunk
-    device_id = String(payload["device_id"])
-    mode = to_mode(String(payload["mode"]))
-    seq_no = Int(payload["seq_no"])
-    schema_version = Int(payload["schema_version"])
-    idempotency_key = String(payload["idempotency_key"])
-
-    pts_raw = payload["points"]
-    pts = Types.VitalsPoint[]
-    for p in pts_raw
-        push!(pts, Types.VitalsPoint(
-            parse_ts(p["ts"]),
-            Float32(p["hr"]),
-            Float32(p["hrv"]),
-            Float32(p["br"]),
-        ))
-    end
-
-    return Types.SignalChunk(
-        user_id, device_id, mode, seq_no, schema_version, idempotency_key, pts
-    )
-end
-
-mean_or_zero(v::Vector{Float32}) = isempty(v) ? 0f0 : Float32(mean(v))
+export process_batch!, process_realtime!, refresh_hold_state!, maybe_run_live_pipeline!
 
 function refresh_hold_state!(sess::Types.SessionContext, settings::Config.Settings)
-    now_dt = now()
-    if sess.hold_ends_at === nothing || sess.hold_started_at === nothing
-        sess.is_holding = false
-        sess.hold_steps_left = 0
-        if sess.state == :EVENT_STREAMING
-            sess.state = :IDLE
-        end
+    if !sess.is_holding
         return
     end
-
-    if now_dt >= sess.hold_ends_at
+    if sess.hold_ends_at === nothing
+        return
+    end
+    if now() >= sess.hold_ends_at || sess.hold_steps_left <= 0
         sess.is_holding = false
         sess.hold_steps_left = 0
-        sess.hold_started_at = nothing
-        sess.hold_ends_at = nothing
-        sess.pending_eval_action = -1
-        sess.pending_eval_started_at = nothing
-        sess.last_rl_state_key = ""
         sess.state = :IDLE
+    end
+end
+
+function _update_features_from_points!(sess::Types.SessionContext, points::Vector{Types.VitalsPoint})
+    if isempty(points)
         return
     end
+    hrs = Float32[p.hr for p in points]
+    hrvs = Float32[p.hrv for p in points]
+    brs = Float32[p.br for p in points]
 
-    remaining_ms = Dates.value(sess.hold_ends_at - now_dt)
-    step_ms = settings.hold_step_sec * 1000
-    sess.is_holding = true
-    sess.hold_steps_left = max(1, cld(remaining_ms, step_ms))
-    sess.state = :EVENT_STREAMING
+    sess.latest_features["avg_hr"] = mean(hrs)
+    sess.latest_features["avg_hrv"] = mean(hrvs)
+    sess.latest_features["avg_br"] = mean(brs)
+
+    # simple stress proxy
+    stress = max(0f0, min(1f0, (sess.latest_features["avg_hr"] - 60f0) / 60f0))
+    sess.latest_features["stress_score"] = stress
 end
 
-function _update_latest_features!(sess::Types.SessionContext, chunk::Types.SignalChunk)
-    hrs = Float32[p.hr for p in chunk.points]
-    hrvs = Float32[p.hrv for p in chunk.points]
-    brs = Float32[p.br for p in chunk.points]
-
-    sess.latest_features["avg_hr"] = mean_or_zero(hrs)
-    sess.latest_features["avg_hrv"] = mean_or_zero(hrvs)
-    sess.latest_features["avg_br"] = mean_or_zero(brs)
-end
-
-function apply_chunk!(sess::Types.SessionContext, chunk::Types.SignalChunk, settings::Config.Settings)
+function process_batch!(sess::Types.SessionContext, chunk::Types.SignalChunk, settings::Config.Settings)
     lock(sess.lock) do
         push!(sess.ring_buffer, chunk)
+        _update_features_from_points!(sess, chunk.points)
         sess.last_seen = now()
-        _update_latest_features!(sess, chunk)
-
-        if chunk.mode == Types.BATCH
-            if !sess.is_holding
-                sess.state = :BATCH_SYNCING
-            end
-        else
-            refresh_hold_state!(sess, settings)
-        end
     end
+    return Dict("ok" => true, "mode" => "batch")
 end
 
-function maybe_detect_bio_trigger!(sess::Types.SessionContext, settings::Config.Settings)::Bool
+function maybe_run_live_pipeline!(
+    sess::Types.SessionContext,
+    settings::Config.Settings
+)::Dict{String, Any}
+    local feats = Dict{String, Float32}()
+    local trig_type = "none"
+    local prev_action = -1
+    local prev_state_key = nothing
+    local reward = 0f0
+    local was_holding = false
+
     lock(sess.lock) do
         refresh_hold_state!(sess, settings)
-        if sess.is_holding
-            return false
-        end
-        if detect_bio_trigger(sess, settings.bio_stress_threshold)
-            sess.last_bio_trigger_at = now()
-            return true
-        end
-        return false
-    end
-end
-
-function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.Settings, agent::RLService.RLAgentState)
-    lock(sess.lock) do
-        refresh_hold_state!(sess, settings)
-        if !sess.is_holding
-            return Dict("ok" => false, "reason" => "not_holding")
-        end
-
-        feats = encode_tcn_features(sess)
-        for (k, v) in feats
-            sess.latest_features[k] = v
-        end
-
+        feats = copy(sess.latest_features)
+        trig_type = sess.last_trigger_type
+        prev_action = sess.pending_eval_action
+        prev_state_key = isempty(sess.last_rl_state_key) ? nothing : sess.last_rl_state_key
         reward = sess.last_reward
-        prev_state_key = nothing
-        prev_action = nothing
+        was_holding = sess.is_holding
+    end
 
-        if sess.pending_eval_action >= 0 && sess.pending_eval_started_at !== nothing && !isempty(sess.last_rl_state_key)
-            reward = RLService.compute_reward(
-                sess.pending_eval_baseline_hr,
-                sess.pending_eval_baseline_hrv,
-                get(feats, "tcn_hr", 0f0),
-                get(feats, "tcn_hrv", 0f0),
-            )
-            sess.last_reward = reward
-            prev_action = sess.pending_eval_action
-            prev_state_key = sess.last_rl_state_key
+    if !was_holding
+        return Dict("ok" => false, "reason" => "not_holding")
+    end
+
+    # TCN encode
+    tcn = ModelBridgeService.encode_tcn_features(feats, settings)
+    feats["tcn_hr"] = get(tcn, "tcn_hr", get(feats, "avg_hr", 0f0))
+    feats["tcn_hrv"] = get(tcn, "tcn_hrv", get(feats, "avg_hrv", 0f0))
+    feats["tcn_br"] = get(tcn, "tcn_br", get(feats, "avg_br", 0f0))
+
+    # choose/hold RL action
+    local action = -1
+    local score = 0f0
+    local state_key = ""
+
+    lock(sess.lock) do
+        if sess.active_interaction >= 0 && sess.pending_eval_action >= 0
+            action = sess.active_interaction
+            score = sess.last_rl_score
+            state_key = sess.last_rl_state_key
         end
+    end
 
-        trig = TDBridgeService.trigger_code(sess.last_trigger_type)
+    if action < 0
+        trig = TDBridgeService.trigger_code(trig_type)
         rl = RLService.choose_action!(
-            agent,
+            nothing,
             feats,
             trig;
             prev_state_key = prev_state_key,
@@ -167,46 +110,68 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         score = Float32(rl["score"])
         state_key = String(rl["state_key"])
 
-        sess.active_interaction = action
-        sess.last_rl_action = action
-        sess.last_rl_score = score
-        sess.last_rl_state_key = state_key
-        sess.pending_eval_action = action
-        sess.pending_eval_started_at = now()
-        sess.pending_eval_baseline_hr = get(feats, "tcn_hr", 0f0)
-        sess.pending_eval_baseline_hrv = get(feats, "tcn_hrv", 0f0)
-
-        total_steps = max(1, cld(settings.event_stream_duration_sec, settings.hold_step_sec))
-        hold_progress = clamp(1f0 - (sess.hold_steps_left / total_steps), 0f0, 1f0)
-
-        td_payload = Dict{String, Any}(
-            "ping" => 1,
-            "hr" => get(feats, "tcn_hr", 0f0),
-            "hrv" => get(feats, "tcn_hrv", 0f0),
-            "br" => get(feats, "tcn_br", 0f0),
-            "interaction" => action,
-            "reward" => reward,
-            "trigger" => trig,
-            "holding" => 1,
-            "hold_steps" => sess.hold_steps_left,
-            "hold_progress" => hold_progress,
-        )
-
-        td_ok = TDBridgeService.send_td_payload(settings, td_payload)
-
-        return Dict(
-            "ok" => true,
-            "td_ok" => td_ok,
-            "action" => action,
-            "reward" => reward,
-            "score" => score,
-            "hold_steps_left" => sess.hold_steps_left,
-            "holding" => true,
-            "hr" => get(feats, "tcn_hr", 0f0),
-            "hrv" => get(feats, "tcn_hrv", 0f0),
-            "br" => get(feats, "tcn_br", 0f0),
-        )
+        lock(sess.lock) do
+            sess.active_interaction = action
+            sess.last_rl_action = action
+            sess.last_rl_score = score
+            sess.last_rl_state_key = state_key
+            sess.pending_eval_action = action
+            sess.pending_eval_started_at = now()
+            sess.pending_eval_baseline_hr = get(feats, "tcn_hr", 0f0)
+            sess.pending_eval_baseline_hrv = get(feats, "tcn_hrv", 0f0)
+        end
     end
+
+    local hold_steps_left = 0
+    lock(sess.lock) do
+        if sess.hold_steps_left > 0
+            sess.hold_steps_left -= 1
+        end
+        refresh_hold_state!(sess, settings)
+        hold_steps_left = sess.hold_steps_left
+    end
+
+    td_payload = Dict(
+        "ok" => true,
+        "hr" => get(feats, "tcn_hr", 0f0),
+        "hrv" => get(feats, "tcn_hrv", 0f0),
+        "interaction" => action,
+        "holding" => hold_steps_left > 0,
+        "hold_steps_left" => hold_steps_left,
+        "trigger_type" => trig_type,
+        "score" => score,
+    )
+
+    td_ok = TDBridgeService.send_td_payload(td_payload, settings)
+
+    return Dict(
+        "ok" => true,
+        "interaction" => action,
+        "score" => score,
+        "holding" => hold_steps_left > 0,
+        "hold_steps_left" => hold_steps_left,
+        "td_ok" => td_ok,
+    )
+end
+
+function process_realtime!(sess::Types.SessionContext, chunk::Types.SignalChunk, settings::Config.Settings)
+    lock(sess.lock) do
+        push!(sess.ring_buffer, chunk)
+        _update_features_from_points!(sess, chunk.points)
+        sess.last_seen = now()
+    end
+
+    # optional automatic bio trigger
+    _ = TriggerService.maybe_auto_trigger_bio!(sess, settings)
+
+    # run RL/TCN/TD pipeline
+    pipe = maybe_run_live_pipeline!(sess, settings)
+
+    return Dict(
+        "ok" => true,
+        "mode" => "realtime",
+        "td_pipeline" => pipe,
+    )
 end
 
 end # module

@@ -2,286 +2,156 @@ module Routes
 
 using HTTP
 using JSON3
+using Dates
 using UUIDs
-
 using ..Config
 using ..Types
-using ..Auth
 using ..SessionManager
 using ..IngestService
-using ..RedisStore
 using ..TriggerService
-using ..Hardening
-using ..FeatureService
-using ..RLService
+using ..ResponseUtils
 
 export make_router
 
-json_response(code::Int, body; req_id::String = "") = HTTP.Response(
-    code,
-    ["Content-Type" => "application/json", "X-Request-Id" => req_id],
-    JSON3.write(body)
-)
+function _req_id(req::HTTP.Request)
+    rid = HTTP.header(req, "X-Request-Id", "")
+    isempty(rid) ? string(uuid4()) : rid
+end
 
-function require_user(req::HTTP.Request, settings::Config.Settings)
+function _json_body(req::HTTP.Request)
+    isempty(req.body) && return Dict{String, Any}()
+    return JSON3.read(String(req.body))
+end
+
+function _to_points(arr)
+    pts = Types.VitalsPoint[]
+    for p in arr
+        ts_raw = haskey(p, "ts") ? String(p["ts"]) : (haskey(p, :ts) ? String(p[:ts]) : "")
+        hr = haskey(p, "hr") ? Float32(p["hr"]) : Float32(p[:hr])
+        hrv = haskey(p, "hrv") ? Float32(p["hrv"]) : Float32(p[:hrv])
+        br = haskey(p, "br") ? Float32(p["br"]) : Float32(p[:br])
+
+        ts = try
+            DateTime(ts_raw)
+        catch
+            now()
+        end
+        push!(pts, Types.VitalsPoint(ts, hr, hrv, br))
+    end
+    return pts
+end
+
+function handle_status(req, store, settings)
+    rid = _req_id(req)
+    return ResponseUtils.json_response(200, Dict("ok" => true, "service" => "biofeedback-backend"); req_id = rid)
+end
+
+function handle_trigger(req, store, settings)
+    rid = _req_id(req)
     user_id = Auth.extract_user_id(req, settings)
-    if user_id === nothing || isempty(user_id)
-        return nothing, json_response(401, Dict("ok" => false, "error" => "unauthorized"))
+    user_id === nothing && return ResponseUtils.json_response(401, Dict("ok" => false, "error" => "unauthorized"); req_id = rid)
+
+    body = try
+        _json_body(req)
+    catch
+        return ResponseUtils.json_response(400, Dict("ok" => false, "error" => "invalid_json"); req_id = rid)
     end
-    return user_id, nothing
+
+    trigger_type = haskey(body, "trigger_type") ? String(body["trigger_type"]) :
+                   (haskey(body, :trigger_type) ? String(body[:trigger_type]) : "")
+
+    valid_types = Set(["manual", "calendar", "bio", "system"])
+    (trigger_type in valid_types) || return ResponseUtils.json_response(400, Dict("ok" => false, "error" => "invalid_trigger_type"); req_id = rid)
+
+    stream_duration_sec = nothing
+    if haskey(body, "stream_duration_sec") || haskey(body, :stream_duration_sec)
+        raw = haskey(body, "stream_duration_sec") ? body["stream_duration_sec"] : body[:stream_duration_sec]
+        stream_duration_sec = Int(raw)
+        (30 <= stream_duration_sec <= 900) || return ResponseUtils.json_response(400, Dict("ok" => false, "error" => "invalid_stream_duration_sec"); req_id = rid)
+    end
+
+    sess = SessionManager.get_or_create_session!(store, user_id)
+    res = TriggerService.apply_trigger!(sess, trigger_type, settings; stream_duration_sec = stream_duration_sec)
+
+    # start background pulse for TD updates during hold
+    TriggerService.start_trigger_pulse_task!(sess, settings)
+
+    return ResponseUtils.json_response(200, res; req_id = rid)
 end
 
-function idem_check_and_mark!(
-    store::SessionManager.SessionStore,
-    redis::RedisStore.RedisClient,
-    settings::Config.Settings,
-    key::String
-)
-    ttl_sec = settings.idempotency_ttl_minutes * 60
+function handle_ingest_realtime(req, store, settings)
+    rid = _req_id(req)
+    user_id = Auth.extract_user_id(req, settings)
+    user_id === nothing && return ResponseUtils.json_response(401, Dict("ok" => false, "error" => "unauthorized"); req_id = rid)
 
-    if RedisStore.redis_available(redis)
-        seen = RedisStore.idem_seen(redis, key)
-        if seen === true
-            return true, "redis"
-        elseif seen === false
-            ok = RedisStore.idem_mark!(redis, key, ttl_sec)
-            if ok
-                return false, "redis"
-            end
-        end
+    body = try
+        _json_body(req)
+    catch
+        return ResponseUtils.json_response(400, Dict("ok" => false, "error" => "invalid_json"); req_id = rid)
     end
 
-    if settings.redis_fail_mode == "fail_closed" && !RedisStore.redis_available(redis)
-        error("redis_unavailable_fail_closed")
-    end
-
-    if SessionManager.is_duplicate_idempotency_local!(store, key)
-        return true, "local"
-    else
-        SessionManager.mark_idempotency_local!(store, key)
-        return false, "local"
-    end
-end
-
-function touch_session_presence!(redis::RedisStore.RedisClient, settings::Config.Settings, user_id::String)
-    ttl_sec = settings.session_ttl_minutes * 60
-    if RedisStore.redis_available(redis)
-        RedisStore.session_touch!(redis, user_id, ttl_sec)
-    end
-end
-
-function with_request_logging(handler_name::String, req::HTTP.Request, f::Function)
-    req_id = HTTP.header(req, "X-Request-Id", string(uuid4()))
-    t0 = time()
     try
-        resp = f(req_id)
-        dt_ms = round((time() - t0) * 1000; digits = 2)
-        println("[REQ] id=$req_id route=$handler_name method=$(req.method) target=$(req.target) latency_ms=$dt_ms")
-        return resp
-    catch e
-        dt_ms = round((time() - t0) * 1000; digits = 2)
-        println("[REQ_ERR] id=$req_id route=$handler_name err=$(string(e)) latency_ms=$dt_ms")
-        return json_response(500, Dict("ok" => false, "error" => "internal_error", "detail" => string(e)); req_id = req_id)
-    end
-end
+        device_id = haskey(body, "device_id") ? String(body["device_id"]) : String(body[:device_id])
+        mode_s = haskey(body, "mode") ? String(body["mode"]) : String(body[:mode])
+        seq_no = haskey(body, "seq_no") ? Int(body["seq_no"]) : Int(body[:seq_no])
+        schema_version = haskey(body, "schema_version") ? Int(body["schema_version"]) : Int(body[:schema_version])
+        idempotency_key = haskey(body, "idempotency_key") ? String(body["idempotency_key"]) : String(body[:idempotency_key])
+        points_raw = haskey(body, "points") ? body["points"] : body[:points]
 
-function handle_ingest(req::HTTP.Request, store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
-                       hs::Hardening.HardeningStore, settings::Config.Settings, mode::String,
-                       agent::RLService.RLAgentState)
-    return with_request_logging("ingest_$mode", req, req_id -> begin
-        Hardening.check_payload_size!(req.body; max_bytes = settings.max_payload_bytes)
+        mode = lowercase(mode_s) == "realtime" ? Types.REALTIME : Types.BATCH
+        points = _to_points(points_raw)
 
-        user_id, err = require_user(req, settings)
-        err !== nothing && return err
-
-        ok_rate = Hardening.check_rate_limit!(hs, "ingest:$user_id"; limit = settings.ingest_rate_limit_per_min, window_sec = 60)
-        ok_rate || return json_response(429, Dict("ok" => false, "error" => "rate_limited_ingest"); req_id = req_id)
-
-        payload = try
-            JSON3.read(req.body)
-        catch
-            return json_response(400, Dict("ok" => false, "error" => "invalid_json"); req_id = req_id)
-        end
-
-        try
-            Hardening.validate_ingest_payload!(payload)
-        catch e
-            return json_response(400, Dict("ok" => false, "error" => "invalid_payload", "detail" => string(e)); req_id = req_id)
-        end
-
-        payload_mode = haskey(payload, "mode") ? String(payload["mode"]) : mode
-        lowercase(payload_mode) != lowercase(mode) &&
-            return json_response(400, Dict("ok" => false, "error" => "mode_endpoint_mismatch"); req_id = req_id)
-
-        chunk = try
-            IngestService.parse_chunk(payload, user_id)
-        catch e
-            return json_response(400, Dict("ok" => false, "error" => "invalid_payload_parse", "detail" => string(e)); req_id = req_id)
-        end
-
-        idem_key = "$(chunk.user_id):$(chunk.device_id):$(chunk.idempotency_key)"
-        duplicate, idem_backend = try
-            idem_check_and_mark!(store, redis, settings, idem_key)
-        catch e
-            return json_response(503, Dict("ok" => false, "error" => string(e)); req_id = req_id)
-        end
-
-        if settings.enforce_monotonic_seq
-            seq_ok = Hardening.check_sequence_monotonic!(hs, user_id, chunk.device_id, chunk.seq_no)
-            seq_ok || return json_response(409, Dict("ok" => false, "error" => "non_monotonic_seq_no"); req_id = req_id)
-        end
-
-        if duplicate
-            return json_response(200, Dict("ok" => true, "duplicate" => true, "idempotency_backend" => idem_backend); req_id = req_id)
-        end
-
-        sess = try
-            SessionManager.get_or_create_session!(store, user_id)
-        catch e
-            return json_response(429, Dict("ok" => false, "error" => string(e)); req_id = req_id)
-        end
-
-        IngestService.apply_chunk!(sess, chunk, settings)
-        Hardening.track_sequence!(hs, user_id, chunk.device_id, chunk.seq_no)
-        touch_session_presence!(redis, settings, user_id)
-
-        trained = false
-        td = Dict{String, Any}("ok" => false, "reason" => "not_run")
-        auto_bio = false
-
-        if chunk.mode == Types.BATCH
-            train_res = FeatureService.incremental_train_tcn!(sess)
-            trained = get(train_res, "trained_on_new_data", false)
-            auto_bio = IngestService.maybe_detect_bio_trigger!(sess, settings)
-            if auto_bio
-                TriggerService.apply_trigger!(sess, "bio", settings.event_stream_duration_sec, settings)
-            end
-        else
-            td = IngestService.maybe_run_live_pipeline!(sess, settings, agent)
-        end
-
-        return json_response(
-            200,
-            Dict(
-                "ok" => true,
-                "duplicate" => false,
-                "idempotency_backend" => idem_backend,
-                "user_id" => user_id,
-                "state" => String(sess.state),
-                "buffered_chunks" => length(sess.ring_buffer),
-                "points_count" => length(chunk.points),
-                "avg_hr" => sess.latest_features["avg_hr"],
-                "avg_hrv" => sess.latest_features["avg_hrv"],
-                "avg_br" => sess.latest_features["avg_br"],
-                "trained_incrementally" => trained,
-                "bio_triggered" => auto_bio,
-                "td_pipeline" => td,
-            );
-            req_id = req_id
+        chunk = Types.SignalChunk(
+            user_id,
+            device_id,
+            mode,
+            seq_no,
+            schema_version,
+            idempotency_key,
+            points
         )
-    end)
-end
-
-function handle_status(req::HTTP.Request, store::SessionManager.SessionStore, settings::Config.Settings)
-    return with_request_logging("status", req, req_id -> begin
-        user_id, err = require_user(req, settings)
-        err !== nothing && return err
-
-        sess = SessionManager.get_session(store, user_id)
-        sess === nothing && return json_response(404, Dict("ok" => false, "error" => "session_not_found"); req_id = req_id)
-
-        lock(sess.lock) do
-            IngestService.refresh_hold_state!(sess, settings)
-            dto = Types.SessionStatusDTO(
-                    user_id = sess.user_id,
-                    state = sess.state,
-                    active_interaction = sess.active_interaction,
-                    is_holding = sess.is_holding,
-                    hold_steps_left = sess.hold_steps_left,
-                    trigger_type = sess.last_trigger_type,
-                    avg_hr = get(sess.latest_features, "avg_hr", 0f0),
-                    avg_hrv = get(sess.latest_features, "avg_hrv", 0f0),
-                    avg_br = get(sess.latest_features, "avg_br", 0f0),
-                    buffered_chunks = length(sess.ring_buffer),
-                    last_seen = string(sess.last_seen),
-                )
-            return json_response(200, dto; req_id = req_id)
-        end
-    end)
-end
-
-function handle_trigger(req::HTTP.Request, store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
-                        hs::Hardening.HardeningStore, settings::Config.Settings)
-    return with_request_logging("trigger", req, req_id -> begin
-        Hardening.check_payload_size!(req.body; max_bytes = 32_000)
-
-        user_id, err = require_user(req, settings)
-        err !== nothing && return err
-
-        ok_rate = Hardening.check_rate_limit!(hs, "trigger:$user_id"; limit = settings.trigger_rate_limit_per_min, window_sec = 60)
-        ok_rate || return json_response(429, Dict("ok" => false, "error" => "rate_limited_trigger"); req_id = req_id)
-
-        ok_cd = Hardening.check_trigger_cooldown!(hs, user_id; cooldown_sec = settings.trigger_cooldown_sec)
-        ok_cd || return json_response(429, Dict("ok" => false, "error" => "trigger_cooldown_active"); req_id = req_id)
-
-        payload = try
-            JSON3.read(req.body)
-        catch
-            return json_response(400, Dict("ok" => false, "error" => "invalid_json"); req_id = req_id)
-        end
-
-        try
-            Hardening.validate_trigger_payload!(payload)
-        catch e
-            return json_response(400, Dict("ok" => false, "error" => "invalid_payload", "detail" => string(e)); req_id = req_id)
-        end
-
-        trigger_type = String(payload["trigger_type"])
-        stream_sec = haskey(payload, "stream_duration_sec") ? Int(payload["stream_duration_sec"]) : settings.event_stream_duration_sec
 
         sess = SessionManager.get_or_create_session!(store, user_id)
+        out = IngestService.process_realtime!(sess, chunk, settings)
 
-        result = try
-            TriggerService.apply_trigger!(sess, trigger_type, stream_sec, settings)
-        catch e
-            return json_response(400, Dict("ok" => false, "error" => string(e)); req_id = req_id)
-        end
-
-        touch_session_presence!(redis, settings, user_id)
-        return json_response(200, merge(result, Dict("user_id" => user_id)); req_id = req_id)
-    end)
+        return ResponseUtils.json_response(200, out; req_id = rid)
+    catch e
+        println("[REQ_ERR] id=$(rid) route=ingest_realtime err=$(string(e))")
+        return ResponseUtils.json_response(400, Dict("ok" => false, "error" => "invalid_payload", "detail" => string(e)); req_id = rid)
+    end
 end
 
-function make_router(store::SessionManager.SessionStore, redis::RedisStore.RedisClient,
-                     hs::Hardening.HardeningStore, settings::Config.Settings)
-    agent = RLService.init_agent(settings)
+function make_router(store, redis, hs, settings)
+    return function (req::HTTP.Request)
+        t0 = time()
+        route = "unknown"
+        rid = _req_id(req)
 
-    return function(req::HTTP.Request)
-        target = req.target
-        method = String(req.method)
+        try
+            path = HTTP.URIs.URI(req.target).path
+            method = String(req.method)
 
-        if method == "GET" && target == "/healthz"
-            return json_response(200, Dict("ok" => true, "service" => "biofeedback-backend"))
-
-        elseif method == "GET" && target == "/readyz"
-            return json_response(200, Dict("ok" => true, "ready" => true,
-                                           "store" => SessionManager.store_stats(store),
-                                           "redis" => RedisStore.redis_stats(redis)))
-
-        elseif method == "POST" && target == "/v1/ingest/batch"
-            return handle_ingest(req, store, redis, hs, settings, "batch", agent)
-
-        elseif method == "POST" && target == "/v1/ingest/realtime"
-            return handle_ingest(req, store, redis, hs, settings, "realtime", agent)
-
-        elseif method == "POST" && target == "/v1/events/trigger"
-            return handle_trigger(req, store, redis, hs, settings)
-
-        elseif method == "GET" && target == "/v1/status"
-            return handle_status(req, store, settings)
-
-        else
-            return json_response(404, Dict("ok" => false, "error" => "not_found"))
+            if method == "GET" && path == "/v1/status"
+                route = "status"
+                resp = handle_status(req, store, settings)
+                println("[REQ] id=$(rid) route=$(route) method=$(method) target=$(path) latency_ms=$(round((time()-t0)*1000; digits=1))")
+                return resp
+            elseif method == "POST" && path == "/v1/events/trigger"
+                route = "trigger"
+                resp = handle_trigger(req, store, settings)
+                println("[REQ] id=$(rid) route=$(route) method=$(method) target=$(path) latency_ms=$(round((time()-t0)*1000; digits=1))")
+                return resp
+            elseif method == "POST" && path == "/v1/ingest/realtime"
+                route = "ingest_realtime"
+                resp = handle_ingest_realtime(req, store, settings)
+                println("[REQ] id=$(rid) route=$(route) method=$(method) target=$(path) latency_ms=$(round((time()-t0)*1000; digits=1))")
+                return resp
+            else
+                return ResponseUtils.json_response(404, Dict("ok" => false, "error" => "not_found"); req_id = rid)
+            end
+        catch e
+            println("[REQ_ERR] id=$(rid) route=$(route) err=$(string(e)) latency_ms=$(round((time()-t0)*1000; digits=1))")
+            return ResponseUtils.json_response(500, Dict("ok" => false, "error" => "internal_error", "detail" => string(e)); req_id = rid)
         end
     end
 end
