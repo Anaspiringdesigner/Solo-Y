@@ -31,16 +31,6 @@ function main()
     println("Enforce monotonic seq: $(settings.enforce_monotonic_seq)")
     println("="^70)
 
-    @async begin
-        while true
-            sleep(60)
-            removed = BiofeedbackSystem.SessionManager.cleanup_expired!(store)
-            if removed > 0
-                println("[CLEANUP] Removed expired sessions: $removed @ $(now())")
-            end
-        end
-    end
-
     HTTP.serve(router, settings.host, settings.port)
 end
 
