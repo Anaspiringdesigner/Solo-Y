@@ -3,17 +3,29 @@ module TriggerService
 using Dates
 using ..Types
 using ..Config
-using ..IngestService
 using ..TDBridgeService
-using ..ModelBridgeService
-using ..RLService
 
 export apply_trigger!, maybe_auto_trigger_bio!, start_trigger_pulse_task!
 
 const _pulse_tasks = Dict{String, Task}()
 
+# local helper (avoids circular dependency on IngestService)
+function _refresh_hold_state_local!(sess::Types.SessionContext)
+    if !sess.is_holding
+        return
+    end
+    if sess.hold_ends_at === nothing
+        return
+    end
+    if now() >= sess.hold_ends_at || sess.hold_steps_left <= 0
+        sess.is_holding = false
+        sess.hold_steps_left = 0
+        sess.state = :IDLE
+    end
+end
+
 function _compute_hold_steps(settings::Config.Settings, stream_duration_sec::Int)
-    step = max(1, settings.rl_step_sec)
+    step = max(1, settings.hold_step_sec)
     return max(1, cld(stream_duration_sec, step))
 end
 
@@ -26,7 +38,7 @@ function apply_trigger!(
     now_dt = now()
 
     lock(sess.lock) do
-        IngestService.refresh_hold_state!(sess, settings)
+        _refresh_hold_state_local!(sess)
 
         if sess.is_holding
             return Dict(
@@ -49,7 +61,7 @@ function apply_trigger!(
         sess.hold_started_at = now_dt
         sess.hold_ends_at = now_dt + Second(dsec)
 
-        # reset RL selection for new hold; first realtime step picks once and holds
+        # reset RL selection state for new hold
         sess.active_interaction = -1
         sess.last_rl_action = -1
         sess.last_rl_score = 0f0
@@ -60,14 +72,16 @@ function apply_trigger!(
         sess.pending_eval_baseline_hrv = 0f0
 
         sess.last_trigger_type = trigger_type
-        sess.last_bio_trigger_at = trigger_type == "bio" ? now_dt : sess.last_bio_trigger_at
+        if trigger_type == "bio"
+            sess.last_bio_trigger_at = now_dt
+        end
     end
 
     return Dict(
         "ok" => true,
         "trigger_type" => trigger_type,
         "state" => "HOLDING",
-        "stream_duration_sec" => stream_duration_sec === nothing ? settings.event_stream_duration_sec : stream_duration_sec,
+        "stream_duration_sec" => (stream_duration_sec === nothing ? settings.event_stream_duration_sec : stream_duration_sec),
     )
 end
 
@@ -76,19 +90,19 @@ function maybe_auto_trigger_bio!(
     settings::Config.Settings
 )::Bool
     lock(sess.lock) do
-        IngestService.refresh_hold_state!(sess, settings)
+        _refresh_hold_state_local!(sess)
         if sess.is_holding
             return false
         end
 
         stress = get(sess.latest_features, "stress_score", 0f0)
-        if stress < settings.bio_trigger_stress_threshold
+        if stress < settings.bio_stress_threshold
             return false
         end
 
         if sess.last_bio_trigger_at !== nothing
             elapsed = Dates.value(now() - sess.last_bio_trigger_at) ÷ 1000
-            if elapsed < settings.bio_trigger_cooldown_sec
+            if elapsed < settings.trigger_cooldown_sec
                 return false
             end
         end
@@ -98,12 +112,9 @@ function maybe_auto_trigger_bio!(
     return true
 end
 
-function _pulse_key(sess::Types.SessionContext)
-    return sess.user_id
-end
-
 function start_trigger_pulse_task!(sess::Types.SessionContext, settings::Config.Settings)
-    key = _pulse_key(sess)
+    key = sess.user_id
+
     if haskey(_pulse_tasks, key)
         t = _pulse_tasks[key]
         if !istaskdone(t)
@@ -115,20 +126,23 @@ function start_trigger_pulse_task!(sess::Types.SessionContext, settings::Config.
         try
             while true
                 sleep(1.0)
+
                 local should_continue = false
                 local features = Dict{String, Float32}()
-                local action = 0
+                local action = -1
                 local score = 0f0
                 local hold_steps_left = 0
+                local trig_type = "none"
 
                 lock(sess.lock) do
-                    IngestService.refresh_hold_state!(sess, settings)
+                    _refresh_hold_state_local!(sess)
                     should_continue = sess.is_holding
                     if should_continue
                         features = copy(sess.latest_features)
                         action = sess.active_interaction
                         score = sess.last_rl_score
                         hold_steps_left = sess.hold_steps_left
+                        trig_type = sess.last_trigger_type
                     end
                 end
 
@@ -137,20 +151,21 @@ function start_trigger_pulse_task!(sess::Types.SessionContext, settings::Config.
                 end
 
                 if action < 0
-                    # no action chosen yet; wait for first realtime ingest
+                    # wait until first realtime pipeline picks action
                     continue
                 end
 
                 td_payload = Dict(
                     "ok" => true,
-                    "hr" => get(features, "tcn_hr", get(features, "avg_hr", 0f0)),
-                    "hrv" => get(features, "tcn_hrv", get(features, "avg_hrv", 0f0)),
+                    "hr" => get(features, "avg_hr", 0f0),
+                    "hrv" => get(features, "avg_hrv", 0f0),
                     "interaction" => action,
                     "holding" => true,
                     "hold_steps_left" => hold_steps_left,
-                    "trigger_type" => sess.last_trigger_type,
+                    "trigger_type" => trig_type,
                     "score" => score,
                 )
+
                 try
                     TDBridgeService.send_td_payload(td_payload, settings)
                 catch e

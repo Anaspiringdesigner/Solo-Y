@@ -7,10 +7,10 @@ export send_td_payload, trigger_code
 
 function trigger_code(trigger_type::AbstractString)::Int
     t = lowercase(String(trigger_type))
-    t == "manual"   && return 1
+    t == "manual" && return 1
     t == "calendar" && return 2
-    t == "bio"      && return 3
-    t == "system"   && return 4
+    t == "bio" && return 3
+    t == "system" && return 4
     return 0
 end
 
@@ -21,9 +21,9 @@ end
 
 function send_td_payload(payload::Dict, settings::Config.Settings)::Bool
     try
-        host = parse(IPAddr, settings.td_udp_host)
-        port = settings.td_udp_port
-        base = settings.td_osc_basepath
+        host = parse(IPAddr, settings.td_host)
+        port = settings.td_port
+        base = settings.td_path
 
         hr = get(payload, "hr", 0)
         hrv = get(payload, "hrv", 0)
@@ -46,7 +46,7 @@ function send_td_payload(payload::Dict, settings::Config.Settings)::Bool
             close(sock)
         end
 
-        println("[TD] sent hr=$(hr) hrv=$(hrv) interaction=$(inter) holding=$(holding) hold_left=$(hold_left) trig=$(trig)")
+        println("[TD] sent hr=$(hr) hrv=$(hrv) interaction=$(inter) holding=$(holding)")
         return true
     catch e
         println("[TD] send failed: $(string(e))")
@@ -54,4 +54,4 @@ function send_td_payload(payload::Dict, settings::Config.Settings)::Bool
     end
 end
 
-end # module
+end

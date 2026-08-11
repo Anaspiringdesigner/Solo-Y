@@ -4,7 +4,7 @@ using Dates
 using Statistics
 using ..Types
 using ..Config
-using ..ModelBridgeService
+using ..FeatureService
 using ..RLService
 using ..TDBridgeService
 using ..TriggerService
@@ -29,6 +29,7 @@ function _update_features_from_points!(sess::Types.SessionContext, points::Vecto
     if isempty(points)
         return
     end
+
     hrs = Float32[p.hr for p in points]
     hrvs = Float32[p.hrv for p in points]
     brs = Float32[p.br for p in points]
@@ -36,10 +37,7 @@ function _update_features_from_points!(sess::Types.SessionContext, points::Vecto
     sess.latest_features["avg_hr"] = mean(hrs)
     sess.latest_features["avg_hrv"] = mean(hrvs)
     sess.latest_features["avg_br"] = mean(brs)
-
-    # simple stress proxy
-    stress = max(0f0, min(1f0, (sess.latest_features["avg_hr"] - 60f0) / 60f0))
-    sess.latest_features["stress_score"] = stress
+    sess.latest_features["stress_score"] = max(0f0, min(1f0, (sess.latest_features["avg_hr"] - 60f0) / 60f0))
 end
 
 function process_batch!(sess::Types.SessionContext, chunk::Types.SignalChunk, settings::Config.Settings)
@@ -51,10 +49,7 @@ function process_batch!(sess::Types.SessionContext, chunk::Types.SignalChunk, se
     return Dict("ok" => true, "mode" => "batch")
 end
 
-function maybe_run_live_pipeline!(
-    sess::Types.SessionContext,
-    settings::Config.Settings
-)::Dict{String, Any}
+function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.Settings)::Dict{String, Any}
     local feats = Dict{String, Float32}()
     local trig_type = "none"
     local prev_action = -1
@@ -76,13 +71,14 @@ function maybe_run_live_pipeline!(
         return Dict("ok" => false, "reason" => "not_holding")
     end
 
-    # TCN encode
-    tcn = ModelBridgeService.encode_tcn_features(feats, settings)
+    # TCN-like features from FeatureService
+    tcn = FeatureService.encode_tcn_features(sess)
     feats["tcn_hr"] = get(tcn, "tcn_hr", get(feats, "avg_hr", 0f0))
     feats["tcn_hrv"] = get(tcn, "tcn_hrv", get(feats, "avg_hrv", 0f0))
     feats["tcn_br"] = get(tcn, "tcn_br", get(feats, "avg_br", 0f0))
+    feats["stress_score"] = get(tcn, "stress_score", get(feats, "stress_score", 0f0))
 
-    # choose/hold RL action
+    # Hold RL action steady during active hold
     local action = -1
     local score = 0f0
     local state_key = ""
@@ -97,8 +93,14 @@ function maybe_run_live_pipeline!(
 
     if action < 0
         trig = TDBridgeService.trigger_code(trig_type)
+
+        # NOTE: RLService in your project expects an agent.
+        # If you have a shared agent elsewhere, wire it in.
+        # For now, create a lightweight one per call (works functionally).
+        agent = RLService.init_agent(settings)
+
         rl = RLService.choose_action!(
-            nothing,
+            agent,
             feats,
             trig;
             prev_state_key = prev_state_key,
@@ -161,10 +163,7 @@ function process_realtime!(sess::Types.SessionContext, chunk::Types.SignalChunk,
         sess.last_seen = now()
     end
 
-    # optional automatic bio trigger
     _ = TriggerService.maybe_auto_trigger_bio!(sess, settings)
-
-    # run RL/TCN/TD pipeline
     pipe = maybe_run_live_pipeline!(sess, settings)
 
     return Dict(
