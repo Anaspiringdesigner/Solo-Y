@@ -1,9 +1,11 @@
 module RLService
 
 using Random
+using JSON3
+using Dates
 using ..Config
 
-export RLAgentState, init_agent, choose_action!, compute_reward
+export RLAgentState, init_agent, choose_action!, compute_reward, save_agent!, load_agent!
 
 const ACTION_COUNT = 5
 
@@ -13,6 +15,7 @@ mutable struct RLAgentState
     alpha::Float32
     gamma::Float32
     step::Int
+    last_saved_at::DateTime
 end
 
 function init_agent(settings::Config.Settings)
@@ -22,6 +25,7 @@ function init_agent(settings::Config.Settings)
         settings.rl_alpha,
         settings.rl_gamma,
         0,
+        now(),
     )
 end
 
@@ -77,4 +81,58 @@ function choose_action!(agent::RLAgentState, features::Dict{String, Float32}, tr
     )
 end
 
-end # module
+function save_agent!(agent::RLAgentState, path::String)::Bool
+    try
+        mkpath(dirname(path))
+        serial_q = Dict{String, Vector{Float64}}()
+        for (k, v) in agent.q_table
+            serial_q[k] = Float64.(v)
+        end
+        payload = Dict(
+            "epsilon" => Float64(agent.epsilon),
+            "alpha" => Float64(agent.alpha),
+            "gamma" => Float64(agent.gamma),
+            "step" => agent.step,
+            "saved_at" => string(now()),
+            "q_table" => serial_q,
+        )
+        open(path, "w") do io
+            write(io, JSON3.write(payload))
+        end
+        agent.last_saved_at = now()
+        return true
+    catch e
+        println("[RL] save failed: $(string(e))")
+        return false
+    end
+end
+
+function load_agent!(agent::RLAgentState, path::String)::Bool
+    if !isfile(path)
+        return false
+    end
+    try
+        txt = read(path, String)
+        obj = JSON3.read(txt)
+
+        qnew = Dict{String, Vector{Float32}}()
+        qobj = haskey(obj, "q_table") ? obj["q_table"] : obj[:q_table]
+        for (k, v) in pairs(qobj)
+            qnew[string(k)] = Float32[Float32(x) for x in v]
+        end
+
+        agent.q_table = qnew
+        agent.epsilon = Float32(haskey(obj, "epsilon") ? obj["epsilon"] : obj[:epsilon])
+        agent.alpha = Float32(haskey(obj, "alpha") ? obj["alpha"] : obj[:alpha])
+        agent.gamma = Float32(haskey(obj, "gamma") ? obj["gamma"] : obj[:gamma])
+        agent.step = Int(haskey(obj, "step") ? obj["step"] : obj[:step])
+        agent.last_saved_at = now()
+        println("[RL] loaded state from $(path), states=$(length(agent.q_table)), step=$(agent.step)")
+        return true
+    catch e
+        println("[RL] load failed: $(string(e))")
+        return false
+    end
+end
+
+end
