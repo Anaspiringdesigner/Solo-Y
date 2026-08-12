@@ -99,6 +99,50 @@ void onStart(ServiceInstance service) async {
     debugPrint('[BG] Service stopped');
   });
 
+  // Handle reload sensor command from UI
+  String sensorType = '';
+  Future<void> _updateSensorType(String newType) async {
+    final old = sensorType;
+    sensorType = (newType ?? '').trim().toLowerCase();
+    debugPrint('[BG] reload sensor -> $sensorType');
+    // clear caches so new files are re-evaluated
+    fileHashes.clear();
+    lastPostedEnd.clear();
+
+    // Start/stop BLE ingest depending on selection
+    try {
+      if (sensorType.startsWith('esp')) {
+        await BleIngestService().start();
+        debugPrint('[BG] BLE ingest started for ESP');
+      } else {
+        await BleIngestService().stop();
+        debugPrint('[BG] BLE ingest stopped for non-ESP');
+      }
+    } catch (e) {
+      debugPrint('[BG] BLE start/stop during reload failed: $e');
+    }
+
+    // Update notification when sensor changes
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: 'Biofeedback Data Transfer',
+        content: 'Sensor: ${sensorType.isEmpty ? 'unknown' : sensorType}',
+      );
+    }
+  }
+
+  service.on('reload_sensor').listen((event) async {
+    try {
+      if (event is Map && event.containsKey('sensor_type')) {
+        await _updateSensorType(event['sensor_type']?.toString() ?? '');
+      } else if (event is String) {
+        await _updateSensorType(event);
+      }
+    } catch (e) {
+      debugPrint('[BG] reload_sensor handler error: $e');
+    }
+  });
+
   // Update notification helper
   void updateNotification(String content) {
     if (service is AndroidServiceInstance) {
@@ -109,11 +153,24 @@ void onStart(ServiceInstance service) async {
     }
   }
 
-  // Start BLE ingest service (non-blocking). This will produce HR files in the same folder
+  // Read initial sensor type from prefs
   try {
-    BleIngestService().start();
+    final prefs = await SharedPreferences.getInstance();
+    final s = prefs.getString('sensor_type') ?? '';
+    if (s.trim().isNotEmpty) {
+      await _updateSensorType(s);
+    } else {
+      // default: try to start BLE anyway (keeps prior behavior)
+      try {
+        await BleIngestService().start();
+      } catch (_) {}
+    }
   } catch (e) {
-    debugPrint('[BG] BLE ingest start failed: $e');
+    debugPrint('[BG] prefs read error: $e');
+    // fallback: start BLE ingest
+    try {
+      await BleIngestService().start();
+    } catch (_) {}
   }
 
   // ── Main polling loop ─────────────────────────────────
@@ -139,17 +196,9 @@ void onStart(ServiceInstance service) async {
           return;
         }
 
-        // Determine which file suffix to look for depending on selected sensor
+        // Determine which file suffix to look for depending on selected sensor value cached
         String suffix = '_HR.txt';
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final sensor = prefs.getString('sensor_type') ?? '';
-          if (sensor.trim().toLowerCase().startsWith('esp')) {
-            suffix = '_esp.txt';
-          }
-        } catch (e) {
-          debugPrint('[BG] prefs read error: $e');
-        }
+        if (sensorType.startsWith('esp')) suffix = '_esp.txt';
 
         final files = await dir
             .list()

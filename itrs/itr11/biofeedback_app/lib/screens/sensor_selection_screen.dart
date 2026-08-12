@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/data_transfer_service.dart';
 import '../services/ble_ingest_service.dart';
 import 'home_screen.dart';
@@ -23,10 +24,19 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
     try {
       if (choice == 'polar') {
         await DataTransferService.start();
+        // notify background service to reload sensor type
+        final service = FlutterBackgroundService();
+        try {
+          service.invoke('reload_sensor', {'sensor_type': choice});
+        } catch (_) {}
       } else {
         // start BLE ingest and DataTransfer so existing pipeline continues
         await BleIngestService().start();
         await DataTransferService.start();
+        final service = FlutterBackgroundService();
+        try {
+          service.invoke('reload_sensor', {'sensor_type': choice});
+        } catch (_) {}
       }
     } catch (e) {
       // ignore errors but show a snackbar if still mounted
