@@ -8,6 +8,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'ble_ingest_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Constants ──────────────────────────────────────────────
 const String polarDir        = '/sdcard/Download/Data_from_H10';
@@ -138,10 +139,21 @@ void onStart(ServiceInstance service) async {
           return;
         }
 
+        // Determine which file suffix to look for depending on selected sensor
+        String suffix = '_HR.txt';
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final sensor = prefs.getString('sensor_type') ?? '';
+          if (sensor.trim().toLowerCase().startsWith('esp')) {
+            suffix = '_esp.txt';
+          }
+        } catch (e) {
+          debugPrint('[BG] prefs read error: $e');
+        }
+
         final files = await dir
             .list()
-            .where((f) =>
-                f.path.endsWith('_HR.txt'))
+            .where((f) => f.path.endsWith(suffix))
             .map((f) => f.path)
             .toList();
 
