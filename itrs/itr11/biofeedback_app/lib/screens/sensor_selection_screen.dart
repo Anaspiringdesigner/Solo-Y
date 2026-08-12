@@ -48,20 +48,26 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[SELECTION] SensorSelectionScreen.initState');
     // load existing choice if any and auto-navigate
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getString('sensor_type');
-      if (stored != null) {
-        if (stored == 'polar') {
-          await DataTransferService.start();
-        } else {
-          await BleIngestService().start();
-          await DataTransferService.start();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final stored = prefs.getString('sensor_type');
+        debugPrint('[SELECTION] stored sensor_type: $stored');
+        if (stored != null) {
+          if (stored == 'polar') {
+            await DataTransferService.start();
+          } else {
+            await BleIngestService().start();
+            await DataTransferService.start();
+          }
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const HomeScreen()));
         }
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()));
+      } catch (e) {
+        debugPrint('[SELECTION] prefs read error: $e');
       }
     });
   }

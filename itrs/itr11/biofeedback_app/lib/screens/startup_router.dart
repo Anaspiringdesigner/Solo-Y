@@ -30,10 +30,13 @@ class _StartupRouterState extends State<StartupRouter> {
     return FutureBuilder<String?>(
       future: _getChoice(),
       builder: (context, snap) {
+        debugPrint('[STARTUP] FutureBuilder state: ${snap.connectionState}');
+        if (snap.hasError) debugPrint('[STARTUP] prefs future error: ${snap.error}');
         if (snap.connectionState != ConnectionState.done) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         final val = snap.data;
+        debugPrint('[STARTUP] FutureBuilder result sensor_type: $val');
         if (val == null) return const SensorSelectionScreen();
         return const HomeScreen();
       },

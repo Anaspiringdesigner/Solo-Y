@@ -9,8 +9,11 @@ import 'constants.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  debugPrint('[MAIN] DataTransferService.initialize() starting');
   await DataTransferService.initialize();
+  debugPrint('[MAIN] DataTransferService.initialize() done');
   runApp(const BiofeedbackApp());
+  debugPrint('[MAIN] runApp completed');
 }
 
 class BiofeedbackApp extends StatelessWidget {
