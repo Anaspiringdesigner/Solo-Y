@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/permission_service.dart';
 import 'providers/biofeedback_provider.dart';
 import 'screens/startup_router.dart';
 import 'services/data_transfer_service.dart';
@@ -9,6 +11,20 @@ import 'constants.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
+  // If user previously selected ESP sensor, request BLE/location permissions
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final sensor = prefs.getString('sensor_type') ?? '';
+    if (sensor.trim().toLowerCase().startsWith('esp')) {
+      debugPrint('[MAIN] ESP sensor selected — requesting BLE permissions');
+      // don't pass a context here (we're pre-run), permission handler will show system dialogs
+      await PermissionService.ensureBlePermissions();
+    }
+  } catch (e) {
+    debugPrint('[MAIN] prefs read error: $e');
+  }
+
   debugPrint('[MAIN] DataTransferService.initialize() starting');
   await DataTransferService.initialize();
   debugPrint('[MAIN] DataTransferService.initialize() done');
