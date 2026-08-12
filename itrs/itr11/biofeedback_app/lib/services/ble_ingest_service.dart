@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/ring_sample_packet.dart';
 import 'ring_ble_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import '../constants.dart';
 
 void _log(String m) {
@@ -222,9 +223,34 @@ class BleIngestService {
         final temp = '$polarDir/.$filename.tmp';
         final finalPath = '$polarDir/$filename';
 
-        const header = 'Phone timestamp;hr;hrv;br\n';
+        // Write a header line that matches the Polar H10 exporter format
+        // First line often contains the source identifier, followed by the CSV header.
+        const header = 'Polar_H10\nPhone timestamp;hr;hrv;br\n';
+
+        // Build body ensuring we don't leave trailing empty fields — mimic Polar export:
+        final body = StringBuffer();
+        for (final r in rows) {
+          // incoming rows are constructed as either "ts;hr;hrv;" currently
+          // parse and rebuild to avoid trailing empty columns
+          final parts = r.split(';');
+          if (parts.isEmpty) continue;
+          final ts = parts[0];
+          final hr = parts.length > 1 ? parts[1] : '';
+          final hrv = (parts.length > 2 && parts[2].trim().isNotEmpty) ? parts[2] : null;
+          final br = (parts.length > 3 && parts[3].trim().isNotEmpty) ? parts[3] : null;
+
+          if (hr.isEmpty) continue; // timestamp without HR isn't useful
+          if (hrv != null && br != null) {
+            body.writeln('$ts;$hr;$hrv;$br');
+          } else if (hrv != null) {
+            body.writeln('$ts;$hr;$hrv');
+          } else {
+            body.writeln('$ts;$hr');
+          }
+        }
+
         final tmpFile = File(temp);
-        await tmpFile.writeAsString(header + rows.join());
+        await tmpFile.writeAsString(header + body.toString());
         // atomic rename
         try {
           await tmpFile.rename(finalPath);
@@ -238,6 +264,20 @@ class BleIngestService {
         _log('[BLE INGEST] Wrote HR file: $filename');
         if (rmssd != null || sdnn != null) {
           _log('[BLE INGEST] HRV RMSSD=${rmssd == null || rmssd.isNaN ? 'na' : rmssd.toStringAsFixed(1)} SDNN=${sdnn == null || sdnn.isNaN ? 'na' : sdnn.toStringAsFixed(1)}');
+        }
+
+        // Signal background service to re-scan files in case it missed the update
+        try {
+          final prefs2 = await SharedPreferences.getInstance();
+          final sensor2 = prefs2.getString('sensor_type') ?? '';
+          try {
+            final svc = FlutterBackgroundService();
+            svc.invoke('reload_sensor', {'sensor_type': sensor2});
+          } catch (e) {
+            _log('[BLE INGEST] background service invoke failed: $e');
+          }
+        } catch (e) {
+          _log('[BLE INGEST] prefs read for reload failed: $e');
         }
       } catch (e) {
         debugPrint('[BLE INGEST] write HR file error: $e');

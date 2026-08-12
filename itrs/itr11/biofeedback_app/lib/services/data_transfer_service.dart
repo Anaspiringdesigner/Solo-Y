@@ -218,13 +218,12 @@ void onStart(ServiceInstance service) async {
     const Duration(seconds: pollIntervalSec),
     (timer) async {
       try {
-        // Check storage permission
-        final status =
-            await Permission.manageExternalStorage
-                .status;
-        if (!status.isGranted) {
-          updateNotification(
-              'Storage permission needed');
+        // Check storage permission (accept either MANAGE_EXTERNAL_STORAGE or legacy READ/WRITE storage)
+        final manageStatus = await Permission.manageExternalStorage.status;
+        final storageStatus = await Permission.storage.status;
+        debugPrint('[BG] storage perms: manage=${manageStatus.isGranted}, storage=${storageStatus.isGranted}');
+        if (!manageStatus.isGranted && !storageStatus.isGranted) {
+          updateNotification('Storage permission needed');
           return;
         }
 
