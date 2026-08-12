@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
@@ -515,28 +516,42 @@ void _interpolate(List<double> vals, int limit) {
   }
 }
 
-// ── HRV Estimation ────────────────────────────────────────────
+// ── HRV Estimation (approximate RMSSD from HR series) ──────
 void _estimateHRV(
     List<double> hr, List<double> hrv) {
-  const window = 60;
+  // Use a rolling window to estimate RMSSD from recent HR values.
+  // Convert HR (bpm) -> RR intervals (ms) using rr = 60000 / hr,
+  // then compute RMSSD on successive RR differences.
+  const window = 60; // seconds
+
   for (int i = 0; i < hr.length; i++) {
     if (!hrv[i].isNaN) continue;
     final start = (i - window + 1).clamp(0, i);
     final chunk = hr
         .sublist(start, i + 1)
-        .where((v) => !v.isNaN)
+        .where((v) => !v.isNaN && v > 0)
         .toList();
-    if (chunk.length < 10) continue;
-    final mean = chunk.reduce((a, b) => a + b) /
-                 chunk.length;
-    final variance = chunk
-            .map((v) => (v - mean) * (v - mean))
-            .reduce((a, b) => a + b) /
-        chunk.length;
-    final std = variance > 0
-        ? variance / variance * (variance.abs())
-        : 0.0;
-    hrv[i] = (std * 12.0).clamp(5.0, 120.0);
+    if (chunk.length < 6) continue; // need enough samples
+
+    // Convert to RR (ms)
+    final rr = chunk.map((h) => 60000.0 / h).toList();
+    if (rr.length < 6) continue;
+
+    // successive differences
+    final diffs = <double>[];
+    for (int k = 1; k < rr.length; k++) {
+      final d = rr[k] - rr[k - 1];
+      diffs.add(d);
+    }
+    if (diffs.length < 5) continue;
+
+    final sq = diffs.map((d) => d * d).toList();
+    final meanSq = sq.reduce((a, b) => a + b) / sq.length;
+    final rmssd = meanSq > 0 ? math.sqrt(meanSq) : 0.0;
+
+    // Clamp to reasonable HRV bounds (in ms)
+    final val = rmssd.clamp(5.0, 250.0);
+    hrv[i] = val;
   }
 }
 
@@ -620,42 +635,54 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
   return windows;
 }
 
-// ── POST Windows to Julia ─────────────────────────────────────
+// ── POST Windows to Julia (with retries & verbose logging) ─────
 Future<bool> _postWindows(
     List<_Window> windows) async {
-  try {
-    // ← This must match your Tailscale IP
-    const serverUrl =
-        'http://100.67.125.12:8000/ingest';
+  // ← This must match your Tailscale IP / server address
+  const serverUrl = 'http://100.67.125.12:8000/ingest';
+  const maxRetries = 3;
 
-    debugPrint('[BG] Posting to: $serverUrl');
-    debugPrint('[BG] Windows: '
-        '${windows.length}');
+  final payload = jsonEncode({
+    'windows': windows.map((w) => w.toJson()).toList(),
+  });
 
-    final payload = jsonEncode({
-      'windows': windows
-          .map((w) => w.toJson())
-          .toList(),
-    });
+  // Truncate long payloads for logs but keep full payload on first attempt
+  final truncatedPayload = payload.length > 2000
+      ? payload.substring(0, 2000) + '...<truncated>'
+      : payload;
 
-    final resp = await http
-        .post(
-          Uri.parse(serverUrl),
-          headers: {
-            'Content-Type':
-                'application/json',
-          },
-          body: payload,
-        )
-        .timeout(
-            const Duration(seconds: 30));
+  for (int attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      debugPrint('[BG] Posting to: $serverUrl (attempt $attempt)');
+      debugPrint('[BG] Windows count: ${windows.length}');
+      debugPrint('[BG] Payload preview: $truncatedPayload');
 
-    debugPrint('[BG] Response: '
-        '${resp.statusCode}');
-    return resp.statusCode == 200;
+      final resp = await http
+          .post(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: payload,
+          )
+          .timeout(const Duration(seconds: 30));
 
-  } catch (e) {
-    debugPrint('[BG POST ERROR] $e');
-    return false;
+      debugPrint('[BG] Response: ${resp.statusCode}');
+      debugPrint('[BG] Response body: ${resp.body}');
+
+      if (resp.statusCode == 200) return true;
+
+      // non-200 -> retry with backoff
+      debugPrint('[BG] Non-200 response, will retry if attempts remain');
+
+    } catch (e) {
+      debugPrint('[BG POST ERROR] attempt $attempt -> $e');
+    }
+
+    // Backoff before next attempt
+    if (attempt < maxRetries) {
+      final backoffMs = 500 * (1 << (attempt - 1)); // 500, 1000, 2000
+      await Future.delayed(Duration(milliseconds: backoffMs));
+    }
   }
+
+  return false;
 }
