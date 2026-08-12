@@ -9,6 +9,7 @@ class DataTransferService {
   static final FlutterBackgroundService _service = FlutterBackgroundService();
 
   static bool _configured = false;
+  static String _sensorType = '';
 
   static Future<void> initialize() async {
     if (_configured) return;
@@ -60,6 +61,10 @@ class DataTransferService {
     return _service.isRunning();
   }
 
+  static Future<void> _updateSensorType(String sensorType) async {
+    _sensorType = sensorType.trim().toLowerCase();
+  }
+
   @pragma('vm:entry-point')
   static Future<bool> onIosBackground(ServiceInstance service) async {
     return true;
@@ -86,6 +91,7 @@ class DataTransferService {
       service.invoke('status', {
         'ok': true,
         'ts': DateTime.now().toIso8601String(),
+        'sensor_type': _sensorType,
       });
     });
 
@@ -96,6 +102,23 @@ class DataTransferService {
           content: 'Background transfer is running',
         );
       }
+    });
+
+    // Safe payload handling for:
+    // - service.invoke('reload_sensor', {'sensor_type': 'esp32'})
+    // - service.invoke('reload_sensor', 'esp32')
+    service.on('reload_sensor').listen((event) async {
+      final dynamic e = event;
+
+      if (e is Map<String, dynamic>) {
+        await _updateSensorType((e['sensor_type'] ?? '').toString());
+      } else if (e is String) {
+        await _updateSensorType(e);
+      } else {
+        await _updateSensorType('');
+      }
+
+      service.invoke('sensor_reloaded', {'sensor_type': _sensorType});
     });
 
     service.on('stopService').listen((event) {
