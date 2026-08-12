@@ -19,7 +19,8 @@ void main() async {
     if (sensor.trim().toLowerCase().startsWith('esp')) {
       debugPrint('[MAIN] ESP sensor selected — requesting BLE permissions');
       // don't pass a context here (we're pre-run), permission handler will show system dialogs
-      await PermissionService.ensureBlePermissions();
+      final ok = await PermissionService.ensureBlePermissions();
+      debugPrint('[MAIN] BLE permission result: $ok');
     }
   } catch (e) {
     debugPrint('[MAIN] prefs read error: $e');

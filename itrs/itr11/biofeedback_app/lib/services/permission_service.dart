@@ -9,43 +9,81 @@ class PermissionService {
   static Future<bool> ensureBlePermissions([BuildContext? context]) async {
     if (!Platform.isAndroid) return true;
 
-    // Request modern Bluetooth + location permissions needed for scanning
-    final Map<Permission, PermissionStatus> statuses = await [
+    // Check individual permissions first and log current states
+    final perms = [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.locationWhenInUse,
-    ].request();
+    ];
 
-    bool ok = statuses.values.every((s) => s.isGranted);
+    final before = <Permission, PermissionStatus>{};
+    for (final p in perms) {
+      final s = await p.status;
+      before[p] = s;
+    }
+    debugPrint('[PERM] current statuses: ' +
+        before.entries.map((e) => '${e.key}: ${e.value}').join(', '));
+
+    // Request any not-granted permissions one-by-one to ensure system dialogs show
+    final results = <Permission, PermissionStatus>{};
+    for (final p in perms) {
+      final cur = before[p]!;
+      if (cur.isGranted) {
+        results[p] = cur;
+        continue;
+      }
+
+      // If permanently denied, prefer showing settings dialog
+      if (cur.isPermanentlyDenied) {
+        results[p] = cur;
+        continue;
+      }
+
+      try {
+        final r = await p.request();
+        results[p] = r;
+        debugPrint('[PERM] requested $p -> $r');
+      } catch (e) {
+        debugPrint('[PERM] request error for $p: $e');
+        results[p] = cur;
+      }
+    }
+
+    // Aggregate outcome
+    final ok = results.values.every((s) => s.isGranted);
 
     if (!ok && context != null) {
-      // Show a user-friendly dialog asking them to enable permissions
+      // If any permission is permanently denied, show a helpful dialog to open settings
+      final anyPermanent = results.values.any((s) => s.isPermanentlyDenied);
       try {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Permissions required'),
-            content: const Text(
-              'This app needs Bluetooth and location permissions to connect to your sensor.\n\n'
-              'Please grant the permissions in the dialog or open App Settings to enable them.',
-            ),
+            content: Text(anyPermanent
+                ? 'Bluetooth permissions were permanently denied. Please open App Settings and allow Bluetooth and Location permissions so the app can connect to the sensor.'
+                : 'This app needs Bluetooth and location permissions to connect to your sensor. Please grant them in the dialog.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
+                child: const Text('Close'),
               ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await openAppSettings();
-                },
-                child: const Text('Open Settings'),
-              ),
+              if (anyPermanent)
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    await openAppSettings();
+                  },
+                  child: const Text('Open Settings'),
+                ),
             ],
           ),
         );
       } catch (_) {}
     }
+
+    debugPrint('[PERM] final statuses: ' +
+        results.entries.map((e) => '${e.key}: ${e.value}').join(', '));
 
     return ok;
   }
