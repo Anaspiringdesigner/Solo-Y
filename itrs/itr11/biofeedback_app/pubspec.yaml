@@ -1,7 +1,7 @@
 name: biofeedback_app
 description: Biofeedback TD Display App
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -47,6 +47,8 @@ dependencies:
   # UI
   google_fonts:                 ^6.2.1
   animate_do:                   ^3.3.4
+  flutter_reactive_ble:         ^5.4.0
+  shared_preferences:           ^2.3.2
 
 dev_dependencies:
   flutter_test:

@@ -15,6 +15,7 @@ import '../widgets/interaction_bar.dart'
     as interaction_widget;
 import 'package:permission_handler/permission_handler.dart';
 import '../widgets/camera_stream_widget.dart';
+import '../services/ble_ingest_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,6 +27,23 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final CalendarService _calendar = CalendarService();
   bool _calendarSignedIn = false;
+  bool _bleRunning = false;
+
+  Future<void> _toggleBle() async {
+    try {
+      if (_bleRunning) {
+        await BleIngestService().stop();
+        setState(() => _bleRunning = false);
+        _showSnack('BLE ingest stopped');
+      } else {
+        await BleIngestService().start();
+        setState(() => _bleRunning = true);
+        _showSnack('BLE ingest started');
+      }
+    } catch (e) {
+      _showSnack('BLE error: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -54,7 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await Permission
           .manageExternalStorage.request();
 
-      // Auto-start data transfer
+      // Auto-start data transfer — ensure widget still mounted before using context
+      if (!mounted) return;
       await context
           .read<BiofeedbackProvider>()
           .startDataTransfer();
@@ -181,17 +200,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             : 'OFFLINE',
                         style: GoogleFonts.inter(
                           color: bio.isConnected
-                              ? const Color(
-                                  AppConstants
-                                      .calmColor)
-                              : const Color(
-                                  AppConstants
-                                      .stressColor),
-                          fontSize:      10,
-                          fontWeight:    FontWeight.w600,
+                              ? const Color(AppConstants.calmColor)
+                              : const Color(AppConstants.stressColor),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: 1.5,
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      // BLE control
+                      IconButton(
+                        tooltip: 'Start/Stop BLE ingest',
+                        icon: Icon(
+                          _bleRunning
+                              ? Icons.bluetooth_connected
+                              : Icons.bluetooth,
+                          color: _bleRunning
+                              ? Colors.greenAccent
+                              : Colors.white,
+                        ),
+                        onPressed: _toggleBle,
+                      ),
+
                     ],
                   ),
                 ),
