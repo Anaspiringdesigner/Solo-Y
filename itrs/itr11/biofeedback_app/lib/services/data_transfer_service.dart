@@ -112,8 +112,26 @@ void onStart(ServiceInstance service) async {
     // Start/stop BLE ingest depending on selection
     try {
       if (sensorType.startsWith('esp')) {
-        await BleIngestService().start();
-        debugPrint('[BG] BLE ingest started for ESP');
+        // check runtime BLE permissions before starting BLE ingest
+        try {
+          final scan = await Permission.bluetoothScan.status;
+          final connect = await Permission.bluetoothConnect.status;
+          final loc = await Permission.locationWhenInUse.status;
+          if (scan.isGranted && connect.isGranted && loc.isGranted) {
+            await BleIngestService().start();
+            debugPrint('[BG] BLE ingest started for ESP');
+          } else {
+            debugPrint('[BG] BLE permissions not granted; not starting BLE ingest');
+            if (service is AndroidServiceInstance) {
+              service.setForegroundNotificationInfo(
+                title: 'Biofeedback Data Transfer',
+                content: 'BLE permission needed to start sensor',
+              );
+            }
+          }
+        } catch (pe) {
+          debugPrint('[BG] permission check failed: $pe');
+        }
       } else {
         await BleIngestService().stop();
         debugPrint('[BG] BLE ingest stopped for non-ESP');
@@ -162,14 +180,32 @@ void onStart(ServiceInstance service) async {
     } else {
       // default: try to start BLE anyway (keeps prior behavior)
       try {
-        await BleIngestService().start();
+        final scan = await Permission.bluetoothScan.status;
+        final connect = await Permission.bluetoothConnect.status;
+        final loc = await Permission.locationWhenInUse.status;
+        if (scan.isGranted && connect.isGranted && loc.isGranted) {
+          await BleIngestService().start();
+        } else {
+          debugPrint('[BG] BLE permissions not granted at startup');
+          if (service is AndroidServiceInstance) {
+            service.setForegroundNotificationInfo(
+              title: 'Biofeedback Data Transfer',
+              content: 'BLE permission needed',
+            );
+          }
+        }
       } catch (_) {}
     }
   } catch (e) {
     debugPrint('[BG] prefs read error: $e');
-    // fallback: start BLE ingest
+    // fallback: start BLE ingest if permissions allow
     try {
-      await BleIngestService().start();
+      final scan = await Permission.bluetoothScan.status;
+      final connect = await Permission.bluetoothConnect.status;
+      final loc = await Permission.locationWhenInUse.status;
+      if (scan.isGranted && connect.isGranted && loc.isGranted) {
+        await BleIngestService().start();
+      }
     } catch (_) {}
   }
 

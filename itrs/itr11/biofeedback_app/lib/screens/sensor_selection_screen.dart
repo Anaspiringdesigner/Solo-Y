@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/data_transfer_service.dart';
 import '../services/ble_ingest_service.dart';
+import '../services/permission_service.dart';
 import 'home_screen.dart';
 
 class SensorSelectionScreen extends StatefulWidget {
@@ -30,8 +31,20 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
           service.invoke('reload_sensor', {'sensor_type': choice});
         } catch (_) {}
       } else {
+        // ensure permissions first
+        final ok = await PermissionService.ensureBlePermissions(context);
+        if (!ok) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Bluetooth permissions required to use ESP32 sensor'),
+            ));
+          }
+        }
+
         // start BLE ingest and DataTransfer so existing pipeline continues
-        await BleIngestService().start();
+        if (ok) {
+          await BleIngestService().start();
+        }
         await DataTransferService.start();
         final service = FlutterBackgroundService();
         try {
@@ -69,7 +82,11 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
           if (stored == 'polar') {
             await DataTransferService.start();
           } else {
-            await BleIngestService().start();
+            // ensure BLE permissions before starting
+            final ok = await PermissionService.ensureBlePermissions();
+            if (ok) {
+              await BleIngestService().start();
+            }
             await DataTransferService.start();
           }
           if (!mounted) return;
