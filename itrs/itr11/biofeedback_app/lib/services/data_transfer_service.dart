@@ -101,9 +101,8 @@ void onStart(ServiceInstance service) async {
 
   // Handle reload sensor command from UI
   String sensorType = '';
-  Future<void> _updateSensorType(String newType) async {
-    final old = sensorType;
-    sensorType = (newType ?? '').trim().toLowerCase();
+  Future<void> updateSensorType(String newType) async {
+    sensorType = newType.trim().toLowerCase();
     debugPrint('[BG] reload sensor -> $sensorType');
     // clear caches so new files are re-evaluated
     fileHashes.clear();
@@ -149,12 +148,16 @@ void onStart(ServiceInstance service) async {
     }
   }
 
-  service.on('reload_sensor').listen((event) async {
+  service.on('reload_sensor').listen((dynamic event) async {
     try {
-      if (event is Map && event.containsKey('sensor_type')) {
-        await _updateSensorType(event['sensor_type']?.toString() ?? '');
+      if (event is Map) {
+        final map = event as Map;
+        final val = map['sensor_type'];
+        await updateSensorType(val?.toString() ?? '');
       } else if (event is String) {
-        await _updateSensorType(event);
+        await updateSensorType(event);
+      } else {
+        debugPrint('[BG] reload_sensor: unexpected event type: ${event.runtimeType}');
       }
     } catch (e) {
       debugPrint('[BG] reload_sensor handler error: $e');
@@ -176,7 +179,7 @@ void onStart(ServiceInstance service) async {
     final prefs = await SharedPreferences.getInstance();
     final s = prefs.getString('sensor_type') ?? '';
     if (s.trim().isNotEmpty) {
-      await _updateSensorType(s);
+      await updateSensorType(s);
     } else {
       // default: try to start BLE anyway (keeps prior behavior)
       try {
