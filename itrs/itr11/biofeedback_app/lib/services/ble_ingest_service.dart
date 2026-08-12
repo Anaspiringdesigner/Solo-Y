@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/ring_sample_packet.dart';
 import 'ring_ble_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
 
 void _log(String m) {
@@ -202,31 +203,46 @@ class BleIngestService {
     if (rows.isEmpty) return;
     try {
       final iso = DateTime.now().toIso8601String();
-      final filename = 'BLE_${iso}_HR.txt'.replaceAll(':', '-');
-      final temp = '$polarDir/.$filename.tmp';
-      final finalPath = '$polarDir/$filename';
 
-      const header = 'Phone timestamp;hr;hrv;br\n';
-      final tmpFile = File(temp);
-      await tmpFile.writeAsString(header + rows.join());
-      // atomic rename
-      try {
-        await tmpFile.rename(finalPath);
-      } catch (e) {
-        // fallback to copy+delete
-        await tmpFile.copy(finalPath);
+        // Determine filename based on selected sensor in SharedPreferences
+        String filename;
         try {
-          await tmpFile.delete();
-        } catch (_) {}
+          final prefs = await SharedPreferences.getInstance();
+          final sensor = prefs.getString('sensor_type') ?? '';
+          if (sensor.trim().toLowerCase().startsWith('esp')) {
+            filename = 'ESP_${iso}_esp.txt'.replaceAll(':', '-');
+          } else {
+            filename = 'BLE_${iso}_HR.txt'.replaceAll(':', '-');
+          }
+        } catch (e) {
+          // fallback
+          filename = 'BLE_${iso}_HR.txt'.replaceAll(':', '-');
+        }
+
+        final temp = '$polarDir/.$filename.tmp';
+        final finalPath = '$polarDir/$filename';
+
+        const header = 'Phone timestamp;hr;hrv;br\n';
+        final tmpFile = File(temp);
+        await tmpFile.writeAsString(header + rows.join());
+        // atomic rename
+        try {
+          await tmpFile.rename(finalPath);
+        } catch (e) {
+          // fallback to copy+delete
+          await tmpFile.copy(finalPath);
+          try {
+            await tmpFile.delete();
+          } catch (_) {}
+        }
+        _log('[BLE INGEST] Wrote HR file: $filename');
+        if (rmssd != null || sdnn != null) {
+          _log('[BLE INGEST] HRV RMSSD=${rmssd == null || rmssd.isNaN ? 'na' : rmssd.toStringAsFixed(1)} SDNN=${sdnn == null || sdnn.isNaN ? 'na' : sdnn.toStringAsFixed(1)}');
+        }
+      } catch (e) {
+        debugPrint('[BLE INGEST] write HR file error: $e');
       }
-      _log('[BLE INGEST] Wrote HR file: $filename');
-      if (rmssd != null || sdnn != null) {
-        _log('[BLE INGEST] HRV RMSSD=${rmssd == null || rmssd.isNaN ? 'na' : rmssd.toStringAsFixed(1)} SDNN=${sdnn == null || sdnn.isNaN ? 'na' : sdnn.toStringAsFixed(1)}');
-      }
-    } catch (e) {
-      debugPrint('[BLE INGEST] write HR file error: $e');
     }
-  }
 
 }
 
