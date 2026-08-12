@@ -12,8 +12,17 @@ class StartupRouter extends StatefulWidget {
 
 class _StartupRouterState extends State<StartupRouter> {
   Future<String?> _getChoice() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('sensor_type');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final val = prefs.getString('sensor_type');
+      debugPrint('[STARTUP] sensor_type from prefs: $val');
+      // Treat empty string as not set
+      if (val != null && val.trim().isEmpty) return null;
+      return val;
+    } catch (e) {
+      debugPrint('[STARTUP] error reading prefs: $e');
+      return null;
+    }
   }
 
   @override
