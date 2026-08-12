@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
-import '../constants.dart';
+import 'ble_ingest_service.dart';
 
 // ── Constants ──────────────────────────────────────────────
 const String polarDir        = '/sdcard/Download/Data_from_H10';
@@ -87,7 +87,13 @@ void onStart(ServiceInstance service) async {
   debugPrint('[BG] Data transfer service started');
 
   // Handle stop command
-  service.on('stop').listen((_) {
+  service.on('stop').listen((_) async {
+    // stop BLE ingest if running
+    try {
+      await BleIngestService().stop();
+    } catch (e) {
+      debugPrint('[BG] BLE stop error: $e');
+    }
     service.stopSelf();
     debugPrint('[BG] Service stopped');
   });
@@ -100,6 +106,13 @@ void onStart(ServiceInstance service) async {
         content: content,
       );
     }
+  }
+
+  // Start BLE ingest service (non-blocking). This will produce HR files in the same folder
+  try {
+    BleIngestService().start();
+  } catch (e) {
+    debugPrint('[BG] BLE ingest start failed: $e');
   }
 
   // ── Main polling loop ─────────────────────────────────

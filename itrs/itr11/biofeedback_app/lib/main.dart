@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:media_kit/media_kit.dart';
 import 'providers/biofeedback_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/startup_router.dart';
 import 'services/data_transfer_service.dart';
 import 'constants.dart';
 
@@ -38,7 +38,7 @@ class BiofeedbackApp extends StatelessWidget {
               const Color(AppConstants.bgColor),
           useMaterial3: true,
         ),
-        home: const HomeScreen(),
+        home: const StartupRouter(),
       ),
     );
   }

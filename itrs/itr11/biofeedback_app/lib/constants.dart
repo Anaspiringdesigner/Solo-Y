@@ -44,4 +44,7 @@ class AppConstants {
   static const List<String> interactionIcons = [
     '📄', '🌊', '⭕', '📹', '🌸',
   ];
+
+  // Enable extra verbose debug logging in non-release builds
+  static bool verboseLogging = false;
 }
