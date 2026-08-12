@@ -63,18 +63,18 @@ SessionContext(user_id::String) = SessionContext(
         "avg_br" => 0f0,
         "stress_score" => 0f0,
     ),
-    0,
+    -1,          # active_interaction: none yet
     false,
     0,
     nothing,
     nothing,
     0f0,
-    0,
+    -1,          # last_rl_action: none yet
     nothing,
     nothing,
     "none",
     0f0,
-    -1,
+    -1,          # pending_eval_action: none yet
     nothing,
     0f0,
     0f0,

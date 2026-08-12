@@ -86,6 +86,8 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
     local prev_state_key = nothing
     local reward = 0f0
     local was_holding = false
+    local baseline_hr = 0f0
+    local baseline_hrv = 0f0
 
     lock(sess.lock) do
         refresh_hold_state!(sess, settings)
@@ -95,17 +97,30 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
         prev_state_key = isempty(sess.last_rl_state_key) ? nothing : sess.last_rl_state_key
         reward = sess.last_reward
         was_holding = sess.is_holding
+        baseline_hr = sess.pending_eval_baseline_hr
+        baseline_hrv = sess.pending_eval_baseline_hrv
     end
 
     if !was_holding
         return Dict("ok" => false, "reason" => "not_holding")
     end
 
+    # Extract TCN features for richer state
     tcn = FeatureService.encode_tcn_features(sess)
     feats["tcn_hr"] = get(tcn, "tcn_hr", get(feats, "avg_hr", 0f0))
     feats["tcn_hrv"] = get(tcn, "tcn_hrv", get(feats, "avg_hrv", 0f0))
     feats["tcn_br"] = get(tcn, "tcn_br", get(feats, "avg_br", 0f0))
     feats["stress_score"] = get(tcn, "stress_score", get(feats, "stress_score", 0f0))
+
+    # Compute reward based on improvement since the last action baseline
+    if prev_action >= 0 && prev_state_key !== nothing
+        curr_hr = get(feats, "tcn_hr", 0f0)
+        curr_hrv = get(feats, "tcn_hrv", 0f0)
+        reward = RLService.compute_reward(Float32(baseline_hr), Float32(baseline_hrv), curr_hr, curr_hrv)
+        lock(sess.lock) do
+            sess.last_reward = reward
+        end
+    end
 
     local action = -1
     local score = 0f0
@@ -128,7 +143,7 @@ function maybe_run_live_pipeline!(sess::Types.SessionContext, settings::Config.S
                 trig;
                 prev_state_key = prev_state_key,
                 prev_action = prev_action,
-                reward = prev_state_key === nothing ? nothing : reward,
+                reward = (prev_state_key === nothing || prev_action < 0) ? nothing : reward,
             )
         end
 

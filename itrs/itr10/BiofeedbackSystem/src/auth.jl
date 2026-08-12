@@ -51,7 +51,20 @@ function init_google_verifier!(settings)
 end
 
 function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
-    if settings.auth_mode != "google_id_token"
+    mode = lowercase(settings.auth_mode)
+
+    # Dev-friendly modes
+    if mode == "none"
+        # Prefer header if present; else static dev id
+        uid = HTTP.header(req, settings.dev_user_id_header, "")
+        return isempty(uid) ? settings.dev_static_user_id : uid
+    elseif mode == "dev_header"
+        uid = HTTP.header(req, settings.dev_user_id_header, "")
+        return isempty(uid) ? nothing : uid
+    end
+
+    # Production mode: Google ID token
+    if mode != "google_id_token"
         return nothing
     end
 
@@ -63,37 +76,28 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
     try
         isempty(settings.google_audience) && error("google_audience_not_configured")
 
-        # --- split JWT ---
         parts = split(token, '.')
         length(parts) == 3 || error("invalid_jwt_format")
 
-        # --- decode header ---
+        # Decode header
         h = replace(String(parts[1]), '-' => '+', '_' => '/')
         hpad = mod(4 - mod(length(h), 4), 4)
         hpad > 0 && (h *= repeat("=", hpad))
         header_obj = JSON3.read(String(Base64.base64decode(h)))
+        header = Dict{String, Any}([(string(k), v) for (k,v) in pairs(header_obj)])
 
-        header = Dict{String, Any}()
-        for (k, v) in pairs(header_obj)
-            header[string(k)] = v
-        end
-
-        # --- decode payload/claims ---
+        # Decode payload
         p = replace(String(parts[2]), '-' => '+', '_' => '/')
         ppad = mod(4 - mod(length(p), 4), 4)
         ppad > 0 && (p *= repeat("=", ppad))
         claims_obj = JSON3.read(String(Base64.base64decode(p)))
-
-        claims = Dict{String, Any}()
-        for (k, v) in pairs(claims_obj)
-            claims[string(k)] = v
-        end
+        claims = Dict{String, Any}([(string(k), v) for (k,v) in pairs(claims_obj)])
 
         kid = haskey(header, "kid") ? String(header["kid"]) : error("jwt_missing_kid")
         alg = haskey(header, "alg") ? String(header["alg"]) : ""
         alg == "RS256" || error("unsupported_jwt_alg")
 
-        # --- refresh JWKS if stale ---
+        # Refresh JWKS if stale
         gv = _google_verifier_ref[]
         need_refresh = lock(gv.lock) do
             gv.fetched_at === nothing || Dates.value(now() - gv.fetched_at) > settings.google_jwks_refresh_sec * 1000
@@ -103,11 +107,9 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
             resp = HTTP.get(settings.google_jwks_url)
             resp.status == 200 || error("jwks_fetch_failed:$(resp.status)")
             parsed = JSON3.read(resp.body)
-
             keys = haskey(parsed, "keys") ? parsed["keys"] :
                    (haskey(parsed, :keys) ? parsed[:keys] : nothing)
             keys === nothing && error("jwks_missing_keys")
-
             fresh = Dict{String, Any}()
             for k in keys
                 kk = haskey(k, "kid") ? String(k["kid"]) :
@@ -115,7 +117,6 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
                 isempty(kk) && continue
                 fresh[kk] = k
             end
-
             lock(gv.lock) do
                 gv.jwks = fresh
                 gv.fetched_at = now()
@@ -127,7 +128,7 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
         end
         jwk === nothing && error("unknown_kid")
 
-        # --- best-effort signature verification ---
+        # Best-effort signature verification
         try
             if isdefined(JWTs, :verify)
                 try
@@ -144,11 +145,9 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
             end
         catch e
             println("[AUTH] signature verification warning: $(string(e))")
-            # Uncomment if you want strict signature enforcement:
-            # rethrow(e)
         end
 
-        # --- claims validation ---
+        # Claims validation
         iss = haskey(claims, "iss") ? String(claims["iss"]) : ""
         iss_ok = any(x -> x == iss, settings.google_issuers)
         iss_ok || error("invalid_issuer")
@@ -171,7 +170,6 @@ function extract_user_id(req::HTTP.Request, settings)::Union{String, Nothing}
         if haskey(claims, "nbf")
             Int(claims["nbf"]) - skew <= now_unix || error("token_not_yet_valid")
         end
-
         if haskey(claims, "iat")
             Int(claims["iat"]) - skew <= now_unix || error("token_issued_in_future")
         end

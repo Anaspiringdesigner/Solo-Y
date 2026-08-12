@@ -62,9 +62,10 @@ end
 
 function idem_mark!(rc::RedisClient, key::String, ttl_sec::Int)::Bool
     try
-        # SET key 1 EX ttl NX
+        # SET key 1 EX ttl NX -> +OK if newly set; $-1 when already exists (Redis returns nil)
         resp = _redis_cmd(rc, ["SET", key, "1", "EX", string(ttl_sec), "NX"])
-        return occursin("+OK", resp) || occursin("\$-1", resp) == false
+        rc.last_error = nothing
+        return occursin("+OK", resp)
     catch e
         rc.available = false
         rc.last_error = string(e)
