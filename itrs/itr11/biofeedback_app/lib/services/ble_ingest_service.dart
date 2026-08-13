@@ -10,7 +10,9 @@ import '../models/ring_sample_packet.dart';
 import 'ring_ble_service.dart';
 
 void _log(String m) {
-  if (AppConstants.verboseLogging || !kReleaseMode) debugPrint(m);
+  if (AppConstants.verboseLogging || !kReleaseMode) {
+    debugPrint(m);
+  }
 }
 
 const String polarDir = '/sdcard/Download/Data_from_H10';
@@ -152,7 +154,7 @@ class BleIngestService {
       return;
     }
 
-    final window = min(rrs.length, 60);
+    final int window = min(rrs.length, 60);
     final recentRRs = rrs.sublist(rrs.length - window);
 
     final rmssd = _computeRmssd(recentRRs);
@@ -196,8 +198,9 @@ class BleIngestService {
   Future<void> _flushEspFile() async {
     if (_recentRows.isEmpty) return;
 
+    const String header = 'timestamp;hr;hrv;br';
     final buffer = StringBuffer();
-    buffer.writeln('timestamp;hr;hrv;br');
+    buffer.writeln(header);
     for (final row in _recentRows) {
       buffer.writeln(row);
     }

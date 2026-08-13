@@ -23,18 +23,22 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
     if (_saving) return;
     setState(() => _saving = true);
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('sensor_type', choice);
 
       if (choice == 'esp32') {
         final ok = await PermissionService.ensureBlePermissions(context);
+        if (!mounted) return;
         if (!ok) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Bluetooth permissions are required for ESP32 sensor')),
-            );
-          }
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Bluetooth permissions are required for ESP32 sensor'),
+            ),
+          );
           setState(() => _saving = false);
           return;
         }
@@ -49,17 +53,19 @@ class _SensorSelectionScreenState extends State<SensorSelectionScreen> {
       } catch (_) {}
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
+      navigator.pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text('Setup error: $e')),
         );
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 

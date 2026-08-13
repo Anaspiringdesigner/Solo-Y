@@ -46,12 +46,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _bootstrapped = true;
 
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
     _sensorType = (prefs.getString('sensor_type') ?? '').trim().toLowerCase();
 
     context.read<BiofeedbackProvider>().startPolling();
     await Permission.notification.request();
     await Permission.manageExternalStorage.request();
+
+    if (!mounted) return;
     await context.read<BiofeedbackProvider>().startDataTransfer();
+    if (!mounted) return;
 
     if (_sensorType.startsWith('esp')) {
       setState(() => _bleRunning = BleIngestService().isRunning);
@@ -291,11 +296,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: BoxDecoration(
                             color: Colors.purple.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: Colors.purple.withValues(alpha: 0.3),
+                            ),
                           ),
                           child: Text(
                             bio.calendarMessage,
-                            style: GoogleFonts.inter(color: Colors.purpleAccent, fontSize: 13),
+                            style: GoogleFonts.inter(
+                              color: Colors.purpleAccent,
+                              fontSize: 13,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -309,8 +319,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(AppConstants.accentColor).withValues(alpha: 0.15),
                             foregroundColor: const Color(AppConstants.accentColor),
-                            side: const BorderSide(color: Color(AppConstants.accentColor), width: 1),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                            side: const BorderSide(
+                              color: Color(AppConstants.accentColor),
+                              width: 1,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(32),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           child: bio.isTriggerLoading
@@ -351,7 +366,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   : Colors.purpleAccent,
                               width: 1,
                             ),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(32),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           child: Text(
@@ -398,7 +415,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: BoxDecoration(
                             color: const Color(AppConstants.surfaceColor),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(AppConstants.cardBorder)),
+                            border: Border.all(
+                              color: const Color(AppConstants.cardBorder),
+                            ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,

@@ -9,8 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'ble_ingest_service.dart';
 import '../constants.dart';
+import 'ble_ingest_service.dart';
 
 const String polarDir = '/sdcard/Download/Data_from_H10';
 const int pollIntervalSec = 5;
@@ -119,7 +119,8 @@ void onStart(ServiceInstance service) async {
   service.on('reload_sensor').listen((event) async {
     try {
       if (event is Map) {
-        await syncSensorType((event['sensor_type'] ?? '').toString());
+        final dynamic sensorValue = event['sensor_type'];
+        await syncSensorType((sensorValue ?? '').toString());
       } else {
         await syncSensorType(event?.toString() ?? '');
       }
@@ -166,9 +167,9 @@ void onStart(ServiceInstance service) async {
       }
 
       if (files.isEmpty) {
-        updateNotification(sensorType.startsWith('esp')
-            ? 'Waiting for ESP32 vitals file'
-            : 'No vitals files found');
+        updateNotification(
+          sensorType.startsWith('esp') ? 'Waiting for ESP32 vitals file' : 'No vitals files found',
+        );
         return;
       }
 
@@ -283,21 +284,28 @@ List<_HRRow> _parseVitalsFile(String content) {
   for (final line in lines) {
     final l = line.trim();
     if (l.isEmpty) continue;
-    final lower = l.toLowerCase();
-    if (lower.startsWith('polar_h10')) continue;
-    if (lower.startsWith('phone timestamp')) continue;
-    if (lower.startsWith('timestamp;')) continue;
+    if (l.startsWith('Phone timestamp')) continue;
+    if (l.startsWith('Polar_H10')) continue;
+    if (l.toLowerCase().startsWith('timestamp;hr;hrv;br')) continue;
 
     final parts = l.split(';');
     if (parts.length < 2) continue;
 
     try {
       final ts = DateTime.parse(parts[0].trim());
-      final hr = parts.length > 1 && parts[1].trim().isNotEmpty ? double.parse(parts[1].trim()) : double.nan;
-      final hrv = parts.length > 2 && parts[2].trim().isNotEmpty ? double.parse(parts[2].trim()) : double.nan;
-      final br = parts.length > 3 && parts[3].trim().isNotEmpty ? double.parse(parts[3].trim()) : double.nan;
+      final hr = parts.length > 1 && parts[1].trim().isNotEmpty
+          ? double.parse(parts[1].trim())
+          : double.nan;
+      final hrv = parts.length > 2 && parts[2].trim().isNotEmpty
+          ? double.parse(parts[2].trim())
+          : double.nan;
+      final br = parts.length > 3 && parts[3].trim().isNotEmpty
+          ? double.parse(parts[3].trim())
+          : double.nan;
 
-      if (hr.isNaN || hr < 30 || hr > 220) continue;
+      if (hr.isNaN || hr < 30 || hr > 220) {
+        continue;
+      }
 
       rows.add(_HRRow(
         ts,
@@ -305,7 +313,9 @@ List<_HRRow> _parseVitalsFile(String content) {
         hrv.isNaN || hrv < 1 || hrv > 250 ? double.nan : hrv,
         br.isNaN || br < 4 || br > 60 ? double.nan : br,
       ));
-    } catch (_) {}
+    } catch (_) {
+      continue;
+    }
   }
 
   rows.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -333,12 +343,14 @@ List<_HRRow> _resampleTo1s(List<_HRRow> rows) {
 
   _interpolate(hrGrid, 10);
 
-  if (hrvGrid.where((v) => v.isNaN).length / secs > 0.5) {
+  final hrvNanCount = hrvGrid.where((v) => v.isNaN).length;
+  if (hrvNanCount / secs > 0.5) {
     _estimateHRV(hrGrid, hrvGrid);
   }
   _interpolate(hrvGrid, 20);
 
-  if (brGrid.where((v) => v.isNaN).length / secs > 0.5) {
+  final brNanCount = brGrid.where((v) => v.isNaN).length;
+  if (brNanCount / secs > 0.5) {
     _estimateBR(hrGrid, brGrid);
   }
   _interpolate(brGrid, 20);
@@ -346,7 +358,12 @@ List<_HRRow> _resampleTo1s(List<_HRRow> rows) {
   final result = <_HRRow>[];
   for (int i = 0; i < secs; i++) {
     if (!hrGrid[i].isNaN && !hrvGrid[i].isNaN && !brGrid[i].isNaN) {
-      result.add(_HRRow(start.add(Duration(seconds: i)), hrGrid[i], hrvGrid[i], brGrid[i]));
+      result.add(_HRRow(
+        start.add(Duration(seconds: i)),
+        hrGrid[i],
+        hrvGrid[i],
+        brGrid[i],
+      ));
     }
   }
   return result;
@@ -389,6 +406,7 @@ void _interpolate(List<double> vals, int limit) {
 
 void _estimateHRV(List<double> hr, List<double> hrv) {
   const window = 60;
+
   for (int i = 0; i < hr.length; i++) {
     if (!hrv[i].isNaN) continue;
     final start = (i - window + 1).clamp(0, i);
@@ -400,12 +418,15 @@ void _estimateHRV(List<double> hr, List<double> hrv) {
 
     final diffs = <double>[];
     for (int k = 1; k < rr.length; k++) {
-      diffs.add(rr[k] - rr[k - 1]);
+      final d = rr[k] - rr[k - 1];
+      diffs.add(d);
     }
     if (diffs.length < 5) continue;
 
-    final meanSq = diffs.map((d) => d * d).reduce((a, b) => a + b) / diffs.length;
-    hrv[i] = math.sqrt(meanSq).clamp(5.0, 250.0);
+    final sq = diffs.map((d) => d * d).toList();
+    final meanSq = sq.reduce((a, b) => a + b) / sq.length;
+    final rmssd = meanSq > 0 ? math.sqrt(meanSq) : 0.0;
+    hrv[i] = rmssd.clamp(5.0, 250.0);
   }
 }
 
@@ -423,24 +444,29 @@ void _estimateBR(List<double> hr, List<double> br) {
 
   final validSmooth = smooth.where((v) => !v.isNaN).toList();
   if (validSmooth.isEmpty) return;
+
   validSmooth.sort();
   final hrMin = validSmooth[(validSmooth.length * 0.05).floor()];
   final hrMax = validSmooth[(validSmooth.length * 0.95).floor()];
   final denom = (hrMax - hrMin).abs() < 1e-6 ? 1.0 : hrMax - hrMin;
 
   for (int i = 0; i < br.length; i++) {
-    if (!br[i].isNaN || smooth[i].isNaN) continue;
+    if (!br[i].isNaN) continue;
+    if (smooth[i].isNaN) continue;
     br[i] = (10.0 + (smooth[i] - hrMin) * (10.0 / denom)).clamp(8.0, 24.0);
   }
 }
 
 List<_Window> _buildWindows(List<_HRRow> rows) {
   final windows = <_Window>[];
-  if (rows.length < windowSeconds) return windows;
+  final n = rows.length;
+
+  if (n < windowSeconds) return windows;
 
   int s = 0;
-  while (s + windowSeconds <= rows.length) {
+  while (s + windowSeconds <= n) {
     final chunk = rows.sublist(s, s + windowSeconds);
+
     final hrList = chunk.map((r) => r.hr).toList();
     final hrvList = chunk.map((r) => r.hrv).toList();
     final brList = chunk.map((r) => r.br).toList();
@@ -469,7 +495,10 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
 Future<bool> _postWindows(List<_Window> windows) async {
   final serverUrl = '${AppConstants.serverBase}/ingest';
   const maxRetries = 3;
-  final payload = jsonEncode({'windows': windows.map((w) => w.toJson()).toList()});
+
+  final payload = jsonEncode({
+    'windows': windows.map((w) => w.toJson()).toList(),
+  });
 
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -481,17 +510,17 @@ Future<bool> _postWindows(List<_Window> windows) async {
           )
           .timeout(const Duration(seconds: 30));
 
-      debugPrint('[BG] POST $serverUrl -> ${resp.statusCode}');
+      debugPrint('[BG] POST /ingest -> ${resp.statusCode}');
       if (resp.statusCode == 200) return true;
     } catch (e) {
       debugPrint('[BG POST ERROR] attempt $attempt -> $e');
     }
 
     if (attempt < maxRetries) {
-      await Future.delayed(Duration(milliseconds: 500 * (1 << (attempt - 1))));
+      final backoffMs = 500 * (1 << (attempt - 1));
+      await Future.delayed(Duration(milliseconds: backoffMs));
     }
   }
 
   return false;
 }
- 

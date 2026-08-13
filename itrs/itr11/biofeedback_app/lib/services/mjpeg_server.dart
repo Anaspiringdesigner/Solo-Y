@@ -232,9 +232,23 @@ class MjpegServer {
         int g = (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128)).round();
         int b = (yp + 1.772 * (up - 128)).round();
 
-        if (r < 0) r = 0; else if (r > 255) r = 255;
-        if (g < 0) g = 0; else if (g > 255) g = 255;
-        if (b < 0) b = 0; else if (b > 255) b = 255;
+        if (r < 0) {
+          r = 0;
+        } else if (r > 255) {
+          r = 255;
+        }
+
+        if (g < 0) {
+          g = 0;
+        } else if (g > 255) {
+          g = 255;
+        }
+
+        if (b < 0) {
+          b = 0;
+        } else if (b > 255) {
+          b = 255;
+        }
 
         out.setPixelRgb(x, y, r, g, b);
       }
