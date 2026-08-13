@@ -12,7 +12,6 @@ module RLEnvironment
 using ReinforcementLearning
 using Random
 using Statistics
-using Dates
 
 # ── Constants ────────────────────────────────────────────────
 const N_ACTIONS        = 5
@@ -28,7 +27,6 @@ const W_HRV = 0.8f0
 const W_HR  = 0.2f0
 
 const HOLD_STEPS = 36
-const HOLD_DURATION = Minute(3)
 
 const TRIGGER_CALENDAR = 0
 const TRIGGER_BIO      = 1
@@ -72,8 +70,6 @@ mutable struct BiofeedbackEnv <: AbstractEnv
     is_terminated   :: Bool
     total_steps     :: Int
     pending_trigger :: Union{Trigger, Nothing}
-    hold_started_at :: Union{DateTime, Nothing}
-    hold_end_at     :: Union{DateTime, Nothing}
 end
 
 # ── Constructor ──────────────────────────────────────────────
@@ -98,8 +94,6 @@ function BiofeedbackEnv()
         0,
         false,
         0,
-        nothing,
-        nothing,
         nothing
     )
 end
@@ -126,8 +120,6 @@ function RLBase.reset!(env::BiofeedbackEnv)
     env.reward_samples  = RewardSample[]
     env.pending_trigger = nothing
     env.stress_counter  = 0
-    env.hold_started_at = nothing
-    env.hold_end_at     = nothing
     println("[ENV] Reset")
     return nothing
 end
@@ -240,17 +232,14 @@ function (env::BiofeedbackEnv)(action::Int)
     action_idx         = action - 1
     env.current_action = action_idx
     env.is_holding     = true
+    env.hold_counter   = HOLD_STEPS
     env.reward_samples = RewardSample[]
-
-    env.hold_started_at = now()
-    env.hold_end_at     = env.hold_started_at + HOLD_DURATION
-    env.hold_counter    = HOLD_STEPS
 
     push!(env.reward_samples,
           RewardSample(env.avg_hr, env.avg_hrv))
 
     println("[ENV] Action taken: $(action_idx) | " *
-            "Hold for $(HOLD_DURATION) (target $(HOLD_STEPS) UI steps)")
+            "Hold for $(HOLD_STEPS) steps (3 min)")
 
     env.total_steps += 1
 end
@@ -275,34 +264,17 @@ function ingest_window!(env      :: BiofeedbackEnv,
         push!(env.reward_samples,
               RewardSample(avg_hr, avg_hrv))
 
-        # Derive hold_counter from wall-clock remaining time for UI compatibility.
-        if env.hold_end_at !== nothing
-            remaining_ms = Dates.value(env.hold_end_at - now())  # milliseconds
-            remaining_ms = max(0, remaining_ms)
-            # Map remaining wall time onto HOLD_STEPS buckets (5s per step over 180s).
-            step_ms = Dates.value(HOLD_DURATION) / max(1, HOLD_STEPS)
-            env.hold_counter = Int(cld(remaining_ms, max(1, round(Int, step_ms))))
-            env.hold_counter = clamp(env.hold_counter, 0, HOLD_STEPS)
-        else
-            env.hold_counter = max(env.hold_counter - 1, 0)
-        end
-
+        env.hold_counter -= 1
         println("[ENV] Hold: $(env.hold_counter)/" *
                 "$(HOLD_STEPS) steps remaining")
 
-        hold_done = env.hold_end_at !== nothing ? (now() >= env.hold_end_at) :
-                    (env.hold_counter <= 0)
-
-        if hold_done
+        if env.hold_counter <= 0
             env.last_reward   = compute_hold_reward(env.reward_samples)
             # Ensure terminal state reflects latest end-of-hold observation.
             env.state         = build_state(z, avg_hr, avg_hrv,
                                             avg_br, env.trigger_type)
             env.is_holding    = false
             env.is_terminated = true
-            env.hold_counter  = 0
-            env.hold_started_at = nothing
-            env.hold_end_at     = nothing
 
             println("[ENV] ✅ Hold complete | " *
                     "reward=$(round(env.last_reward, digits=4)) | " *
