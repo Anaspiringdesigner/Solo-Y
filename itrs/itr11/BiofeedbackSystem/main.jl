@@ -1,16 +1,9 @@
 # ============================================================
 # main.jl
 # Biofeedback System — Full Pipeline
-# - App-visible state includes both last reward and cumulative reward
-# - Cumulative reward is sourced from RL agent state
-# - Restart continuity loads RL checkpoint/runtime and encoder runtime
-#
-# UPDATE:
-#   Robust hold pacing (Idea B2):
-#   - Process ALL windows for encoding (TCNEncoder) to keep latest latent.
-#   - During an active hold, only advance the RL environment (ingest_window!)
-#     at most once every 5 seconds of wall-clock time.
-#   - This prevents burst ingestion from collapsing the 3-minute, 36-step hold.
+# - Robust hold pacing: advance at most once every 5s during holds.
+# - Persist & restore cumulative_reward across restarts.
+# - Push restored cumulative_reward to TouchDesigner on startup.
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -55,6 +48,39 @@ end
     LAST_HOLD_STEP_AT[] = nothing
 end
 
+# ─────────────────────────────────────────────────────────────
+# Runtime persistence for cumulative_reward
+# ─────────────────────────────────────────────────────────────
+const RUNTIME_STATE_PATH = normpath(joinpath(@__DIR__, "models", "agent_runtime_state.json"))
+
+function _load_runtime_cumulative_reward()::Union{Nothing,Float32}
+    try
+        if isfile(RUNTIME_STATE_PATH)
+            txt = String(read(RUNTIME_STATE_PATH))
+            obj = JSON3.read(txt)
+            if haskey(obj, "cumulative_reward")
+                return Float32(obj["cumulative_reward"])
+            end
+        end
+    catch e
+        println("[STATE] Load error: $e")
+    end
+    return nothing
+end
+
+function _save_runtime_cumulative_reward(val::Float32)
+    try
+        mkpath(dirname(RUNTIME_STATE_PATH))
+        payload = Dict(
+            "cumulative_reward" => val,
+            "updated_at"        => Dates.format(Dates.now(), dateformat"yyyy-mm-ddTHH:MM:SS")
+        )
+        write(RUNTIME_STATE_PATH, JSON3.write(payload))
+    catch e
+        println("[STATE] Save error: $e")
+    end
+end
+
 mutable struct AppState
     avg_hr             :: Float32
     avg_hrv            :: Float32
@@ -82,7 +108,7 @@ function handle_ingest(req::HTTP.Request)
         ingested = 0
 
         for w in windows
-            # Always encode every window to keep the latest latent up to date.
+            # Always encode every window to keep latest latent up to date.
             hr  = Float32.(w["hr"])
             hrv = Float32.(w["hrv"])
             br  = Float32.(w["br"])
@@ -98,21 +124,19 @@ function handle_ingest(req::HTTP.Request)
             result === nothing && continue
             ingested += 1
 
-            # Prepare values (using encoder outputs to keep UI fresh).
+            # Prepared values for env/UI
             avg_hr  = Float32(result["avg_hr"])
             avg_hrv = Float32(result["avg_hrv"])
             avg_br  = Float32(result["avg_br"])
             z       = Float32.(result["z"])
             end_iso = String(result["end_time"])
 
-            # Gate environment stepping during active holds by wall-clock.
+            # Gate environment stepping during holds by wall-clock.
             now_dt = _now_dt()
             fired  = false
             trigger = nothing
 
             if ENV_INSTANCE[].is_holding
-                # Only advance the environment (and thus the hold counter)
-                # once every HOLD_STEP_PERIOD_MS.
                 if _can_advance_hold(now_dt)
                     fired, trigger = RLEnvironment.ingest_window!(
                         ENV_INSTANCE[],
@@ -122,12 +146,9 @@ function handle_ingest(req::HTTP.Request)
                     )
                     _mark_hold_step(now_dt)
                 else
-                    # Skip advancing the environment this window,
-                    # but we still update UI state from encoder output below.
                     fired = false
                 end
             else
-                # Not holding: process normally (no rate limit).
                 fired, trigger = RLEnvironment.ingest_window!(
                     ENV_INSTANCE[],
                     z,
@@ -136,15 +157,14 @@ function handle_ingest(req::HTTP.Request)
                 )
             end
 
-            # Update app-visible metrics regardless of whether we advanced env.
+            # Update app-visible metrics.
             APP_STATE.avg_hr          = avg_hr
             APP_STATE.avg_hrv         = avg_hrv
             APP_STATE.avg_br          = avg_br
             APP_STATE.is_holding      = ENV_INSTANCE[].is_holding
             APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
 
-            # While holding, keep TD updated with vitals/progress (progress
-            # only advances on gated steps).
+            # While holding, keep TD overlays updated.
             if ENV_INSTANCE[].is_holding
                 TDBridge.send_vitals(avg_hr, avg_hrv, avg_br)
                 TDBridge.send_hold_progress(
@@ -153,7 +173,7 @@ function handle_ingest(req::HTTP.Request)
                 )
             end
 
-            # If a hold has just completed, perform agent update.
+            # Hold complete → agent update, persist reward, reset overlays.
             if ENV_INSTANCE[].is_terminated
                 println("[MAIN] Hold complete — training agent")
                 action = RLAgent.agent_step!(
@@ -170,20 +190,17 @@ function handle_ingest(req::HTTP.Request)
                 APP_STATE.active_interaction = action
                 APP_STATE.last_reward        = ENV_INSTANCE[].last_reward
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+                _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
                 # Reset TD overlays
                 TDBridge.send_vitals(0f0, 0f0, 0f0)
                 TDBridge.send_hold_progress(0, RLEnvironment.HOLD_STEPS)
 
-                # Reset termination flag
                 ENV_INSTANCE[].is_terminated = false
-
-                # Reset pacing clock after a hold ends
                 _reset_hold_step_clock()
             end
 
-            # If a bio trigger fired and we were not already holding,
-            # start a new hold via agent action selection.
+            # Trigger detected → start new hold, persist reward.
             if fired && !ENV_INSTANCE[].is_holding
                 println("[MAIN] Bio trigger — agent selecting action")
                 action = RLAgent.agent_step!(
@@ -201,6 +218,7 @@ function handle_ingest(req::HTTP.Request)
                 (ENV_INSTANCE[])(action + 1)
                 APP_STATE.active_interaction = action
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+                _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
                 # Allow the first hold step to occur without delay.
                 _reset_hold_step_clock()
@@ -267,8 +285,9 @@ function handle_trigger(req::HTTP.Request)
             (ENV_INSTANCE[])(action + 1)
             APP_STATE.active_interaction = action
             APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+            _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
-            # Start-of-hold: allow the first paced step without delay
+            # Start-of-hold: allow first paced step without delay
             _reset_hold_step_clock()
 
             return HTTP.Response(200,
@@ -425,7 +444,16 @@ function main()
     println("\n[INIT] Starting RL Agent...")
     AGENT_INSTANCE[] = RLAgent.init_agent(load_ckpt=true)
 
-    # Restore app-visible cumulative reward from RL state immediately on boot.
+    # Restore cumulative_reward: prefer runtime file; fall back to agent's.
+    restored = _load_runtime_cumulative_reward()
+    if restored !== nothing
+        AGENT_INSTANCE[].cumulative_reward = restored
+        println("[INIT] Restored cumulative_reward from runtime file: $(restored)")
+    else
+        println("[INIT] No runtime file found; using agent state: $(AGENT_INSTANCE[].cumulative_reward)")
+    end
+
+    # Reflect in app state
     APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
 
     println("\n[INIT] Starting RL Environment...")
@@ -436,6 +464,24 @@ function main()
 
     println("\n[INIT] Data transfer via Flutter app")
     println("  → Start data transfer in the Flutter app")
+
+    # Push initial state to TouchDesigner so UI shows correct cumulative_reward.
+    try
+        TDBridge.send_action(
+            APP_STATE.active_interaction,
+            APP_STATE.avg_hr,
+            APP_STATE.avg_hrv,
+            APP_STATE.avg_br,
+            APP_STATE.last_reward,
+            APP_STATE.cumulative_reward,
+            2,
+            false,
+            0
+        )
+        println("[INIT] Pushed initial state to TouchDesigner.")
+    catch e
+        println("[INIT] Could not push initial state to TD: $e")
+    end
 
     println("\n[INIT] HTTP server starting on port $(BRAIN_PORT)...")
     println("  POST /ingest             ← windows from DataStreamer")
