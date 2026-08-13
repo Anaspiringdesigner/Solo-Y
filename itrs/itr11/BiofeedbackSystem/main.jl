@@ -4,6 +4,13 @@
 # - App-visible state includes both last reward and cumulative reward
 # - Cumulative reward is sourced from RL agent state
 # - Restart continuity loads RL checkpoint/runtime and encoder runtime
+#
+# UPDATE:
+#   Robust hold pacing (Idea B2):
+#   - Process ALL windows for encoding (TCNEncoder) to keep latest latent.
+#   - During an active hold, only advance the RL environment (ingest_window!)
+#     at most once every 5 seconds of wall-clock time.
+#   - This prevents burst ingestion from collapsing the 3-minute, 36-step hold.
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -23,6 +30,30 @@ using Sockets
 using Dates
 
 const BRAIN_PORT = 8000
+
+# ─────────────────────────────────────────────────────────────
+# Hold pacing: allow one "effective" step every 5 seconds
+# ─────────────────────────────────────────────────────────────
+const HOLD_STEP_PERIOD_MS = 5_000
+const LAST_HOLD_STEP_AT = Ref{Union{Nothing,DateTime}}(nothing)
+
+@inline function _now_dt()::DateTime
+    Dates.now()
+end
+
+@inline function _can_advance_hold(now_dt::DateTime)::Bool
+    last = LAST_HOLD_STEP_AT[]
+    last === nothing && return true
+    return now_dt - last >= Millisecond(HOLD_STEP_PERIOD_MS)
+end
+
+@inline function _mark_hold_step(now_dt::DateTime)
+    LAST_HOLD_STEP_AT[] = now_dt
+end
+
+@inline function _reset_hold_step_clock()
+    LAST_HOLD_STEP_AT[] = nothing
+end
 
 mutable struct AppState
     avg_hr             :: Float32
@@ -51,6 +82,7 @@ function handle_ingest(req::HTTP.Request)
         ingested = 0
 
         for w in windows
+            # Always encode every window to keep the latest latent up to date.
             hr  = Float32.(w["hr"])
             hrv = Float32.(w["hrv"])
             br  = Float32.(w["br"])
@@ -64,36 +96,64 @@ function handle_ingest(req::HTTP.Request)
             )
 
             result === nothing && continue
+            ingested += 1
 
-            z = Float32.(result["z"])
+            # Prepare values (using encoder outputs to keep UI fresh).
+            avg_hr  = Float32(result["avg_hr"])
+            avg_hrv = Float32(result["avg_hrv"])
+            avg_br  = Float32(result["avg_br"])
+            z       = Float32.(result["z"])
+            end_iso = String(result["end_time"])
 
-            fired, trigger = RLEnvironment.ingest_window!(
-                ENV_INSTANCE[],
-                z,
-                Float32(result["avg_hr"]),
-                Float32(result["avg_hrv"]),
-                Float32(result["avg_br"]),
-                String(result["end_time"])
-            )
+            # Gate environment stepping during active holds by wall-clock.
+            now_dt = _now_dt()
+            fired  = false
+            trigger = nothing
 
-            APP_STATE.avg_hr          = Float32(result["avg_hr"])
-            APP_STATE.avg_hrv         = Float32(result["avg_hrv"])
-            APP_STATE.avg_br          = Float32(result["avg_br"])
+            if ENV_INSTANCE[].is_holding
+                # Only advance the environment (and thus the hold counter)
+                # once every HOLD_STEP_PERIOD_MS.
+                if _can_advance_hold(now_dt)
+                    fired, trigger = RLEnvironment.ingest_window!(
+                        ENV_INSTANCE[],
+                        z,
+                        avg_hr, avg_hrv, avg_br,
+                        end_iso
+                    )
+                    _mark_hold_step(now_dt)
+                else
+                    # Skip advancing the environment this window,
+                    # but we still update UI state from encoder output below.
+                    fired = false
+                end
+            else
+                # Not holding: process normally (no rate limit).
+                fired, trigger = RLEnvironment.ingest_window!(
+                    ENV_INSTANCE[],
+                    z,
+                    avg_hr, avg_hrv, avg_br,
+                    end_iso
+                )
+            end
+
+            # Update app-visible metrics regardless of whether we advanced env.
+            APP_STATE.avg_hr          = avg_hr
+            APP_STATE.avg_hrv         = avg_hrv
+            APP_STATE.avg_br          = avg_br
             APP_STATE.is_holding      = ENV_INSTANCE[].is_holding
             APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
 
+            # While holding, keep TD updated with vitals/progress (progress
+            # only advances on gated steps).
             if ENV_INSTANCE[].is_holding
-                TDBridge.send_vitals(
-                    Float32(result["avg_hr"]),
-                    Float32(result["avg_hrv"]),
-                    Float32(result["avg_br"])
-                )
+                TDBridge.send_vitals(avg_hr, avg_hrv, avg_br)
                 TDBridge.send_hold_progress(
                     ENV_INSTANCE[].hold_counter,
                     RLEnvironment.HOLD_STEPS
                 )
             end
 
+            # If a hold has just completed, perform agent update.
             if ENV_INSTANCE[].is_terminated
                 println("[MAIN] Hold complete — training agent")
                 action = RLAgent.agent_step!(
@@ -110,11 +170,20 @@ function handle_ingest(req::HTTP.Request)
                 APP_STATE.active_interaction = action
                 APP_STATE.last_reward        = ENV_INSTANCE[].last_reward
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+
+                # Reset TD overlays
                 TDBridge.send_vitals(0f0, 0f0, 0f0)
                 TDBridge.send_hold_progress(0, RLEnvironment.HOLD_STEPS)
+
+                # Reset termination flag
                 ENV_INSTANCE[].is_terminated = false
+
+                # Reset pacing clock after a hold ends
+                _reset_hold_step_clock()
             end
 
+            # If a bio trigger fired and we were not already holding,
+            # start a new hold via agent action selection.
             if fired && !ENV_INSTANCE[].is_holding
                 println("[MAIN] Bio trigger — agent selecting action")
                 action = RLAgent.agent_step!(
@@ -132,9 +201,10 @@ function handle_ingest(req::HTTP.Request)
                 (ENV_INSTANCE[])(action + 1)
                 APP_STATE.active_interaction = action
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
-            end
 
-            ingested += 1
+                # Allow the first hold step to occur without delay.
+                _reset_hold_step_clock()
+            end
         end
 
         return HTTP.Response(200,
@@ -197,6 +267,9 @@ function handle_trigger(req::HTTP.Request)
             (ENV_INSTANCE[])(action + 1)
             APP_STATE.active_interaction = action
             APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+
+            # Start-of-hold: allow the first paced step without delay
+            _reset_hold_step_clock()
 
             return HTTP.Response(200,
                 JSON3.write(Dict(
@@ -357,6 +430,9 @@ function main()
 
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
+
+    # Reset pacing clock at startup (no hold in progress).
+    _reset_hold_step_clock()
 
     println("\n[INIT] Data transfer via Flutter app")
     println("  → Start data transfer in the Flutter app")
