@@ -1,21 +1,20 @@
-// lib/screens/home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../constants.dart';
 import '../providers/biofeedback_provider.dart';
 import '../services/calendar_service.dart';
+import '../services/ble_ingest_service.dart';
+import '../widgets/camera_stream_widget.dart';
+import '../widgets/hrv_chart.dart' as hrv_widget;
+import '../widgets/interaction_bar.dart' as interaction_widget;
 import '../widgets/video_stream_widget.dart';
 import '../widgets/vitals_card.dart';
-import '../widgets/hrv_chart.dart' as hrv_widget;
-import '../widgets/interaction_bar.dart'
-    as interaction_widget;
-import 'package:permission_handler/permission_handler.dart';
-import '../widgets/camera_stream_widget.dart';
-import '../services/ble_ingest_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,15 +27,52 @@ class _HomeScreenState extends State<HomeScreen> {
   final CalendarService _calendar = CalendarService();
   bool _calendarSignedIn = false;
   bool _bleRunning = false;
+  bool _bootstrapped = false;
+  String _sensorType = '';
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _bootstrap();
+    });
+  }
+
+  Future<void> _bootstrap() async {
+    if (_bootstrapped || !mounted) return;
+    _bootstrapped = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    _sensorType = (prefs.getString('sensor_type') ?? '').trim().toLowerCase();
+
+    context.read<BiofeedbackProvider>().startPolling();
+    await Permission.notification.request();
+    await Permission.manageExternalStorage.request();
+    await context.read<BiofeedbackProvider>().startDataTransfer();
+
+    if (_sensorType.startsWith('esp')) {
+      setState(() => _bleRunning = BleIngestService().isRunning);
+    }
+  }
 
   Future<void> _toggleBle() async {
+    if (!_sensorType.startsWith('esp')) {
+      _showSnack('BLE ingest is only available for ESP32 sensor');
+      return;
+    }
+
     try {
       if (_bleRunning) {
         await BleIngestService().stop();
+        if (!mounted) return;
         setState(() => _bleRunning = false);
         _showSnack('BLE ingest stopped');
       } else {
         await BleIngestService().start();
+        if (!mounted) return;
         setState(() => _bleRunning = true);
         _showSnack('BLE ingest started');
       }
@@ -51,70 +87,29 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // ---------- Notification  Permission Request -----------------
-  @override
-  void initState() {
-    super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(
-        SystemUiMode.edgeToEdge);
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) async {
-      // Start polling
-      context
-          .read<BiofeedbackProvider>()
-          .startPolling();
-
-      // Request permissions
-      await Permission.notification.request();
-      await Permission
-          .manageExternalStorage.request();
-
-      // Auto-start data transfer — ensure widget still mounted before using context
-      if (!mounted) return;
-      await context
-          .read<BiofeedbackProvider>()
-          .startDataTransfer();
-    });
-  }
-
-  // ── Calendar Sign In ──────────────────────────────────────
   Future<void> _handleCalendarSignIn() async {
     final ok = await _calendar.signIn();
     if (ok && mounted) {
       setState(() => _calendarSignedIn = true);
       _calendar.startDailyPlanning((eventName) {
-        context
-            .read<BiofeedbackProvider>()
-            .fireCalendarTrigger(eventName);
+        context.read<BiofeedbackProvider>().fireCalendarTrigger(eventName);
       });
-      _showSnack(
-        '📅 Calendar connected — '
-        '${_calendar.scheduledTriggerCount} '
-        'triggers scheduled today',
-      );
+      _showSnack('📅 Calendar connected — ${_calendar.scheduledTriggerCount} triggers scheduled today');
     } else {
       _showSnack('❌ Calendar sign in failed');
     }
   }
 
-  // ── Snackbar ──────────────────────────────────────────────
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           message,
-          style: GoogleFonts.inter(
-              color: Colors.white),
+          style: GoogleFonts.inter(color: Colors.white),
         ),
-        backgroundColor:
-            const Color(AppConstants.surfaceColor),
+        backgroundColor: const Color(AppConstants.surfaceColor),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 3),
       ),
     );
@@ -123,81 +118,59 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final bio = context.watch<BiofeedbackProvider>();
-    final s   = bio.status;
+    final s = bio.status;
 
     return Scaffold(
-      backgroundColor:
-          const Color(AppConstants.bgColor),
+      backgroundColor: const Color(AppConstants.bgColor),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
-              // ── Header ──────────────────────────────
               FadeInDown(
-                duration: const Duration(
-                    milliseconds: 600),
+                duration: const Duration(milliseconds: 600),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(
-                          16, 16, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: Row(
                     children: [
                       Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'BIOFEEDBACK',
                             style: GoogleFonts.inter(
-                              color: const Color(
-                                  AppConstants
-                                      .accentColor),
-                              fontSize:      11,
-                              fontWeight:
-                                  FontWeight.w600,
+                              color: const Color(AppConstants.accentColor),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                               letterSpacing: 2.0,
                             ),
                           ),
                           Text(
                             'Adaptive Interactions',
                             style: GoogleFonts.inter(
-                              color: const Color(
-                                  AppConstants
-                                      .textPrimary),
-                              fontSize:   20,
-                              fontWeight:
-                                  FontWeight.w700,
+                              color: const Color(AppConstants.textPrimary),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
                       const Spacer(),
-                      // Connection indicator
                       AnimatedContainer(
-                        duration: const Duration(
-                            milliseconds: 500),
-                        width:  8,
+                        duration: const Duration(milliseconds: 500),
+                        width: 8,
                         height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: bio.isConnected
-                              ? const Color(
-                                  AppConstants
-                                      .calmColor)
-                              : const Color(
-                                  AppConstants
-                                      .stressColor),
+                              ? const Color(AppConstants.calmColor)
+                              : const Color(AppConstants.stressColor),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        bio.isConnected
-                            ? 'LIVE'
-                            : 'OFFLINE',
+                        bio.isConnected ? 'LIVE' : 'OFFLINE',
                         style: GoogleFonts.inter(
                           color: bio.isConnected
                               ? const Color(AppConstants.calmColor)
@@ -208,323 +181,190 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // BLE control
                       IconButton(
-                        tooltip: 'Start/Stop BLE ingest',
+                        tooltip: _sensorType.startsWith('esp')
+                            ? 'Start/Stop BLE ingest'
+                            : 'BLE available for ESP32 only',
                         icon: Icon(
-                          _bleRunning
-                              ? Icons.bluetooth_connected
-                              : Icons.bluetooth,
-                          color: _bleRunning
-                              ? Colors.greenAccent
-                              : Colors.white,
+                          _bleRunning ? Icons.bluetooth_connected : Icons.bluetooth,
+                          color: _bleRunning ? Colors.greenAccent : Colors.white,
                         ),
                         onPressed: _toggleBle,
                       ),
-
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
-              // ── Video Stream ────────────────────────
               FadeIn(
-                duration: const Duration(
-                    milliseconds: 800),
+                duration: const Duration(milliseconds: 800),
                 child: const VideoStreamWidget(),
               ),
-
               const SizedBox(height: 12),
-
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Column(
                   children: [
-
-                    // ── Vitals Row ──────────────────
                     FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 600),
+                      duration: const Duration(milliseconds: 600),
                       child: Row(
                         children: [
                           VitalsCard(
                             label: 'HR',
-                            value: s != null
-                                ? s.avgHr
-                                    .toStringAsFixed(0)
-                                : '--',
-                            unit:  'bpm',
-                            color: const Color(
-                                AppConstants
-                                    .stressColor),
-                            isStressed: s != null &&
-                                s.avgHr > 90,
+                            value: s != null ? s.avgHr.toStringAsFixed(0) : '--',
+                            unit: 'bpm',
+                            color: const Color(AppConstants.stressColor),
+                            isStressed: s != null && s.avgHr > 90,
                           ),
                           VitalsCard(
                             label: 'HRV',
-                            value: s != null
-                                ? s.avgHrv
-                                    .toStringAsFixed(1)
-                                : '--',
-                            unit:  'ms',
-                            color: const Color(
-                                AppConstants
-                                    .calmColor),
-                            isStressed: s != null &&
-                                s.avgHrv < 20,
+                            value: s != null ? s.avgHrv.toStringAsFixed(1) : '--',
+                            unit: 'ms',
+                            color: const Color(AppConstants.calmColor),
+                            isStressed: s != null && s.avgHrv < 20,
                           ),
                           VitalsCard(
                             label: 'BR',
-                            value: s != null
-                                ? s.avgBr
-                                    .toStringAsFixed(1)
-                                : '--',
-                            unit:  '/min',
-                            color: const Color(
-                                AppConstants
-                                    .accentColor),
+                            value: s != null ? s.avgBr.toStringAsFixed(1) : '--',
+                            unit: '/min',
+                            color: const Color(AppConstants.accentColor),
                             isStressed: false,
                           ),
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // ── Interaction Bar ─────────────
                     FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 700),
-                      child: interaction_widget
-                          .InteractionBar(
-                        activeIndex:
-                            s?.activeInteraction ?? 0,
-                        isHolding:
-                            s?.isHolding ?? false,
-                        holdProgress:
-                            s?.holdProgress ?? 0.0,
-                        holdTimeRemaining:
-                            s?.holdTimeRemaining ??
-                                '0:00',
+                      duration: const Duration(milliseconds: 700),
+                      child: interaction_widget.InteractionBar(
+                        activeIndex: s?.activeInteraction ?? 0,
+                        isHolding: s?.isHolding ?? false,
+                        holdProgress: s?.holdProgress ?? 0.0,
+                        holdTimeRemaining: s?.holdTimeRemaining ?? '0:00',
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // ── Camera Stream (Video Ripples only) ──
-                    if (s != null &&
-                        s.activeInteraction == 3) ...[
+                    if (s != null && s.activeInteraction == 3) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
-                        duration: const Duration(
-                            milliseconds: 750),
+                        duration: const Duration(milliseconds: 750),
                         child: const CameraStreamWidget(),
-                        ),
-                      ],
-
-                    // ── HRV Chart ───────────────────
+                      ),
+                    ],
                     FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 800),
+                      duration: const Duration(milliseconds: 800),
                       child: hrv_widget.HRVChart(
                         hrvData: bio.hrvHistory,
-                        hrData:  bio.hrHistory,
+                        hrData: bio.hrHistory,
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // ── Trigger Message ─────────────
                     if (bio.triggerMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
                           width: double.infinity,
-                          padding:
-                              const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(
-                              bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(
-                            color: const Color(
-                                    AppConstants
-                                        .accentColor)
-                                .withValues(alpha: 0.1),
-                            borderRadius:
-                                BorderRadius.circular(
-                                    12),
+                            color: const Color(AppConstants.accentColor).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(
-                                      AppConstants
-                                          .accentColor)
-                                  .withValues(
-                                      alpha: 0.3),
+                              color: const Color(AppConstants.accentColor).withValues(alpha: 0.3),
                             ),
                           ),
                           child: Text(
                             bio.triggerMessage,
                             style: GoogleFonts.inter(
-                              color: const Color(
-                                  AppConstants
-                                      .accentColor),
+                              color: const Color(AppConstants.accentColor),
                               fontSize: 13,
                             ),
                             textAlign: TextAlign.center,
                           ),
                         ),
                       ),
-
-                    // ── Calendar Message ────────────
                     if (bio.calendarMessage.isNotEmpty)
                       FadeInUp(
                         child: Container(
                           width: double.infinity,
-                          padding:
-                              const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(
-                              bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(
-                            color: Colors.purple
-                                .withValues(alpha: 0.1),
-                            borderRadius:
-                                BorderRadius.circular(
-                                    12),
-                            border: Border.all(
-                              color: Colors.purple
-                                  .withValues(
-                                      alpha: 0.3),
-                            ),
+                            color: Colors.purple.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
                           ),
                           child: Text(
                             bio.calendarMessage,
-                            style: GoogleFonts.inter(
-                              color: Colors.purpleAccent,
-                              fontSize: 13,
-                            ),
+                            style: GoogleFonts.inter(color: Colors.purpleAccent, fontSize: 13),
                             textAlign: TextAlign.center,
                           ),
                         ),
                       ),
-
-                    // ── Manual Trigger Button ───────
                     FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 900),
+                      duration: const Duration(milliseconds: 900),
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed:
-                              bio.isTriggerLoading
-                                  ? null
-                                  : () => bio
-                                      .fireManualTrigger(),
-                          style:
-                              ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                                    AppConstants
-                                        .accentColor)
-                                .withValues(alpha: 0.15),
-                            foregroundColor: const Color(
-                                AppConstants.accentColor),
-                            side: const BorderSide(
-                              color: Color(
-                                  AppConstants
-                                      .accentColor),
-                              width: 1,
-                            ),
-                            shape:
-                                RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(
-                                      32),
-                            ),
-                            padding:
-                                const EdgeInsets.symmetric(
-                                    vertical: 16),
+                          onPressed: bio.isTriggerLoading ? null : () => bio.fireManualTrigger(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(AppConstants.accentColor).withValues(alpha: 0.15),
+                            foregroundColor: const Color(AppConstants.accentColor),
+                            side: const BorderSide(color: Color(AppConstants.accentColor), width: 1),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           child: bio.isTriggerLoading
                               ? const SizedBox(
-                                  width:  20,
+                                  width: 20,
                                   height: 20,
-                                  child:
-                                      CircularProgressIndicator(
+                                  child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Color(
-                                        AppConstants
-                                            .accentColor),
+                                    color: Color(AppConstants.accentColor),
                                   ),
                                 )
                               : Text(
                                   '⚡  Trigger Interaction',
                                   style: GoogleFonts.inter(
-                                    fontSize:      15,
-                                    fontWeight:
-                                        FontWeight.w600,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
                                     letterSpacing: 0.5,
                                   ),
                                 ),
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // ── Calendar Button ─────────────
                     FadeInUp(
-                      duration: const Duration(
-                          milliseconds: 1000),
+                      duration: const Duration(milliseconds: 1000),
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _calendarSignedIn
-                              ? null
-                              : _handleCalendarSignIn,
-                          style:
-                              ElevatedButton.styleFrom(
-                            backgroundColor:
-                                _calendarSignedIn
-                                    ? Colors.purple
-                                        .withValues(
-                                            alpha: 0.05)
-                                    : Colors.purple
-                                        .withValues(
-                                            alpha: 0.15),
-                            foregroundColor:
-                                Colors.purpleAccent,
+                          onPressed: _calendarSignedIn ? null : _handleCalendarSignIn,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _calendarSignedIn
+                                ? Colors.purple.withValues(alpha: 0.05)
+                                : Colors.purple.withValues(alpha: 0.15),
+                            foregroundColor: Colors.purpleAccent,
                             side: BorderSide(
                               color: _calendarSignedIn
-                                  ? Colors.purple
-                                      .withValues(
-                                          alpha: 0.3)
+                                  ? Colors.purple.withValues(alpha: 0.3)
                                   : Colors.purpleAccent,
                               width: 1,
                             ),
-                            shape:
-                                RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(
-                                      32),
-                            ),
-                            padding:
-                                const EdgeInsets.symmetric(
-                                    vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           child: Text(
-                            _calendarSignedIn
-                                ? '📅  Calendar Connected'
-                                : '📅  Connect Calendar',
+                            _calendarSignedIn ? '📅  Calendar Connected' : '📅  Connect Calendar',
                             style: GoogleFonts.inter(
-                              fontSize:      15,
-                              fontWeight:    FontWeight.w600,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                               letterSpacing: 0.5,
                             ),
                           ),
                         ),
                       ),
                     ),
-
-                    // ── Calendar Refresh ────────────
                     if (_calendarSignedIn) ...[
                       const SizedBox(height: 8),
                       FadeInUp(
@@ -532,79 +372,46 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: double.infinity,
                           child: TextButton(
                             onPressed: () async {
-                              await _calendar
-                                  .refreshToday();
+                              await _calendar.refreshToday();
                               if (mounted) {
-                                _showSnack(
-                                  '🔄 Refreshed — '
-                                  '${_calendar.scheduledTriggerCount} '
-                                  'triggers scheduled',
-                                );
+                                _showSnack('🔄 Refreshed — ${_calendar.scheduledTriggerCount} triggers scheduled');
                               }
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor:
-                                  const Color(AppConstants
-                                      .textSecondary),
+                              foregroundColor: const Color(AppConstants.textSecondary),
                             ),
                             child: Text(
                               '🔄  Refresh Today\'s Schedule',
-                              style: GoogleFonts.inter(
-                                  fontSize: 13),
+                              style: GoogleFonts.inter(fontSize: 13),
                             ),
                           ),
                         ),
                       ),
                     ],
-
-                    // ── RL Debug Info ───────────────
                     if (s != null) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
-                        duration: const Duration(
-                            milliseconds: 1100),
+                        duration: const Duration(milliseconds: 1100),
                         child: Container(
                           width: double.infinity,
-                          padding:
-                              const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(
-                                AppConstants
-                                    .surfaceColor),
-                            borderRadius:
-                                BorderRadius.circular(
-                                    12),
-                            border: Border.all(
-                              color: const Color(
-                                  AppConstants
-                                      .cardBorder),
-                            ),
+                            color: const Color(AppConstants.surfaceColor),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(AppConstants.cardBorder)),
                           ),
                           child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment
-                                    .spaceEvenly,
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              _debugChip(
-                                  'Step', '${s.step}'),
-                              _debugChip(
-                                  'ε',
-                                  s.epsilon
-                                      .toStringAsFixed(
-                                          3)),
-                              _debugChip('Replay',
-                                  '${s.replaySize}'),
-                              _debugChip(
-                                  'Reward',
-                                  s.lastReward
-                                      .toStringAsFixed(
-                                          3)),
+                              _debugChip('Step', '${s.step}'),
+                              _debugChip('ε', s.epsilon.toStringAsFixed(3)),
+                              _debugChip('Replay', '${s.replaySize}'),
+                              _debugChip('Reward', s.lastReward.toStringAsFixed(3)),
                             ],
                           ),
                         ),
                       ),
                     ],
-
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -623,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
           label,
           style: const TextStyle(
             color: Color(AppConstants.textSecondary),
-            fontSize:      10,
+            fontSize: 10,
             letterSpacing: 1.0,
           ),
         ),
@@ -631,9 +438,8 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           value,
           style: GoogleFonts.inter(
-            color: const Color(
-                AppConstants.textPrimary),
-            fontSize:   13,
+            color: const Color(AppConstants.textPrimary),
+            fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
         ),

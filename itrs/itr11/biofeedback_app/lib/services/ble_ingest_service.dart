@@ -2,24 +2,25 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import '../models/ring_sample_packet.dart';
-import 'ring_ble_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+
 import '../constants.dart';
+import '../models/ring_sample_packet.dart';
+import 'ring_ble_service.dart';
 
 void _log(String m) {
   if (AppConstants.verboseLogging || !kReleaseMode) debugPrint(m);
 }
 
-// Uses same folder as existing DataTransferService expects
 const String polarDir = '/sdcard/Download/Data_from_H10';
+const String espLatestFile = '$polarDir/ESP_LATEST_esp.txt';
+const String espRawFile = '$polarDir/ESP_raw.log';
 
-// Detection + write params
-const int kMinRRms = 300; // 200-300 ms min RR
-const int kMaxRRms = 2000; // 2s max RR
-const int kRefractoryMs = 300; // minimal time between beats
-const int kFlushIntervalSeconds = 10; // how often to write HR file
+const int kMinRRms = 300;
+const int kMaxRRms = 2000;
+const int kRefractoryMs = 300;
+const int kProcessEverySeconds = 5;
 
 class BleIngestService {
   static final BleIngestService _instance = BleIngestService._internal();
@@ -27,266 +28,208 @@ class BleIngestService {
   BleIngestService._internal();
 
   StreamSubscription<RingSamplePacket>? _pktSub;
-  final List<RingSamplePacket> _buf = [];
-  final List<int> _beatTs = []; // milliseconds epoch
-
-  // offset to convert device tsMs -> epoch ms
-  int? _tsOffsetMs;
-
   Timer? _procTimer;
+
+  final List<RingSamplePacket> _buf = [];
+  final List<int> _beatTs = [];
+  final List<String> _recentRows = [];
+
+  int? _tsOffsetMs;
   bool _running = false;
+  String? _lastWrittenRow;
+
+  bool get isRunning => _running;
 
   Future<void> start() async {
-    if (_running) return;
-    _running = true;
+    if (_running) {
+      _log('[BLE INGEST] start ignored, already running');
+      return;
+    }
 
-    // ensure folder exists
+    _running = true;
+    _tsOffsetMs = null;
+    _lastWrittenRow = null;
+
     try {
       final dir = Directory(polarDir);
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
     } catch (e) {
-      _log('[BLE INGEST] could not create polar dir: $e');
+      _log('[BLE INGEST] could not create data dir: $e');
     }
 
-    // start BLE scanner
     await RingBleService().start();
 
-    _pktSub = RingBleService().packets.listen((p) {
-      _handlePacket(p);
-    }, onError: (e) {
-      _log('[BLE INGEST] packet stream error: $e');
-    });
+    _pktSub = RingBleService().packets.listen(
+      _handlePacket,
+      onError: (e) => _log('[BLE INGEST] packet stream error: $e'),
+    );
 
-    // periodic processing (detect peaks, flush HR files)
-    _procTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      try {
-        _processBuffer();
-      } catch (e) {
-        _log('[BLE INGEST] process error: $e');
-      }
-    });
+    _procTimer = Timer.periodic(
+      const Duration(seconds: kProcessEverySeconds),
+      (_) async {
+        try {
+          await _processBuffer();
+        } catch (e) {
+          _log('[BLE INGEST] process error: $e');
+        }
+      },
+    );
+
+    _log('[BLE INGEST] started');
   }
 
   Future<void> stop() async {
+    if (!_running) return;
     _running = false;
     await _pktSub?.cancel();
     _pktSub = null;
     _procTimer?.cancel();
     _procTimer = null;
     await RingBleService().stop();
+    _log('[BLE INGEST] stopped');
   }
 
   void _handlePacket(RingSamplePacket p) {
-    // establish offset mapping from device ts to epoch
     final now = DateTime.now().millisecondsSinceEpoch;
     _tsOffsetMs ??= now - p.tsMs;
 
     _buf.add(p);
-
-    // keep buffer to last ~30s
     if (_buf.length > 20000) {
       _buf.removeRange(0, _buf.length - 20000);
     }
 
-    // also append raw sample to a rolling raw file (non-blocking)
-    _appendRawLine(p);
+    unawaited(_appendRawLine(p));
   }
 
   Future<void> _appendRawLine(RingSamplePacket p) async {
     try {
-      final epochMs = (p.tsMs + (_tsOffsetMs ?? 0));
+      final epochMs = p.tsMs + (_tsOffsetMs ?? 0);
       final dt = DateTime.fromMillisecondsSinceEpoch(epochMs).toIso8601String();
       final line = '$dt;${p.ir};${p.red}\n';
-      final f = File('$polarDir/BLE_raw.log');
-      try {
-        await f.writeAsString(line, mode: FileMode.append);
-      } catch (e) {
-        _log('[BLE INGEST] raw log write error: $e');
-      }
+      await File(espRawFile).writeAsString(line, mode: FileMode.append);
     } catch (e) {
-      // ignore write errors
+      _log('[BLE INGEST] raw log write error: $e');
     }
   }
 
-  void _processBuffer() {
+  Future<void> _processBuffer() async {
     if (_buf.isEmpty) return;
 
-    // copy buffer and clear small prefix to avoid unbounded growth
     final samples = List<RingSamplePacket>.from(_buf);
+    final xs = <int>[];
+    final ys = <double>[];
 
-    // convert to list of (t, val)
-    final xs = <int>[]; // timestamp epoch ms
-    final ys = <double>[]; // ir values as double
     for (final s in samples) {
-      final t = s.tsMs + (_tsOffsetMs ?? 0);
-      xs.add(t);
+      xs.add(s.tsMs + (_tsOffsetMs ?? 0));
       ys.add(s.ir.toDouble());
     }
 
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-
-    // Detect peaks using helper (moving median baseline + prominence)
     final detected = detectPeaksFromSamples(xs, ys);
-
-    // merge newly detected beats (keep unique and increasing, enforce refractory)
     for (final t in detected) {
-      if (_beatTs.isEmpty || t - _beatTs.last > kRefractoryMs) {
+      if (_beatTs.isEmpty || (t - _beatTs.last) > kRefractoryMs) {
         _beatTs.add(t);
       }
     }
 
-    // keep only recent beats (last 30 minutes)
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     final cutoff = nowMs - (30 * 60 * 1000);
     while (_beatTs.isNotEmpty && _beatTs.first < cutoff) {
       _beatTs.removeAt(0);
     }
 
-    // compute RR intervals and clean out unrealistic intervals
     final rrs = <int>[];
     for (int i = 1; i < _beatTs.length; i++) {
       final rr = _beatTs[i] - _beatTs[i - 1];
-      if (rr >= kMinRRms && rr <= kMaxRRms) rrs.add(rr);
+      if (rr >= kMinRRms && rr <= kMaxRRms) {
+        rrs.add(rr);
+      }
     }
 
-    if (rrs.isEmpty) return;
+    if (rrs.length < 2) {
+      _log('[BLE INGEST] insufficient RR intervals yet');
+      return;
+    }
 
-    // compute HR and HRV metrics (RMSSD, SDNN) using last N intervals
-    final window = min(rrs.length, 60); // use up to last 60 intervals (~1 minute)
+    final window = min(rrs.length, 60);
     final recentRRs = rrs.sublist(rrs.length - window);
 
-    double computeRMSSD(List<int> arr) {
-      if (arr.length < 2) return double.nan;
-      double sum = 0.0;
-      for (int i = 1; i < arr.length; i++) {
-        final d = arr[i] - arr[i - 1];
-        sum += d * d;
-      }
-      final mean = sum / (arr.length - 1);
-      return sqrt(mean);
+    final rmssd = _computeRmssd(recentRRs);
+    final hr = 60000.0 / recentRRs.last;
+    final br = _estimateBrFromHr(hr);
+    final ts = DateTime.now().toIso8601String();
+
+    if (hr.isNaN || hr < 30 || hr > 220) {
+      _log('[BLE INGEST] invalid HR computed: $hr');
+      return;
     }
 
-    double computeSDNN(List<int> arr) {
-      if (arr.isEmpty) return double.nan;
-      final mean = arr.reduce((a, b) => a + b) / arr.length;
-      final varSum = arr.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / arr.length;
-      return sqrt(varSum);
+    final row = '$ts;${hr.toStringAsFixed(1)};${rmssd.isNaN ? '' : rmssd.toStringAsFixed(1)};${br.toStringAsFixed(1)}';
+    if (row == _lastWrittenRow) {
+      return;
+    }
+    _lastWrittenRow = row;
+
+    _recentRows.add(row);
+    if (_recentRows.length > 600) {
+      _recentRows.removeRange(0, _recentRows.length - 600);
     }
 
-    final rmssd = computeRMSSD(recentRRs);
-    final sdnn = computeSDNN(recentRRs);
-
-    // Write rows for most recent beats (only beats in last flush interval)
-    final recentBeats = _beatTs.where((t) => t >= nowMs - (kFlushIntervalSeconds * 1000)).toList();
-    if (recentBeats.isEmpty) return;
-
-    final rows = <String>[];
-    for (final t in recentBeats) {
-      // find rr preceding this beat
-      final idx = _beatTs.indexOf(t);
-      if (idx <= 0) continue;
-      final rr = _beatTs[idx] - _beatTs[idx - 1];
-      if (rr <= 0) continue;
-      final hr = 60000.0 / rr;
-      final dt = DateTime.fromMillisecondsSinceEpoch(t).toIso8601String();
-      // include HRV as RMSSD (ms) — DataTransferService will still validate
-      final hrvVal = rmssd.isNaN ? '' : rmssd.toStringAsFixed(1);
-      final hrStr = hr.toStringAsFixed(1);
-      rows.add('$dt;$hrStr;$hrvVal;\n');
-    }
-
-    // write a rolling file that ends with _HR.txt so existing DataTransferService picks it up
-    _flushHrFile(rows, rmssd: rmssd, sdnn: sdnn);
+    await _flushEspFile();
   }
 
-  Future<void> _flushHrFile(List<String> rows, {double? rmssd, double? sdnn}) async {
-    if (rows.isEmpty) return;
-    try {
-      final iso = DateTime.now().toIso8601String();
+  double _computeRmssd(List<int> arr) {
+    if (arr.length < 2) return double.nan;
+    double sum = 0.0;
+    for (int i = 1; i < arr.length; i++) {
+      final d = arr[i] - arr[i - 1];
+      sum += d * d;
+    }
+    return sqrt(sum / (arr.length - 1));
+  }
 
-        // Determine filename based on selected sensor in SharedPreferences
-        String filename;
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final sensor = prefs.getString('sensor_type') ?? '';
-          if (sensor.trim().toLowerCase().startsWith('esp')) {
-            filename = 'ESP_${iso}_esp.txt'.replaceAll(':', '-');
-          } else {
-            filename = 'BLE_${iso}_HR.txt'.replaceAll(':', '-');
-          }
-        } catch (e) {
-          // fallback
-          filename = 'BLE_${iso}_HR.txt'.replaceAll(':', '-');
-        }
+  double _estimateBrFromHr(double hr) {
+    return (10.0 + ((hr - 55.0) / 45.0) * 8.0).clamp(8.0, 22.0);
+  }
 
-        final temp = '$polarDir/.$filename.tmp';
-        final finalPath = '$polarDir/$filename';
+  Future<void> _flushEspFile() async {
+    if (_recentRows.isEmpty) return;
 
-        // Write a header line that matches the Polar H10 exporter format
-        // First line often contains the source identifier, followed by the CSV header.
-        const header = 'Polar_H10\nPhone timestamp;hr;hrv;br\n';
-
-        // Build body ensuring we don't leave trailing empty fields — mimic Polar export:
-        final body = StringBuffer();
-        for (final r in rows) {
-          // incoming rows are constructed as either "ts;hr;hrv;" currently
-          // parse and rebuild to avoid trailing empty columns
-          final parts = r.split(';');
-          if (parts.isEmpty) continue;
-          final ts = parts[0];
-          final hr = parts.length > 1 ? parts[1] : '';
-          final hrv = (parts.length > 2 && parts[2].trim().isNotEmpty) ? parts[2] : null;
-          final br = (parts.length > 3 && parts[3].trim().isNotEmpty) ? parts[3] : null;
-
-          if (hr.isEmpty) continue; // timestamp without HR isn't useful
-          if (hrv != null && br != null) {
-            body.writeln('$ts;$hr;$hrv;$br');
-          } else if (hrv != null) {
-            body.writeln('$ts;$hr;$hrv');
-          } else {
-            body.writeln('$ts;$hr');
-          }
-        }
-
-        final tmpFile = File(temp);
-        await tmpFile.writeAsString(header + body.toString());
-        // atomic rename
-        try {
-          await tmpFile.rename(finalPath);
-        } catch (e) {
-          // fallback to copy+delete
-          await tmpFile.copy(finalPath);
-          try {
-            await tmpFile.delete();
-          } catch (_) {}
-        }
-        _log('[BLE INGEST] Wrote HR file: $filename');
-        if (rmssd != null || sdnn != null) {
-          _log('[BLE INGEST] HRV RMSSD=${rmssd == null || rmssd.isNaN ? 'na' : rmssd.toStringAsFixed(1)} SDNN=${sdnn == null || sdnn.isNaN ? 'na' : sdnn.toStringAsFixed(1)}');
-        }
-
-        // Signal background service to re-scan files in case it missed the update
-        try {
-          final prefs2 = await SharedPreferences.getInstance();
-          final sensor2 = prefs2.getString('sensor_type') ?? '';
-          try {
-            final svc = FlutterBackgroundService();
-            svc.invoke('reload_sensor', {'sensor_type': sensor2});
-          } catch (e) {
-            _log('[BLE INGEST] background service invoke failed: $e');
-          }
-        } catch (e) {
-          _log('[BLE INGEST] prefs read for reload failed: $e');
-        }
-      } catch (e) {
-        debugPrint('[BLE INGEST] write HR file error: $e');
-      }
+    final buffer = StringBuffer();
+    buffer.writeln('timestamp;hr;hrv;br');
+    for (final row in _recentRows) {
+      buffer.writeln(row);
     }
 
+    final tmpPath = '$espLatestFile.tmp';
+    try {
+      final tmp = File(tmpPath);
+      await tmp.writeAsString(buffer.toString(), flush: true);
+      try {
+        final target = File(espLatestFile);
+        if (await target.exists()) {
+          await target.delete();
+        }
+      } catch (_) {}
+      await tmp.rename(espLatestFile);
+      _log('[BLE INGEST] wrote ESP vitals file: $espLatestFile');
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final sensor = prefs.getString('sensor_type') ?? '';
+        FlutterBackgroundService().invoke('reload_sensor', {
+          'sensor_type': sensor,
+        });
+      } catch (e) {
+        _log('[BLE INGEST] reload invoke failed: $e');
+      }
+    } catch (e) {
+      _log('[BLE INGEST] vitals file write error: $e');
+    }
+  }
 }
 
-// --- Helper functions (exported for unit tests) ----------------------
 List<double> _movingMedianStatic(List<double> vals, int win) {
   final n = vals.length;
   final out = List<double>.filled(n, 0.0);

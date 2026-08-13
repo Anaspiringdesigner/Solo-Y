@@ -1,354 +1,257 @@
-// lib/services/data_transfer_service.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
-import 'ble_ingest_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ── Constants ──────────────────────────────────────────────
-const String polarDir        = '/sdcard/Download/Data_from_H10';
-const int    pollIntervalSec = 5;
-const int    windowSeconds   = 30;
-const int    strideSeconds   = 5;
-const int    recentMinutes   = 20;
-const int    staleMinutes    = 3;
+import 'ble_ingest_service.dart';
+import '../constants.dart';
+
+const String polarDir = '/sdcard/Download/Data_from_H10';
+const int pollIntervalSec = 5;
+const int windowSeconds = 30;
+const int strideSeconds = 5;
+const int recentMinutes = 20;
+const int staleMinutes = 3;
 
 class DataTransferService {
-  static final DataTransferService _instance =
-      DataTransferService._internal();
+  static final DataTransferService _instance = DataTransferService._internal();
   factory DataTransferService() => _instance;
   DataTransferService._internal();
 
-  // ── Initialize Background Service ──────────────────────
- static Future<void> initialize() async {
+  static Future<void> initialize() async {
     final service = FlutterBackgroundService();
-
     await service.configure(
       androidConfiguration: AndroidConfiguration(
-        onStart:          onStart,
-        autoStart:        false,      // ← don't auto start
+        onStart: onStart,
+        autoStart: false,
         isForegroundMode: true,
-        notificationChannelId:
-            'biofeedback_data_transfer',
-        initialNotificationTitle:
-            'Biofeedback',
-        initialNotificationContent:
-            'Ready to transfer data',
+        notificationChannelId: 'biofeedback_data_transfer',
+        initialNotificationTitle: 'Biofeedback',
+        initialNotificationContent: 'Ready to transfer data',
         foregroundServiceNotificationId: 888,
-        foregroundServiceTypes: [
-          AndroidForegroundType.dataSync,
-        ],
+        foregroundServiceTypes: [AndroidForegroundType.dataSync],
       ),
       iosConfiguration: IosConfiguration(
-        autoStart:    false,
+        autoStart: false,
         onForeground: onStart,
         onBackground: onIosBackground,
       ),
     );
   }
 
-  // ── Start Service ───────────────────────────────────────
   static Future<void> start() async {
     final service = FlutterBackgroundService();
-    await service.startService();
+    final running = await service.isRunning();
+    if (!running) {
+      await service.startService();
+    }
   }
 
-  // ── Stop Service ────────────────────────────────────────
   static Future<void> stop() async {
-    final service = FlutterBackgroundService();
-    service.invoke('stop');
+    FlutterBackgroundService().invoke('stop');
   }
 
-  // ── Check if Running ────────────────────────────────────
   static Future<bool> isRunning() async {
-    final service = FlutterBackgroundService();
-    return await service.isRunning();
+    return FlutterBackgroundService().isRunning();
   }
 }
 
-// ── iOS Background Handler ──────────────────────────────────
 @pragma('vm:entry-point')
-Future<bool> onIosBackground(
-    ServiceInstance service) async {
-  return true;
-}
+Future<bool> onIosBackground(ServiceInstance service) async => true;
 
-// ── Main Background Entry Point ─────────────────────────────
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // State tracking
-  final Map<String, String> fileHashes     = {};
-  final Map<String, String> lastPostedEnd  = {};
+  final Map<String, String> fileHashes = {};
+  final Map<String, String> lastPostedEnd = {};
+  String sensorType = '';
 
   debugPrint('[BG] Data transfer service started');
 
-  // Handle stop command
-  service.on('stop').listen((_) async {
-    // stop BLE ingest if running
-    try {
-      await BleIngestService().stop();
-    } catch (e) {
-      debugPrint('[BG] BLE stop error: $e');
-    }
-    service.stopSelf();
-    debugPrint('[BG] Service stopped');
-  });
-
-  // Handle reload sensor command from UI
-  String sensorType = '';
-  Future<void> updateSensorType(String newType) async {
-    sensorType = newType.trim().toLowerCase();
-    debugPrint('[BG] reload sensor -> $sensorType');
-    // clear caches so new files are re-evaluated
-    fileHashes.clear();
-    lastPostedEnd.clear();
-
-    // Start/stop BLE ingest depending on selection
-    try {
-      if (sensorType.startsWith('esp')) {
-        // check runtime BLE permissions before starting BLE ingest
-        try {
-          final scan = await Permission.bluetoothScan.status;
-          final connect = await Permission.bluetoothConnect.status;
-          final loc = await Permission.locationWhenInUse.status;
-          if (scan.isGranted && connect.isGranted && loc.isGranted) {
-            await BleIngestService().start();
-            debugPrint('[BG] BLE ingest started for ESP');
-          } else {
-            debugPrint('[BG] BLE permissions not granted; not starting BLE ingest');
-            if (service is AndroidServiceInstance) {
-              service.setForegroundNotificationInfo(
-                title: 'Biofeedback Data Transfer',
-                content: 'BLE permission needed to start sensor',
-              );
-            }
-          }
-        } catch (pe) {
-          debugPrint('[BG] permission check failed: $pe');
-        }
-      } else {
-        await BleIngestService().stop();
-        debugPrint('[BG] BLE ingest stopped for non-ESP');
-      }
-    } catch (e) {
-      debugPrint('[BG] BLE start/stop during reload failed: $e');
-    }
-
-    // Update notification when sensor changes
-    if (service is AndroidServiceInstance) {
-      service.setForegroundNotificationInfo(
-        title: 'Biofeedback Data Transfer',
-        content: 'Sensor: ${sensorType.isEmpty ? 'unknown' : sensorType}',
-      );
-    }
-  }
-
-  service.on('reload_sensor').listen((dynamic event) async {
-    try {
-      if (event is Map) {
-        final map = event as Map;
-        final val = map['sensor_type'];
-        await updateSensorType(val?.toString() ?? '');
-      } else if (event is String) {
-        await updateSensorType(event);
-      } else {
-        debugPrint('[BG] reload_sensor: unexpected event type: ${event.runtimeType}');
-      }
-    } catch (e) {
-      debugPrint('[BG] reload_sensor handler error: $e');
-    }
-  });
-
-  // Update notification helper
   void updateNotification(String content) {
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
-        title:   'Biofeedback Data Transfer',
+        title: 'Biofeedback Data Transfer',
         content: content,
       );
     }
   }
 
-  // Read initial sensor type from prefs
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final s = prefs.getString('sensor_type') ?? '';
-    if (s.trim().isNotEmpty) {
-      await updateSensorType(s);
-    } else {
-      // default: try to start BLE anyway (keeps prior behavior)
-      try {
+  Future<void> syncSensorType(String newType) async {
+    sensorType = newType.trim().toLowerCase();
+    fileHashes.clear();
+    lastPostedEnd.clear();
+    debugPrint('[BG] sensor type -> $sensorType');
+
+    try {
+      if (sensorType.startsWith('esp')) {
         final scan = await Permission.bluetoothScan.status;
         final connect = await Permission.bluetoothConnect.status;
         final loc = await Permission.locationWhenInUse.status;
         if (scan.isGranted && connect.isGranted && loc.isGranted) {
           await BleIngestService().start();
+          updateNotification('ESP32 active');
         } else {
-          debugPrint('[BG] BLE permissions not granted at startup');
-          if (service is AndroidServiceInstance) {
-            service.setForegroundNotificationInfo(
-              title: 'Biofeedback Data Transfer',
-              content: 'BLE permission needed',
-            );
-          }
+          updateNotification('BLE permissions needed for ESP32');
         }
-      } catch (_) {}
-    }
-  } catch (e) {
-    debugPrint('[BG] prefs read error: $e');
-    // fallback: start BLE ingest if permissions allow
-    try {
-      final scan = await Permission.bluetoothScan.status;
-      final connect = await Permission.bluetoothConnect.status;
-      final loc = await Permission.locationWhenInUse.status;
-      if (scan.isGranted && connect.isGranted && loc.isGranted) {
-        await BleIngestService().start();
+      } else {
+        await BleIngestService().stop();
+        updateNotification(sensorType == 'polar' ? 'Polar active' : 'Select a sensor');
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[BG] sync sensor type error: $e');
+      updateNotification('Sensor init error');
+    }
   }
 
-  // ── Main polling loop ─────────────────────────────────
-  Timer.periodic(
-    const Duration(seconds: pollIntervalSec),
-    (timer) async {
-      try {
-        // Check storage permission (accept either MANAGE_EXTERNAL_STORAGE or legacy READ/WRITE storage)
-        final manageStatus = await Permission.manageExternalStorage.status;
-        final storageStatus = await Permission.storage.status;
-        debugPrint('[BG] storage perms: manage=${manageStatus.isGranted}, storage=${storageStatus.isGranted}');
-        if (!manageStatus.isGranted && !storageStatus.isGranted) {
-          updateNotification('Storage permission needed');
-          return;
-        }
+  service.on('stop').listen((_) async {
+    try {
+      await BleIngestService().stop();
+    } catch (_) {}
+    service.stopSelf();
+  });
 
-        // List HR files
-        final dir = Directory(polarDir);
-        if (!await dir.exists()) {
-          updateNotification(
-              'Polar data folder not found');
-          return;
-        }
-
-        // Determine which file suffix to look for depending on selected sensor value cached
-        String suffix = '_HR.txt';
-        if (sensorType.startsWith('esp')) suffix = '_esp.txt';
-
-        final files = await dir
-            .list()
-            .where((f) => f.path.endsWith(suffix))
-            .map((f) => f.path)
-            .toList();
-
-        if (files.isEmpty) {
-          updateNotification('No HR files found');
-          return;
-        }
-
-        // Sort and get newest file
-        files.sort();
-        final newestFile = files.last;
-        final fname      = newestFile
-            .split('/')
-            .last;
-
-        // Check if file changed (hash)
-        final file    = File(newestFile);
-        final content = await file.readAsBytes();
-        final hash    = content.length.toString() +
-                        content.last.toString();
-
-        if (fileHashes[fname] == hash) return;
-        fileHashes[fname] = hash;
-
-        debugPrint('[BG] Updated: $fname');
-        updateNotification('Reading: $fname');
-
-        // Parse file
-        final text  = await file.readAsString();
-        final rows  = _parseHRFile(text);
-        if (rows.isEmpty) return;
-
-        // Filter recent data
-        final cutoff = DateTime.now()
-            .subtract(Duration(minutes: recentMinutes));
-        final recent = rows
-            .where((r) => r.timestamp.isAfter(cutoff))
-            .toList();
-        if (recent.isEmpty) return;
-
-        // Resample + interpolate
-        final resampled = _resampleTo1s(recent);
-        if (resampled.isEmpty) return;
-
-        // Build windows
-        final windows = _buildWindows(resampled);
-        if (windows.isEmpty) return;
-
-        // Filter new windows
-        final lastEnd = lastPostedEnd[fname] ?? '';
-        final newWindows = lastEnd.isEmpty
-            ? windows
-            : windows
-                .where((w) => w.endTime.compareTo(lastEnd) > 0)
-                .toList();
-        if (newWindows.isEmpty) return;
-
-        // Filter stale windows
-        final staleCutoff = DateTime.now()
-            .subtract(Duration(minutes: staleMinutes));
-        final fresh = newWindows
-            .where((w) {
-              final wEnd = DateTime.parse(w.endTime);
-              return wEnd.isAfter(staleCutoff);
-            })
-            .toList();
-        if (fresh.isEmpty) return;
-
-        // POST to Julia server
-        final ok = await _postWindows(fresh);
-        if (ok) {
-          lastPostedEnd[fname] =
-              fresh.last.endTime;
-          updateNotification(
-              'Posted ${fresh.length} windows | '
-              'HR=${fresh.last.avgHr.toStringAsFixed(0)}');
-          debugPrint('[BG] Posted '
-              '${fresh.length} windows');
-        }
-
-      } catch (e) {
-        debugPrint('[BG ERROR] $e');
-        updateNotification('Error: $e');
+  service.on('reload_sensor').listen((event) async {
+    try {
+      if (event is Map) {
+        await syncSensorType((event['sensor_type'] ?? '').toString());
+      } else {
+        await syncSensorType(event?.toString() ?? '');
       }
-    },
-  );
+    } catch (e) {
+      debugPrint('[BG] reload_sensor error: $e');
+    }
+  });
+
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await syncSensorType(prefs.getString('sensor_type') ?? '');
+  } catch (e) {
+    debugPrint('[BG] initial prefs read error: $e');
+    updateNotification('Waiting for sensor selection');
+  }
+
+  Timer.periodic(const Duration(seconds: pollIntervalSec), (timer) async {
+    try {
+      final manageStatus = await Permission.manageExternalStorage.status;
+      final storageStatus = await Permission.storage.status;
+      if (!manageStatus.isGranted && !storageStatus.isGranted) {
+        updateNotification('Storage permission needed');
+        return;
+      }
+
+      final dir = Directory(polarDir);
+      if (!await dir.exists()) {
+        updateNotification('Data folder not found');
+        return;
+      }
+
+      final patterns = sensorType.startsWith('esp')
+          ? <String>['_esp.txt']
+          : sensorType == 'polar'
+              ? <String>['_HR.txt']
+              : <String>['_esp.txt', '_HR.txt'];
+
+      final files = <String>[];
+      await for (final f in dir.list()) {
+        final path = f.path;
+        if (patterns.any(path.endsWith)) {
+          files.add(path);
+        }
+      }
+
+      if (files.isEmpty) {
+        updateNotification(sensorType.startsWith('esp')
+            ? 'Waiting for ESP32 vitals file'
+            : 'No vitals files found');
+        return;
+      }
+
+      files.sort();
+      final newestFile = files.last;
+      final file = File(newestFile);
+      final stat = await file.stat();
+      final fname = newestFile.split('/').last;
+      final hash = '${stat.modified.millisecondsSinceEpoch}_${stat.size}';
+
+      if (fileHashes[fname] == hash) return;
+      fileHashes[fname] = hash;
+
+      final text = await file.readAsString();
+      final rows = _parseVitalsFile(text);
+      if (rows.isEmpty) {
+        updateNotification('No valid rows in $fname');
+        return;
+      }
+
+      final cutoff = DateTime.now().subtract(const Duration(minutes: recentMinutes));
+      final recent = rows.where((r) => r.timestamp.isAfter(cutoff)).toList();
+      if (recent.isEmpty) {
+        updateNotification('Only stale rows in $fname');
+        return;
+      }
+
+      final resampled = _resampleTo1s(recent);
+      if (resampled.isEmpty) {
+        updateNotification('Resample failed for $fname');
+        return;
+      }
+
+      final windows = _buildWindows(resampled);
+      if (windows.isEmpty) {
+        updateNotification('Need more data for 30s window');
+        return;
+      }
+
+      final lastEnd = lastPostedEnd[fname] ?? '';
+      final newWindows = lastEnd.isEmpty
+          ? windows
+          : windows.where((w) => w.endTime.compareTo(lastEnd) > 0).toList();
+      if (newWindows.isEmpty) return;
+
+      final staleCutoff = DateTime.now().subtract(const Duration(minutes: staleMinutes));
+      final fresh = newWindows.where((w) => DateTime.parse(w.endTime).isAfter(staleCutoff)).toList();
+      if (fresh.isEmpty) {
+        updateNotification('Skipping stale windows');
+        return;
+      }
+
+      final ok = await _postWindows(fresh);
+      if (ok) {
+        lastPostedEnd[fname] = fresh.last.endTime;
+        updateNotification('Posted ${fresh.length} windows | HR=${fresh.last.avgHr.toStringAsFixed(0)}');
+      } else {
+        updateNotification('Post failed');
+      }
+    } catch (e) {
+      debugPrint('[BG ERROR] $e');
+      updateNotification('Error: $e');
+    }
+  });
 }
 
-// ── Data Row ─────────────────────────────────────────────────
 class _HRRow {
   final DateTime timestamp;
-  final double   hr;
-  final double   hrv;
-  final double   br;
+  final double hr;
+  final double hrv;
+  final double br;
   _HRRow(this.timestamp, this.hr, this.hrv, this.br);
 }
 
-// ── Window ───────────────────────────────────────────────────
 class _Window {
-  final String        startTime;
-  final String        endTime;
-  final List<double>  hr;
-  final List<double>  hrv;
-  final List<double>  br;
-  final double        avgHr;
-  final double        avgHrv;
-  final double        avgBr;
+  final String startTime;
+  final String endTime;
+  final List<double> hr;
+  final List<double> hrv;
+  final List<double> br;
+  final double avgHr;
+  final double avgHrv;
+  final double avgBr;
 
   _Window({
     required this.startTime,
@@ -362,150 +265,119 @@ class _Window {
   });
 
   Map<String, dynamic> toJson() => {
-    'start_time': startTime,
-    'end_time':   endTime,
-    'hr':         hr,
-    'hrv':        hrv,
-    'br':         br,
-    'avg_hr':     avgHr,
-    'avg_hrv':    avgHrv,
-    'avg_br':     avgBr,
-  };
+        'start_time': startTime,
+        'end_time': endTime,
+        'hr': hr,
+        'hrv': hrv,
+        'br': br,
+        'avg_hr': avgHr,
+        'avg_hrv': avgHrv,
+        'avg_br': avgBr,
+      };
 }
 
-// ── Parse HR File ─────────────────────────────────────────────
-List<_HRRow> _parseHRFile(String content) {
-  final rows  = <_HRRow>[];
+List<_HRRow> _parseVitalsFile(String content) {
+  final rows = <_HRRow>[];
   final lines = content.split('\n');
 
   for (final line in lines) {
     final l = line.trim();
     if (l.isEmpty) continue;
-    if (l.startsWith('Phone timestamp')) continue;
-    if (l.startsWith('Polar_H10')) continue;
+    final lower = l.toLowerCase();
+    if (lower.startsWith('polar_h10')) continue;
+    if (lower.startsWith('phone timestamp')) continue;
+    if (lower.startsWith('timestamp;')) continue;
 
     final parts = l.split(';');
     if (parts.length < 2) continue;
 
     try {
-      final ts  = DateTime.parse(parts[0].trim());
-      final hr  = parts.length > 1 &&
-                  parts[1].trim().isNotEmpty
-          ? double.parse(parts[1].trim())
-          : double.nan;
-      final hrv = parts.length > 2 &&
-                  parts[2].trim().isNotEmpty
-          ? double.parse(parts[2].trim())
-          : double.nan;
-      final br  = parts.length > 3 &&
-                  parts[3].trim().isNotEmpty
-          ? double.parse(parts[3].trim())
-          : double.nan;
+      final ts = DateTime.parse(parts[0].trim());
+      final hr = parts.length > 1 && parts[1].trim().isNotEmpty ? double.parse(parts[1].trim()) : double.nan;
+      final hrv = parts.length > 2 && parts[2].trim().isNotEmpty ? double.parse(parts[2].trim()) : double.nan;
+      final br = parts.length > 3 && parts[3].trim().isNotEmpty ? double.parse(parts[3].trim()) : double.nan;
 
-      if (hr.isNaN) continue;
-      if (hr < 30 || hr > 220) continue;
+      if (hr.isNaN || hr < 30 || hr > 220) continue;
 
       rows.add(_HRRow(
         ts,
         hr,
-        hrv.isNaN || hrv < 1 || hrv > 250
-            ? double.nan
-            : hrv,
-        br.isNaN || br < 4 || br > 60
-            ? double.nan
-            : br,
+        hrv.isNaN || hrv < 1 || hrv > 250 ? double.nan : hrv,
+        br.isNaN || br < 4 || br > 60 ? double.nan : br,
       ));
-    } catch (_) {
-      continue;
-    }
+    } catch (_) {}
   }
 
-  rows.sort((a, b) =>
-      a.timestamp.compareTo(b.timestamp));
+  rows.sort((a, b) => a.timestamp.compareTo(b.timestamp));
   return rows;
 }
 
-// ── Resample to 1s Grid ───────────────────────────────────────
 List<_HRRow> _resampleTo1s(List<_HRRow> rows) {
   if (rows.isEmpty) return [];
 
   final start = rows.first.timestamp;
-  final end   = rows.last.timestamp;
-  final secs  = end.difference(start).inSeconds + 1;
+  final end = rows.last.timestamp;
+  final secs = end.difference(start).inSeconds + 1;
   if (secs <= 0) return [];
 
-  // Build 1s grid
-  final hrGrid  = List<double>.filled(secs, double.nan);
+  final hrGrid = List<double>.filled(secs, double.nan);
   final hrvGrid = List<double>.filled(secs, double.nan);
-  final brGrid  = List<double>.filled(secs, double.nan);
+  final brGrid = List<double>.filled(secs, double.nan);
 
   for (final row in rows) {
-    final idx = row.timestamp
-        .difference(start)
-        .inSeconds
-        .clamp(0, secs - 1);
-    hrGrid[idx]  = row.hr;
+    final idx = row.timestamp.difference(start).inSeconds.clamp(0, secs - 1);
+    hrGrid[idx] = row.hr;
     hrvGrid[idx] = row.hrv;
-    brGrid[idx]  = row.br;
+    brGrid[idx] = row.br;
   }
 
-  // Interpolate HR (limit 10)
   _interpolate(hrGrid, 10);
 
-  // Estimate + interpolate HRV
-  final hrvNanCount =
-      hrvGrid.where((v) => v.isNaN).length;
-  if (hrvNanCount / secs > 0.5) {
+  if (hrvGrid.where((v) => v.isNaN).length / secs > 0.5) {
     _estimateHRV(hrGrid, hrvGrid);
   }
   _interpolate(hrvGrid, 20);
 
-  // Estimate + interpolate BR
-  final brNanCount =
-      brGrid.where((v) => v.isNaN).length;
-  if (brNanCount / secs > 0.5) {
+  if (brGrid.where((v) => v.isNaN).length / secs > 0.5) {
     _estimateBR(hrGrid, brGrid);
   }
   _interpolate(brGrid, 20);
 
-  // Build result
   final result = <_HRRow>[];
   for (int i = 0; i < secs; i++) {
-    if (!hrGrid[i].isNaN &&
-        !hrvGrid[i].isNaN &&
-        !brGrid[i].isNaN) {
-      result.add(_HRRow(
-        start.add(Duration(seconds: i)),
-        hrGrid[i],
-        hrvGrid[i],
-        brGrid[i],
-      ));
+    if (!hrGrid[i].isNaN && !hrvGrid[i].isNaN && !brGrid[i].isNaN) {
+      result.add(_HRRow(start.add(Duration(seconds: i)), hrGrid[i], hrvGrid[i], brGrid[i]));
     }
   }
   return result;
 }
 
-// ── Interpolation ─────────────────────────────────────────────
 void _interpolate(List<double> vals, int limit) {
   final n = vals.length;
-  int i   = 0;
+  int i = 0;
   while (i < n) {
     if (vals[i].isNaN) {
       int j = i;
-      while (j < n && vals[j].isNaN) { j++; }
+      while (j < n && vals[j].isNaN) {
+        j++;
+      }
       final gapLen = j - i;
       if (gapLen <= limit) {
-        final left  = i > 0 ? vals[i - 1] : double.nan;
-        final right = j < n ? vals[j]      : double.nan;
+        final left = i > 0 ? vals[i - 1] : double.nan;
+        final right = j < n ? vals[j] : double.nan;
         if (!left.isNaN && !right.isNaN) {
           for (int k = i; k < j; k++) {
             final t = (k - i + 1) / (gapLen + 1);
             vals[k] = left + t * (right - left);
           }
         } else if (!left.isNaN) {
-          for (int k = i; k < j; k++) { vals[k] = left; }
+          for (int k = i; k < j; k++) {
+            vals[k] = left;
+          }
         } else if (!right.isNaN) {
-          for (int k = i; k < j; k++) { vals[k] = right; }
+          for (int k = i; k < j; k++) {
+            vals[k] = right;
+          }
         }
       }
       i = j;
@@ -515,117 +387,77 @@ void _interpolate(List<double> vals, int limit) {
   }
 }
 
-// ── HRV Estimation (approximate RMSSD from HR series) ──────
-void _estimateHRV(
-    List<double> hr, List<double> hrv) {
-  // Use a rolling window to estimate RMSSD from recent HR values.
-  // Convert HR (bpm) -> RR intervals (ms) using rr = 60000 / hr,
-  // then compute RMSSD on successive RR differences.
-  const window = 60; // seconds
-
+void _estimateHRV(List<double> hr, List<double> hrv) {
+  const window = 60;
   for (int i = 0; i < hr.length; i++) {
     if (!hrv[i].isNaN) continue;
     final start = (i - window + 1).clamp(0, i);
-    final chunk = hr
-        .sublist(start, i + 1)
-        .where((v) => !v.isNaN && v > 0)
-        .toList();
-    if (chunk.length < 6) continue; // need enough samples
+    final chunk = hr.sublist(start, i + 1).where((v) => !v.isNaN && v > 0).toList();
+    if (chunk.length < 6) continue;
 
-    // Convert to RR (ms)
     final rr = chunk.map((h) => 60000.0 / h).toList();
     if (rr.length < 6) continue;
 
-    // successive differences
     final diffs = <double>[];
     for (int k = 1; k < rr.length; k++) {
-      final d = rr[k] - rr[k - 1];
-      diffs.add(d);
+      diffs.add(rr[k] - rr[k - 1]);
     }
     if (diffs.length < 5) continue;
 
-    final sq = diffs.map((d) => d * d).toList();
-    final meanSq = sq.reduce((a, b) => a + b) / sq.length;
-    final rmssd = meanSq > 0 ? math.sqrt(meanSq) : 0.0;
-
-    // Clamp to reasonable HRV bounds (in ms)
-    final val = rmssd.clamp(5.0, 250.0);
-    hrv[i] = val;
+    final meanSq = diffs.map((d) => d * d).reduce((a, b) => a + b) / diffs.length;
+    hrv[i] = math.sqrt(meanSq).clamp(5.0, 250.0);
   }
 }
 
-// ── BR Estimation ─────────────────────────────────────────────
-void _estimateBR(
-    List<double> hr, List<double> br) {
+void _estimateBR(List<double> hr, List<double> br) {
   const window = 30;
-  final smooth = List<double>.filled(
-      hr.length, double.nan);
+  final smooth = List<double>.filled(hr.length, double.nan);
 
   for (int i = 0; i < hr.length; i++) {
     final start = (i - window + 1).clamp(0, i);
-    final chunk = hr
-        .sublist(start, i + 1)
-        .where((v) => !v.isNaN)
-        .toList();
+    final chunk = hr.sublist(start, i + 1).where((v) => !v.isNaN).toList();
     if (chunk.length >= 5) {
-      smooth[i] = chunk.reduce((a, b) => a + b) /
-                  chunk.length;
+      smooth[i] = chunk.reduce((a, b) => a + b) / chunk.length;
     }
   }
 
-  final validSmooth =
-      smooth.where((v) => !v.isNaN).toList();
+  final validSmooth = smooth.where((v) => !v.isNaN).toList();
   if (validSmooth.isEmpty) return;
-
   validSmooth.sort();
-  final hrMin =
-      validSmooth[(validSmooth.length * 0.05).floor()];
-  final hrMax =
-      validSmooth[(validSmooth.length * 0.95).floor()];
-  final denom = (hrMax - hrMin).abs() < 1e-6
-      ? 1.0
-      : hrMax - hrMin;
+  final hrMin = validSmooth[(validSmooth.length * 0.05).floor()];
+  final hrMax = validSmooth[(validSmooth.length * 0.95).floor()];
+  final denom = (hrMax - hrMin).abs() < 1e-6 ? 1.0 : hrMax - hrMin;
 
   for (int i = 0; i < br.length; i++) {
-    if (!br[i].isNaN) continue;
-    if (smooth[i].isNaN) continue;
-    br[i] = (10.0 +
-              (smooth[i] - hrMin) * (10.0 / denom))
-        .clamp(8.0, 24.0);
+    if (!br[i].isNaN || smooth[i].isNaN) continue;
+    br[i] = (10.0 + (smooth[i] - hrMin) * (10.0 / denom)).clamp(8.0, 24.0);
   }
 }
 
-// ── Build Windows ─────────────────────────────────────────────
 List<_Window> _buildWindows(List<_HRRow> rows) {
   final windows = <_Window>[];
-  final n       = rows.length;
-
-  if (n < windowSeconds) return windows;
+  if (rows.length < windowSeconds) return windows;
 
   int s = 0;
-  while (s + windowSeconds <= n) {
+  while (s + windowSeconds <= rows.length) {
     final chunk = rows.sublist(s, s + windowSeconds);
-
-    final hrList  = chunk.map((r) => r.hr).toList();
+    final hrList = chunk.map((r) => r.hr).toList();
     final hrvList = chunk.map((r) => r.hrv).toList();
-    final brList  = chunk.map((r) => r.br).toList();
+    final brList = chunk.map((r) => r.br).toList();
 
-    final avgHr  = hrList.reduce((a, b) => a + b) /
-                   hrList.length;
-    final avgHrv = hrvList.reduce((a, b) => a + b) /
-                   hrvList.length;
-    final avgBr  = brList.reduce((a, b) => a + b) /
-                   brList.length;
+    final avgHr = hrList.reduce((a, b) => a + b) / hrList.length;
+    final avgHrv = hrvList.reduce((a, b) => a + b) / hrvList.length;
+    final avgBr = brList.reduce((a, b) => a + b) / brList.length;
 
     windows.add(_Window(
       startTime: chunk.first.timestamp.toIso8601String(),
-      endTime:   chunk.last.timestamp.toIso8601String(),
-      hr:        hrList,
-      hrv:       hrvList,
-      br:        brList,
-      avgHr:     double.parse(avgHr.toStringAsFixed(1)),
-      avgHrv:    double.parse(avgHrv.toStringAsFixed(1)),
-      avgBr:     double.parse(avgBr.toStringAsFixed(1)),
+      endTime: chunk.last.timestamp.toIso8601String(),
+      hr: hrList,
+      hrv: hrvList,
+      br: brList,
+      avgHr: double.parse(avgHr.toStringAsFixed(1)),
+      avgHrv: double.parse(avgHrv.toStringAsFixed(1)),
+      avgBr: double.parse(avgBr.toStringAsFixed(1)),
     ));
 
     s += strideSeconds;
@@ -634,28 +466,13 @@ List<_Window> _buildWindows(List<_HRRow> rows) {
   return windows;
 }
 
-// ── POST Windows to Julia (with retries & verbose logging) ─────
-Future<bool> _postWindows(
-    List<_Window> windows) async {
-  // ← This must match your Tailscale IP / server address
-  const serverUrl = 'http://100.67.125.12:8000/ingest';
+Future<bool> _postWindows(List<_Window> windows) async {
+  final serverUrl = '${AppConstants.serverBase}/ingest';
   const maxRetries = 3;
-
-  final payload = jsonEncode({
-    'windows': windows.map((w) => w.toJson()).toList(),
-  });
-
-  // Truncate long payloads for logs but keep full payload on first attempt
-  final truncatedPayload = payload.length > 2000
-      ? payload.substring(0, 2000) + '...<truncated>'
-      : payload;
+  final payload = jsonEncode({'windows': windows.map((w) => w.toJson()).toList()});
 
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      debugPrint('[BG] Posting to: $serverUrl (attempt $attempt)');
-      debugPrint('[BG] Windows count: ${windows.length}');
-      debugPrint('[BG] Payload preview: $truncatedPayload');
-
       final resp = await http
           .post(
             Uri.parse(serverUrl),
@@ -664,24 +481,17 @@ Future<bool> _postWindows(
           )
           .timeout(const Duration(seconds: 30));
 
-      debugPrint('[BG] Response: ${resp.statusCode}');
-      debugPrint('[BG] Response body: ${resp.body}');
-
+      debugPrint('[BG] POST $serverUrl -> ${resp.statusCode}');
       if (resp.statusCode == 200) return true;
-
-      // non-200 -> retry with backoff
-      debugPrint('[BG] Non-200 response, will retry if attempts remain');
-
     } catch (e) {
       debugPrint('[BG POST ERROR] attempt $attempt -> $e');
     }
 
-    // Backoff before next attempt
     if (attempt < maxRetries) {
-      final backoffMs = 500 * (1 << (attempt - 1)); // 500, 1000, 2000
-      await Future.delayed(Duration(milliseconds: backoffMs));
+      await Future.delayed(Duration(milliseconds: 500 * (1 << (attempt - 1))));
     }
   }
 
   return false;
 }
+ 
