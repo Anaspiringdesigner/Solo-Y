@@ -4,7 +4,15 @@ authors = ["vamsimadhavtata <208189974+Anaspiringdesigner@users.noreply.github.c
 version = "0.1.0"
 
 [deps]
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReinforcementLearning = "158674fc-8238-5cab-b5ba-03dfc80d1318"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
-[compat]
-ReinforcementLearning = "0.11.0"

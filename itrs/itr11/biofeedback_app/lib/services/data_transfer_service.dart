@@ -118,12 +118,10 @@ void onStart(ServiceInstance service) async {
 
   service.on('reload_sensor').listen((event) async {
     try {
-      if (event is Map) {
-        final dynamic sensorValue = event['sensor_type'];
-        await syncSensorType((sensorValue ?? '').toString());
-      } else {
-        await syncSensorType(event?.toString() ?? '');
-      }
+      final Map<String, dynamic> eventMap =
+          event is Map ? Map<String, dynamic>.from(event as Map) : const <String, dynamic>{};
+      final dynamic sensorValue = eventMap['sensor_type'] ?? '';
+      await syncSensorType(sensorValue.toString());
     } catch (e) {
       debugPrint('[BG] reload_sensor error: $e');
     }
