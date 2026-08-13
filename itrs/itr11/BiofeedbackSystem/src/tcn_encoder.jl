@@ -247,8 +247,9 @@ function encode_window(hr      :: Vector{Float32},
         end
 
         println("[ENCODE] end=$(end_time) " *
-                "HR=$(round(avg_hr, digits=1)) " *
-                "HRV=$(round(avg_hrv, digits=1))")
+            "HR=$(round(avg_hr, digits=1)) " *
+            "HRV=$(round(avg_hrv, digits=1)) " *
+            "BR=$(round(avg_br, digits=1))")
         return item
 
     catch e
