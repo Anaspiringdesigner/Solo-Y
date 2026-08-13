@@ -196,15 +196,12 @@ end
 function save_runtime_state(agent::DQNAgent)
     mkpath(RUN_DIR)
 
-    replay_items = agent.replay.size > 0 ?
-                   agent.replay.buffer[1:agent.replay.size] :
-                   Transition[]
-
     replay_state = Dict(
         "capacity" => agent.replay.capacity,
         "position" => agent.replay.position,
         "size"     => agent.replay.size,
-        "items"    => replay_items,
+        # Save full raw ring buffer to preserve exact circular ordering.
+        "buffer"   => copy(agent.replay.buffer),
     )
 
     runtime = Dict(
@@ -228,12 +225,10 @@ function load_runtime_state!(agent::DQNAgent)
 
     agent.replay = ReplayBuffer(capacity)
 
-    items = replay_state["items"]
-    for item in items
-        push_transition!(agent.replay, item)
-    end
-
-    # Restore circular buffer bookkeeping exactly as saved.
+    # Restore exact raw circular buffer layout.
+    raw_buffer = replay_state["buffer"]
+    @assert length(raw_buffer) == capacity "Replay buffer length mismatch"
+    agent.replay.buffer   = raw_buffer
     agent.replay.position = replay_state["position"]
     agent.replay.size     = replay_state["size"]
 

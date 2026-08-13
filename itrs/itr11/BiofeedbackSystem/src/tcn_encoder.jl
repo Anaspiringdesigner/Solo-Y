@@ -33,6 +33,9 @@ const STATE_PATH   = joinpath(MODEL_DIR, "tcn_runtime_state.bson")
 const DEFAULT_MEDIAN = Float32[70.0, 30.0, 14.0]
 const DEFAULT_IQR    = Float32[15.0, 20.0,  6.0]
 
+# Runtime-state save throttling to reduce per-window disk I/O.
+const RUNTIME_SAVE_EVERY = 10
+
 # ── Scaler ───────────────────────────────────────────────────
 struct RobustScaler
     median :: Vector{Float32}
@@ -199,10 +202,11 @@ mutable struct EncoderState
     latest           :: Union{Dict, Nothing}
     buffer           :: Vector{Dict}
     using_pretrained :: Bool
+    encode_count     :: Int
 end
 
 function EncoderState()
-    EncoderState(nothing, default_scaler(), nothing, Dict[], false)
+    EncoderState(nothing, default_scaler(), nothing, Dict[], false, 0)
 end
 
 const STATE = EncoderState()
@@ -219,6 +223,7 @@ function save_runtime_state()
         "latest"           => STATE.latest,
         "buffer"           => STATE.buffer,
         "using_pretrained" => STATE.using_pretrained,
+        "encode_count"     => STATE.encode_count,
     )
     @save STATE_PATH runtime
     println("[ENCODER] Runtime state saved | buffer=$(length(STATE.buffer))")
@@ -232,6 +237,7 @@ function load_runtime_state!()::Bool
     STATE.latest           = get(runtime, "latest", nothing)
     STATE.buffer           = get(runtime, "buffer", Dict[])
     STATE.using_pretrained = get(runtime, "using_pretrained", false)
+    STATE.encode_count     = get(runtime, "encode_count", 0)
 
     println("[ENCODER] Runtime state loaded | buffer=$(length(STATE.buffer))")
     return true
@@ -279,8 +285,12 @@ function encode_window(hr      :: Vector{Float32},
             popfirst!(STATE.buffer)
         end
 
-        # Persist runtime state after each successful encode.
-        save_runtime_state()
+        STATE.encode_count += 1
+
+        # Persist runtime state periodically to reduce disk I/O.
+        if STATE.encode_count % RUNTIME_SAVE_EVERY == 0
+            save_runtime_state()
+        end
 
         println("[ENCODE] end=$(end_time) " *
                 "HR=$(round(avg_hr, digits=1)) " *

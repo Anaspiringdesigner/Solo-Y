@@ -270,6 +270,9 @@ function ingest_window!(env      :: BiofeedbackEnv,
 
         if env.hold_counter <= 0
             env.last_reward   = compute_hold_reward(env.reward_samples)
+            # Ensure terminal state reflects latest end-of-hold observation.
+            env.state         = build_state(z, avg_hr, avg_hrv,
+                                            avg_br, env.trigger_type)
             env.is_holding    = false
             env.is_terminated = true
 

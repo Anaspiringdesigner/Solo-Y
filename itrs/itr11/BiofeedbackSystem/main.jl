@@ -129,7 +129,7 @@ function handle_ingest(req::HTTP.Request)
                     hold_steps = RLEnvironment.HOLD_STEPS
                 )
                 ENV_INSTANCE[].is_terminated = false
-                ENV_INSTANCE[](action + 1)
+                (ENV_INSTANCE[])(action + 1)
                 APP_STATE.active_interaction = action
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
             end
@@ -194,7 +194,7 @@ function handle_trigger(req::HTTP.Request)
                 hold_steps = RLEnvironment.HOLD_STEPS
             )
             ENV_INSTANCE[].is_terminated = false
-            ENV_INSTANCE[](action + 1)
+            (ENV_INSTANCE[])(action + 1)
             APP_STATE.active_interaction = action
             APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
 
