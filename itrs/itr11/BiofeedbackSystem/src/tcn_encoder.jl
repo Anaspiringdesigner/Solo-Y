@@ -2,6 +2,9 @@
 # tcn_encoder.jl
 # Julia/Flux port of brain_tcn.py
 # TCN Encoder: 4 dilated residual blocks → latent z ∈ ℝ³²
+# - Encoder weights + scaler load from disk
+# - Runtime state (latest + buffer + pretrained flag) persisted
+#   so encoder continuity survives server restarts
 # ============================================================
 
 module TCNEncoder
@@ -25,6 +28,7 @@ const DROPOUT_RATE   = 0.1f0
 const MODEL_DIR    = "models"
 const ENCODER_PATH = joinpath(MODEL_DIR, "tcn_encoder.bson")
 const SCALER_PATH  = joinpath(MODEL_DIR, "scaler.npz")
+const STATE_PATH   = joinpath(MODEL_DIR, "tcn_runtime_state.bson")
 
 const DEFAULT_MEDIAN = Float32[70.0, 30.0, 14.0]
 const DEFAULT_IQR    = Float32[15.0, 20.0,  6.0]
@@ -91,7 +95,7 @@ function TCNResBlock(in_ch::Int, filters::Int,
 end
 
 function (block::TCNResBlock)(x::AbstractArray;
-                               training::Bool=false)
+                              training::Bool=false)
     shortcut = x
     y = block.conv1(x)
     y = block.bn1(y)
@@ -130,7 +134,7 @@ function build_tcn_encoder()::TCNEncoderModel
 end
 
 function (enc::TCNEncoderModel)(x::AbstractArray;
-                                 training::Bool=false)
+                                training::Bool=false)
     # x: (batch, time, channels) → permute → (time, channels, batch)
     h = permutedims(x, (2, 3, 1))
     for block in enc.blocks
@@ -164,7 +168,7 @@ function build_autoencoder(encoder::TCNEncoderModel)::TCNAutoencoder
 end
 
 function (ae::TCNAutoencoder)(x::AbstractArray;
-                               training::Bool=false)
+                              training::Bool=false)
     z     = ae.encoder(x; training=training)
     recon = ae.decoder(z)
     return permutedims(recon, (3, 1, 2))
@@ -204,14 +208,43 @@ end
 const STATE = EncoderState()
 const BUFFER_MAXSIZE = 1000
 
+# ── Runtime Persistence ───────────────────────────────────────
+# Saves latest encoded item and rolling buffer so a restarted server
+# continues from the previous encoder runtime context instead of starting
+# with an empty latest/buffer state.
+
+function save_runtime_state()
+    mkpath(MODEL_DIR)
+    runtime = Dict(
+        "latest"           => STATE.latest,
+        "buffer"           => STATE.buffer,
+        "using_pretrained" => STATE.using_pretrained,
+    )
+    @save STATE_PATH runtime
+    println("[ENCODER] Runtime state saved | buffer=$(length(STATE.buffer))")
+end
+
+function load_runtime_state!()::Bool
+    isfile(STATE_PATH) || return false
+
+    @load STATE_PATH runtime
+
+    STATE.latest           = get(runtime, "latest", nothing)
+    STATE.buffer           = get(runtime, "buffer", Dict[])
+    STATE.using_pretrained = get(runtime, "using_pretrained", false)
+
+    println("[ENCODER] Runtime state loaded | buffer=$(length(STATE.buffer))")
+    return true
+end
+
 # ── Encode Window ─────────────────────────────────────────────
 function encode_window(hr      :: Vector{Float32},
-                        hrv     :: Vector{Float32},
-                        br      :: Vector{Float32},
-                        avg_hr  :: Float32,
-                        avg_hrv :: Float32,
-                        avg_br  :: Float32,
-                        end_time:: String)::Union{Dict, Nothing}
+                       hrv     :: Vector{Float32},
+                       br      :: Vector{Float32},
+                       avg_hr  :: Float32,
+                       avg_hrv :: Float32,
+                       avg_br  :: Float32,
+                       end_time:: String)::Union{Dict, Nothing}
 
     STATE.encoder === nothing && return nothing
 
@@ -246,10 +279,13 @@ function encode_window(hr      :: Vector{Float32},
             popfirst!(STATE.buffer)
         end
 
+        # Persist runtime state after each successful encode.
+        save_runtime_state()
+
         println("[ENCODE] end=$(end_time) " *
-            "HR=$(round(avg_hr, digits=1)) " *
-            "HRV=$(round(avg_hrv, digits=1)) " *
-            "BR=$(round(avg_br, digits=1))")
+                "HR=$(round(avg_hr, digits=1)) " *
+                "HRV=$(round(avg_hrv, digits=1)) " *
+                "BR=$(round(avg_br, digits=1))")
         return item
 
     catch e
@@ -265,13 +301,16 @@ function init_encoder()
 
     if isfile(ENCODER_PATH)
         println("[INIT] Loading pretrained encoder: $ENCODER_PATH")
-        STATE.encoder        = load_encoder(ENCODER_PATH)
+        STATE.encoder          = load_encoder(ENCODER_PATH)
         STATE.using_pretrained = true
     else
         println("[INIT] No pretrained encoder, building fresh")
-        STATE.encoder        = build_tcn_encoder()
+        STATE.encoder          = build_tcn_encoder()
         STATE.using_pretrained = false
     end
+
+    # Restore runtime continuity if available.
+    load_runtime_state!()
 
     println("[INIT] Encoder ready | latent_dim=$(LATENT_DIM)")
 end

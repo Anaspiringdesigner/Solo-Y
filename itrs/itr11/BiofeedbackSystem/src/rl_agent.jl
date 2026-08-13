@@ -7,6 +7,8 @@
 # - Reward: mean(0.8×ΔHRV − 0.2×ΔHR) over 3-min hold
 # - Replay buffer + target network
 # - Checkpoint save/load via BSON
+# - Cumulative reward tracked and persisted
+# - Replay + pending transition state persisted for restart continuity
 # ============================================================
 
 module RLAgent
@@ -34,12 +36,13 @@ const EPSILON_MIN   = 0.05f0
 const EPSILON_DECAY = 0.995f0
 
 # Checkpoint paths
-const RUN_DIR    = "rl_runs"
-const CKPT_PATH  = joinpath(RUN_DIR, "dqn_ckpt.bson")
-const TARGET_CKPT = joinpath(RUN_DIR, "dqn_target.bson")
-const META_PATH  = joinpath(RUN_DIR, "dqn_meta.bson")
-const BEST_CKPT  = joinpath(RUN_DIR, "dqn_best.bson")
-const LOG_PATH   = joinpath(RUN_DIR, "rl_log.csv")
+const RUN_DIR      = "rl_runs"
+const CKPT_PATH    = joinpath(RUN_DIR, "dqn_ckpt.bson")
+const TARGET_CKPT  = joinpath(RUN_DIR, "dqn_target.bson")
+const META_PATH    = joinpath(RUN_DIR, "dqn_meta.bson")
+const BEST_CKPT    = joinpath(RUN_DIR, "dqn_best.bson")
+const LOG_PATH     = joinpath(RUN_DIR, "rl_log.csv")
+const STATE_PATH   = joinpath(RUN_DIR, "dqn_runtime_state.bson")
 
 # Best model tracking
 const BEST_EMA_ALPHA = 0.1f0
@@ -84,7 +87,7 @@ function push_transition!(buf::ReplayBuffer, t::Transition)
 end
 
 function sample_batch(buf::ReplayBuffer,
-                       n::Int)::Vector{Transition}
+                      n::Int)::Vector{Transition}
     idx = randperm(buf.size)[1:n]
     return buf.buffer[idx]
 end
@@ -100,16 +103,17 @@ end
 
 # ── Agent Struct ──────────────────────────────────────────────
 mutable struct DQNAgent
-    q_net       :: Chain
-    target_net  :: Chain
-    optimizer   :: Adam
-    replay      :: ReplayBuffer
-    epsilon     :: Float32
-    step        :: Int
-    ema_reward  :: Float32
-    best_ema    :: Float32
-    prev_state  :: Union{Vector{Float32}, Nothing}
-    prev_action :: Union{Int, Nothing}
+    q_net             :: Chain
+    target_net        :: Chain
+    optimizer         :: Adam
+    replay            :: ReplayBuffer
+    epsilon           :: Float32
+    step              :: Int
+    ema_reward        :: Float32
+    best_ema          :: Float32
+    cumulative_reward :: Float32
+    prev_state        :: Union{Vector{Float32}, Nothing}
+    prev_action       :: Union{Int, Nothing}
 end
 
 function DQNAgent()
@@ -124,6 +128,7 @@ function DQNAgent()
         0,
         0.0f0,
         -1f10,
+        0.0f0,
         nothing,
         nothing,
     )
@@ -138,7 +143,7 @@ end
 
 # ── Action Selection ──────────────────────────────────────────
 function select_action(agent::DQNAgent,
-                        state::Vector{Float32})::Tuple{Int, String}
+                       state::Vector{Float32})::Tuple{Int, String}
     if rand(Float32) < agent.epsilon
         return rand(0:(N_ACTIONS-1)), "explore"
     else
@@ -184,45 +189,119 @@ function sync_target!(agent::DQNAgent)
     println("[DQN] Target synced @ step=$(agent.step)")
 end
 
+# ── Runtime State Save ────────────────────────────────────────
+# Saves replay buffer + pending previous transition context so
+# the agent can continue across server restarts.
+
+function save_runtime_state(agent::DQNAgent)
+    mkpath(RUN_DIR)
+
+    replay_items = agent.replay.size > 0 ?
+                   agent.replay.buffer[1:agent.replay.size] :
+                   Transition[]
+
+    replay_state = Dict(
+        "capacity" => agent.replay.capacity,
+        "position" => agent.replay.position,
+        "size"     => agent.replay.size,
+        "items"    => replay_items,
+    )
+
+    runtime = Dict(
+        "prev_state"  => agent.prev_state,
+        "prev_action" => agent.prev_action,
+        "replay"      => replay_state,
+    )
+
+    @save STATE_PATH runtime
+    println("[CKPT] Runtime state saved | replay=$(agent.replay.size)")
+end
+
+# ── Runtime State Load ────────────────────────────────────────
+function load_runtime_state!(agent::DQNAgent)
+    isfile(STATE_PATH) || return false
+
+    @load STATE_PATH runtime
+
+    replay_state = runtime["replay"]
+    capacity     = replay_state["capacity"]
+
+    agent.replay = ReplayBuffer(capacity)
+
+    items = replay_state["items"]
+    for item in items
+        push_transition!(agent.replay, item)
+    end
+
+    # Restore circular buffer bookkeeping exactly as saved.
+    agent.replay.position = replay_state["position"]
+    agent.replay.size     = replay_state["size"]
+
+    agent.prev_state  = runtime["prev_state"]
+    agent.prev_action = runtime["prev_action"]
+
+    println("[CKPT] Runtime state loaded | replay=$(agent.replay.size)")
+    return true
+end
+
 # ── Checkpoint Save ───────────────────────────────────────────
 function save_checkpoint(agent::DQNAgent)
     mkpath(RUN_DIR)
+
     q_net      = agent.q_net
     target_net = agent.target_net
+
     meta = Dict(
-        "step"       => agent.step,
-        "epsilon"    => agent.epsilon,
-        "ema_reward" => agent.ema_reward,
-        "best_ema"   => agent.best_ema,
+        "step"              => agent.step,
+        "epsilon"           => agent.epsilon,
+        "ema_reward"        => agent.ema_reward,
+        "best_ema"          => agent.best_ema,
+        "cumulative_reward" => agent.cumulative_reward,
     )
+
     @save CKPT_PATH   q_net
     @save TARGET_CKPT target_net
     @save META_PATH   meta
+
+    # Save runtime continuity state alongside the model checkpoint.
+    save_runtime_state(agent)
+
     println("[CKPT] Saved @ step=$(agent.step) " *
-            "ε=$(round(agent.epsilon,    digits=3)) " *
-            "ema=$(round(agent.ema_reward,digits=4))")
+            "ε=$(round(agent.epsilon, digits=3)) " *
+            "ema=$(round(agent.ema_reward, digits=4)) " *
+            "cum=$(round(agent.cumulative_reward, digits=4))")
 end
 
 # ── Checkpoint Load ───────────────────────────────────────────
 function load_checkpoint!(agent::DQNAgent)
-    if isfile(CKPT_PATH)  &&
+    if isfile(CKPT_PATH) &&
        isfile(TARGET_CKPT) &&
        isfile(META_PATH)
+
         @load CKPT_PATH   q_net
         @load TARGET_CKPT target_net
         @load META_PATH   meta
+
         Flux.loadmodel!(agent.q_net,
                         Flux.state(q_net))
         Flux.loadmodel!(agent.target_net,
                         Flux.state(target_net))
-        agent.step       = meta["step"]
-        agent.epsilon    = meta["epsilon"]
-        agent.ema_reward = meta["ema_reward"]
-        agent.best_ema   = meta["best_ema"]
+
+        agent.step              = meta["step"]
+        agent.epsilon           = meta["epsilon"]
+        agent.ema_reward        = meta["ema_reward"]
+        agent.best_ema          = meta["best_ema"]
+        agent.cumulative_reward = get(meta, "cumulative_reward", 0.0f0)
+
         println("[CKPT] Loaded step=$(agent.step) " *
-                "ε=$(round(agent.epsilon, digits=3))")
+                "ε=$(round(agent.epsilon, digits=3)) " *
+                "cum=$(round(agent.cumulative_reward, digits=4))")
+
+        # Replay/pending transition continuity is stored separately.
+        load_runtime_state!(agent)
         return true
     end
+
     println("[CKPT] No checkpoint — starting fresh")
     return false
 end
@@ -234,7 +313,7 @@ function maybe_save_best!(agent::DQNAgent)
         agent.best_ema = agent.ema_reward
         q_net = agent.q_net
         @save BEST_CKPT q_net
-        println("[BEST] New best EMA=$(round(agent.best_ema,digits=4)) " *
+        println("[BEST] New best EMA=$(round(agent.best_ema, digits=4)) " *
                 "@ step=$(agent.step)")
     end
 end
@@ -245,21 +324,21 @@ function init_log()
     isfile(LOG_PATH) && return
     open(LOG_PATH, "w") do f
         write(f, "timestamp,step,mode,action,action_name," *
-                  "epsilon,reward,ema_reward," *
+                  "epsilon,reward,cumulative_reward,ema_reward," *
                   "avg_hr,avg_hrv,avg_br," *
                   "trigger_type,replay_size,trained\n")
     end
 end
 
 function log_step(agent        :: DQNAgent,
-                   mode         :: String,
-                   action       :: Int,
-                   reward       :: Float32,
-                   avg_hr       :: Float32,
-                   avg_hrv      :: Float32,
-                   avg_br       :: Float32,
-                   trigger_type :: Int,
-                   trained      :: Bool)
+                  mode         :: String,
+                  action       :: Int,
+                  reward       :: Float32,
+                  avg_hr       :: Float32,
+                  avg_hrv      :: Float32,
+                  avg_br       :: Float32,
+                  trigger_type :: Int,
+                  trained      :: Bool)
     open(LOG_PATH, "a") do f
         write(f,
             "$(now())," *
@@ -267,12 +346,13 @@ function log_step(agent        :: DQNAgent,
             "$(mode)," *
             "$(action)," *
             "$(ACTION_NAMES[action])," *
-            "$(round(agent.epsilon,    digits=6))," *
-            "$(round(reward,           digits=6))," *
+            "$(round(agent.epsilon, digits=6))," *
+            "$(round(reward, digits=6))," *
+            "$(round(agent.cumulative_reward, digits=6))," *
             "$(round(agent.ema_reward, digits=6))," *
-            "$(round(avg_hr,           digits=3))," *
-            "$(round(avg_hrv,          digits=3))," *
-            "$(round(avg_br,           digits=3))," *
+            "$(round(avg_hr, digits=3))," *
+            "$(round(avg_hrv, digits=3))," *
+            "$(round(avg_br, digits=3))," *
             "$(trigger_type)," *
             "$(agent.replay.size)," *
             "$(Int(trained))\n"
@@ -282,18 +362,23 @@ end
 
 # ── Main Agent Step ───────────────────────────────────────────
 # Called once per trigger event
+#
+# reward passed into this function is the reward from the most recently
+# completed hold. We add it into cumulative_reward here so the agent keeps
+# a running sum of all completed trigger rewards over time.
 
 function agent_step!(agent        :: DQNAgent,
-                      state        :: Vector{Float32},
-                      reward       :: Float32,
-                      avg_hr       :: Float32,
-                      avg_hrv      :: Float32,
-                      avg_br       :: Float32,
-                      trigger_type :: Int;
-                      is_holding   :: Bool = false,
-                      hold_steps   :: Int  = 0)::Int
+                     state        :: Vector{Float32},
+                     reward       :: Float32,
+                     avg_hr       :: Float32,
+                     avg_hrv      :: Float32,
+                     avg_br       :: Float32,
+                     trigger_type :: Int;
+                     is_holding   :: Bool = false,
+                     hold_steps   :: Int  = 0)::Int
 
-    # Store transition from previous episode
+    # Store transition from previous episode.
+    # This links the previous action to the reward that has just been realized.
     if agent.prev_state  !== nothing &&
        agent.prev_action !== nothing
         push_transition!(agent.replay, Transition(
@@ -305,7 +390,12 @@ function agent_step!(agent        :: DQNAgent,
         ))
     end
 
-    # Update EMA reward
+    # Update cumulative reward.
+    # This is a simple running sum of completed hold rewards.
+    agent.cumulative_reward += reward
+
+    # Update EMA reward.
+    # This remains useful for smoothing and best-model selection.
     agent.ema_reward = (1f0 - BEST_EMA_ALPHA) *
                         agent.ema_reward +
                         BEST_EMA_ALPHA * reward
@@ -328,6 +418,7 @@ function agent_step!(agent        :: DQNAgent,
         avg_hrv,
         avg_br,
         reward,
+        agent.cumulative_reward,
         trigger_type,
         is_holding,
         hold_steps
@@ -350,11 +441,12 @@ function agent_step!(agent        :: DQNAgent,
     println("[DQN] step=$(agent.step) | " *
             "mode=$(mode) | " *
             "action=$(action)($(ACTION_NAMES[action])) | " *
-            "ε=$(round(agent.epsilon,    digits=3)) | " *
-            "r=$(round(reward,           digits=4)) | " *
-            "ema=$(round(agent.ema_reward,digits=4)) | " *
-            "HR=$(round(avg_hr,  digits=1)) " *
-            "HRV=$(round(avg_hrv,digits=1)) | " *
+            "ε=$(round(agent.epsilon, digits=3)) | " *
+            "r=$(round(reward, digits=4)) | " *
+            "cum=$(round(agent.cumulative_reward, digits=4)) | " *
+            "ema=$(round(agent.ema_reward, digits=4)) | " *
+            "HR=$(round(avg_hr, digits=1)) " *
+            "HRV=$(round(avg_hrv, digits=1)) | " *
             "replay=$(agent.replay.size) | " *
             "trained=$(trained)")
 
@@ -377,7 +469,8 @@ function init_agent(; load_ckpt::Bool=true)::DQNAgent
     println("[DQN] Agent ready | " *
             "state_dim=$(STATE_DIM) | " *
             "n_actions=$(N_ACTIONS) | " *
-            "ε=$(agent.epsilon)")
+            "ε=$(agent.epsilon) | " *
+            "cum=$(round(agent.cumulative_reward, digits=4))")
     return agent
 end
 

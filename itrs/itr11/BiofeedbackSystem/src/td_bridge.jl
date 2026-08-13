@@ -2,7 +2,8 @@
 # td_bridge.jl
 # TouchDesigner OSC Bridge
 # - Builds proper OSC packets
-# - Sends interaction, vitals, reward, trigger, hold status
+# - Sends interaction, vitals, reward, cumulative reward,
+#   trigger, hold status
 # - Clean separation from RL agent logic
 # ============================================================
 
@@ -24,7 +25,7 @@ function pad4(bytes::Vector{UInt8})::Vector{UInt8}
 end
 
 function build_osc_float(address::String,
-                          value::Float32)::Vector{UInt8}
+                         value::Float32)::Vector{UInt8}
     # Address string — null terminated + padded to 4 bytes
     addr_bytes = pad4(vcat(Vector{UInt8}(address), 0x00))
 
@@ -38,7 +39,7 @@ function build_osc_float(address::String,
 end
 
 function build_osc_int(address::String,
-                        value::Int32)::Vector{UInt8}
+                       value::Int32)::Vector{UInt8}
     # Address string
     addr_bytes = pad4(vcat(Vector{UInt8}(address), 0x00))
 
@@ -86,46 +87,53 @@ end
 
 # ── Main Send Function ────────────────────────────────────────
 # Called by RL agent after every action selection
+#
+# Sends both:
+# - reward: reward for the most recently completed trigger/hold
+# - cumulative_reward: running sum across all completed rewards
 
-function send_action(action       :: Int,
-                      avg_hr       :: Float32,
-                      avg_hrv      :: Float32,
-                      avg_br       :: Float32,
-                      reward       :: Float32,
-                      trigger_type :: Int,
-                      is_holding   :: Bool,
-                      hold_steps   :: Int)::Bool
+function send_action(action            :: Int,
+                     avg_hr            :: Float32,
+                     avg_hrv           :: Float32,
+                     avg_br            :: Float32,
+                     reward            :: Float32,
+                     cumulative_reward :: Float32,
+                     trigger_type      :: Int,
+                     is_holding        :: Bool,
+                     hold_steps        :: Int)::Bool
 
     messages = Vector{UInt8}[
         # Core interaction selector (int)
         build_osc_int("/biofeedback/interaction",
-                       Int32(action)),
+                      Int32(action)),
 
         # Live vitals (float)
-        build_osc_float("/biofeedback/hr",      avg_hr),
-        build_osc_float("/biofeedback/hrv",     avg_hrv),
-        build_osc_float("/biofeedback/br",      avg_br),
+        build_osc_float("/biofeedback/hr",  avg_hr),
+        build_osc_float("/biofeedback/hrv", avg_hrv),
+        build_osc_float("/biofeedback/br",  avg_br),
 
         # RL metadata (float)
-        build_osc_float("/biofeedback/reward",  reward),
+        build_osc_float("/biofeedback/reward",            reward),
+        build_osc_float("/biofeedback/cumulative_reward", cumulative_reward),
         build_osc_float("/biofeedback/trigger",
-                         Float32(trigger_type)),
+                        Float32(trigger_type)),
 
         # Hold status
         build_osc_float("/biofeedback/holding",
-                         Float32(is_holding ? 1 : 0)),
+                        Float32(is_holding ? 1 : 0)),
         build_osc_float("/biofeedback/hold_steps",
-                         Float32(hold_steps)),
+                        Float32(hold_steps)),
     ]
 
     ok = send_udp(messages)
 
     if ok
         println("[TD BRIDGE] → interaction=$(action) " *
-                "HR=$(round(avg_hr,    digits=1)) " *
-                "HRV=$(round(avg_hrv,  digits=1)) " *
-                "BR=$(round(avg_br,    digits=1)) " *
-                "reward=$(round(reward,digits=4)) " *
+                "HR=$(round(avg_hr, digits=1)) " *
+                "HRV=$(round(avg_hrv, digits=1)) " *
+                "BR=$(round(avg_br, digits=1)) " *
+                "reward=$(round(reward, digits=4)) " *
+                "cum=$(round(cumulative_reward, digits=4)) " *
                 "holding=$(is_holding)")
     end
 
@@ -136,8 +144,8 @@ end
 # Called during hold period to keep TD updated with live data
 
 function send_vitals(avg_hr  :: Float32,
-                      avg_hrv :: Float32,
-                      avg_br  :: Float32)::Bool
+                     avg_hrv :: Float32,
+                     avg_br  :: Float32)::Bool
     messages = Vector{UInt8}[
         build_osc_float("/biofeedback/hr",  avg_hr),
         build_osc_float("/biofeedback/hrv", avg_hrv),
@@ -151,13 +159,13 @@ end
 # animate based on remaining hold time
 
 function send_hold_progress(hold_steps_remaining :: Int,
-                              hold_steps_total     :: Int)::Bool
+                            hold_steps_total     :: Int)::Bool
     progress = Float32(1.0 - hold_steps_remaining /
                              max(1, hold_steps_total))
     messages = Vector{UInt8}[
         build_osc_float("/biofeedback/hold_progress", progress),
         build_osc_float("/biofeedback/hold_steps",
-                         Float32(hold_steps_remaining)),
+                        Float32(hold_steps_remaining)),
     ]
     return send_udp(messages)
 end

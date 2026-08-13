@@ -1,6 +1,9 @@
 # ============================================================
 # main.jl
 # Biofeedback System — Full Pipeline
+# - App-visible state includes both last reward and cumulative reward
+# - Cumulative reward is sourced from RL agent state
+# - Restart continuity loads RL checkpoint/runtime and encoder runtime
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -27,11 +30,12 @@ mutable struct AppState
     avg_br             :: Float32
     active_interaction :: Int
     last_reward        :: Float32
+    cumulative_reward  :: Float32
     is_holding         :: Bool
     hold_steps_left    :: Int
 end
 
-AppState() = AppState(0f0, 0f0, 0f0, 0, 0f0, false, 0)
+AppState() = AppState(0f0, 0f0, 0f0, 0, 0f0, 0f0, false, 0)
 
 const APP_STATE = AppState()
 
@@ -105,6 +109,7 @@ function handle_ingest(req::HTTP.Request)
                 )
                 APP_STATE.active_interaction = action
                 APP_STATE.last_reward        = ENV_INSTANCE[].last_reward
+                APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
                 TDBridge.send_vitals(0f0, 0f0, 0f0)
                 TDBridge.send_hold_progress(0, RLEnvironment.HOLD_STEPS)
                 ENV_INSTANCE[].is_terminated = false
@@ -126,6 +131,7 @@ function handle_ingest(req::HTTP.Request)
                 ENV_INSTANCE[].is_terminated = false
                 ENV_INSTANCE[](action + 1)
                 APP_STATE.active_interaction = action
+                APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
             end
 
             ingested += 1
@@ -190,6 +196,7 @@ function handle_trigger(req::HTTP.Request)
             ENV_INSTANCE[].is_terminated = false
             ENV_INSTANCE[](action + 1)
             APP_STATE.active_interaction = action
+            APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
 
             return HTTP.Response(200,
                 JSON3.write(Dict(
@@ -225,6 +232,7 @@ function handle_status(req::HTTP.Request)
         "interaction_name"   => RLAgent.ACTION_NAMES[
                                     APP_STATE.active_interaction],
         "last_reward"        => APP_STATE.last_reward,
+        "cumulative_reward"  => APP_STATE.cumulative_reward,
         "is_holding"         => APP_STATE.is_holding,
         "hold_steps_left"    => APP_STATE.hold_steps_left,
         "replay_size"        => AGENT_INSTANCE[].replay.size,
@@ -286,7 +294,8 @@ function handle_force_interaction(req::HTTP.Request)
             APP_STATE.avg_hr,
             APP_STATE.avg_hrv,
             APP_STATE.avg_br,
-            0.0f0,
+            APP_STATE.last_reward,
+            APP_STATE.cumulative_reward,
             2,
             false,
             0
@@ -342,6 +351,9 @@ function main()
 
     println("\n[INIT] Starting RL Agent...")
     AGENT_INSTANCE[] = RLAgent.init_agent(load_ckpt=true)
+
+    # Restore app-visible cumulative reward from RL state immediately on boot.
+    APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
 
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
