@@ -50,7 +50,7 @@ const BEST_MIN_STEPS = 20
 
 # Action names
 const ACTION_NAMES = Dict(
-    0 => "Paper Crumpling",
+    0 => "Ray Casting",
     1 => "Noise Crumpling",
     2 => "Noise in Circle",
     3 => "Video Ripples",

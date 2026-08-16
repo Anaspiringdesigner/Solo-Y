@@ -3,7 +3,7 @@
 # Biofeedback System — Full Pipeline
 # - Robust hold pacing: advance at most once every 5s during holds.
 # - Persist & restore cumulative_reward across restarts.
-# - Push restored cumulative_reward to TouchDesigner on startup.
+# - After every hold completes, send "interaction 5" to TouchDesigner.
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -81,6 +81,23 @@ function _save_runtime_cumulative_reward(val::Float32)
     end
 end
 
+# ─────────────────────────────────────────────────────────────
+# Post-hold TD action (non-RL interaction)
+# ─────────────────────────────────────────────────────────────
+# After every hold completes, show this interaction in TD.
+# You said "not 4 but 5" — so we use 5 here.
+const POST_HOLD_INTERACTION = 5
+
+# Safely resolve interaction names even if RLAgent.ACTION_NAMES
+# does not contain POST_HOLD_INTERACTION.
+@inline function _interaction_name(idx::Int)
+    try
+        RLAgent.ACTION_NAMES[idx]
+    catch
+        idx == POST_HOLD_INTERACTION ? "PostHold" : "Unknown"
+    end
+end
+
 mutable struct AppState
     avg_hr             :: Float32
     avg_hrv            :: Float32
@@ -96,10 +113,8 @@ AppState() = AppState(0f0, 0f0, 0f0, 0, 0f0, 0f0, false, 0)
 
 const APP_STATE = AppState()
 
-const ENV_INSTANCE = Ref{RLEnvironment.BiofeedbackEnv}(
-    RLEnvironment.BiofeedbackEnv())
-const AGENT_INSTANCE = Ref{RLAgent.DQNAgent}(
-    RLAgent.DQNAgent())
+const ENV_INSTANCE = Ref{RLEnvironment.BiofeedbackEnv}(RLEnvironment.BiofeedbackEnv())
+const AGENT_INSTANCE = Ref{RLAgent.DQNAgent}(RLAgent.DQNAgent())
 
 function handle_ingest(req::HTTP.Request)
     try
@@ -108,7 +123,7 @@ function handle_ingest(req::HTTP.Request)
         ingested = 0
 
         for w in windows
-            # Always encode every window to keep latest latent up to date.
+            # Always encode every window to keep the latest latent up to date.
             hr  = Float32.(w["hr"])
             hrv = Float32.(w["hrv"])
             br  = Float32.(w["br"])
@@ -164,7 +179,7 @@ function handle_ingest(req::HTTP.Request)
             APP_STATE.is_holding      = ENV_INSTANCE[].is_holding
             APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
 
-            # While holding, keep TD overlays updated.
+            # While holding, keep TD overlays updated (progress is paced).
             if ENV_INSTANCE[].is_holding
                 TDBridge.send_vitals(avg_hr, avg_hrv, avg_br)
                 TDBridge.send_hold_progress(
@@ -173,7 +188,7 @@ function handle_ingest(req::HTTP.Request)
                 )
             end
 
-            # Hold complete → agent update, persist reward, reset overlays.
+            # Hold complete → agent update, persist reward, reset overlays, then show interaction 5.
             if ENV_INSTANCE[].is_terminated
                 println("[MAIN] Hold complete — training agent")
                 action = RLAgent.agent_step!(
@@ -195,6 +210,25 @@ function handle_ingest(req::HTTP.Request)
                 # Reset TD overlays
                 TDBridge.send_vitals(0f0, 0f0, 0f0)
                 TDBridge.send_hold_progress(0, RLEnvironment.HOLD_STEPS)
+
+                # Force TD to show "interaction 5" after hold ends (non-RL).
+                try
+                    TDBridge.send_action(
+                        POST_HOLD_INTERACTION,
+                        APP_STATE.avg_hr,
+                        APP_STATE.avg_hrv,
+                        APP_STATE.avg_br,
+                        APP_STATE.last_reward,
+                        APP_STATE.cumulative_reward,
+                        2,       # trigger_type tag; reuse 2 (user) or any tag you prefer
+                        false,   # is_holding
+                        0        # hold_steps
+                    )
+                    APP_STATE.active_interaction = POST_HOLD_INTERACTION
+                    println("[MAIN] Post-hold TD action → $(_interaction_name(POST_HOLD_INTERACTION))")
+                catch e
+                    println("[MAIN] Post-hold TD action error: $e")
+                end
 
                 ENV_INSTANCE[].is_terminated = false
                 _reset_hold_step_clock()
@@ -244,9 +278,7 @@ end
 function handle_trigger(req::HTTP.Request)
     try
         payload      = JSON3.read(req.body)
-        trigger_type = Int(get(payload,
-            "trigger_type",
-            RLEnvironment.TRIGGER_USER))
+        trigger_type = Int(get(payload, "trigger_type", RLEnvironment.TRIGGER_USER))
 
         latest = TCNEncoder.STATE.latest
         if latest === nothing
@@ -294,7 +326,7 @@ function handle_trigger(req::HTTP.Request)
                 JSON3.write(Dict(
                     "ok"     => true,
                     "action" => action,
-                    "name"   => RLAgent.ACTION_NAMES[action]
+                    "name"   => _interaction_name(action)
                 )))
         end
 
@@ -321,8 +353,7 @@ function handle_status(req::HTTP.Request)
         "avg_hrv"            => APP_STATE.avg_hrv,
         "avg_br"             => APP_STATE.avg_br,
         "active_interaction" => APP_STATE.active_interaction,
-        "interaction_name"   => RLAgent.ACTION_NAMES[
-                                    APP_STATE.active_interaction],
+        "interaction_name"   => _interaction_name(APP_STATE.active_interaction),
         "last_reward"        => APP_STATE.last_reward,
         "cumulative_reward"  => APP_STATE.cumulative_reward,
         "is_holding"         => APP_STATE.is_holding,
@@ -371,11 +402,12 @@ function handle_force_interaction(req::HTTP.Request)
         payload     = JSON3.read(req.body)
         interaction = Int(get(payload, "interaction", 0))
 
-        if interaction < 0 || interaction > 4
+        # Allow 0..5 (includes the new post-hold non-RL interaction 5)
+        if interaction < 0 || interaction > 5
             return HTTP.Response(400,
                 JSON3.write(Dict(
                     "ok"    => false,
-                    "error" => "interaction must be 0-4"
+                    "error" => "interaction must be 0-5"
                 )))
         end
 
@@ -393,7 +425,7 @@ function handle_force_interaction(req::HTTP.Request)
             0
         )
 
-        name = RLAgent.ACTION_NAMES[interaction]
+        name = _interaction_name(interaction)
         println("[FORCE] Interaction $interaction ($name)")
 
         return HTTP.Response(200,
