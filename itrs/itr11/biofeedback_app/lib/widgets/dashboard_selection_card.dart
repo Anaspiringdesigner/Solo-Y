@@ -8,9 +8,7 @@ import '../models/dashboard_model.dart';
 class DashboardSelectionCard extends StatefulWidget {
   final String suggestedTitle;
   final String suggestedInstruction;
-  final List<DashboardOption> dashboards;
-  final int selectedDashboardId;
-  final ValueChanged<int> onDashboardSelected;
+  final DashboardOption? selectedDashboard;
   final ValueChanged<String> onCustomInstructionChanged;
   final Future<void> Function() onCreateCustomDashboard;
   final Future<void> Function() onConfirm;
@@ -21,9 +19,7 @@ class DashboardSelectionCard extends StatefulWidget {
     super.key,
     required this.suggestedTitle,
     required this.suggestedInstruction,
-    required this.dashboards,
-    required this.selectedDashboardId,
-    required this.onDashboardSelected,
+    required this.selectedDashboard,
     required this.onCustomInstructionChanged,
     required this.onCreateCustomDashboard,
     required this.onConfirm,
@@ -68,6 +64,8 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
     final int mins = _secondsLeft ~/ 60;
     final int secs = _secondsLeft % 60;
     final String timerLabel = '$mins:${secs.toString().padLeft(2, '0')}';
+
+    final selected = widget.selectedDashboard;
 
     return Container(
       width: double.infinity,
@@ -128,6 +126,8 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ],
           ),
           const SizedBox(height: 10),
+
+          // Suggested card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -165,9 +165,11 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
               ],
             ),
           ),
+
           const SizedBox(height: 16),
+
           Text(
-            'Choose a dashboard',
+            'Selected action',
             style: GoogleFonts.inter(
               color: const Color(AppConstants.textPrimary),
               fontSize: 14,
@@ -175,58 +177,67 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ),
           ),
           const SizedBox(height: 10),
-          ...widget.dashboards.map((dashboard) {
-            final bool isSelected = dashboard.id == widget.selectedDashboardId;
-            return GestureDetector(
-              onTap: () => widget.onDashboardSelected(dashboard.id),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? const Color(AppConstants.accentColor).withValues(alpha: 0.12)
-                      : const Color(AppConstants.bgColor).withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(AppConstants.accentColor)
-                        : const Color(AppConstants.cardBorder),
-                    width: isSelected ? 1.5 : 1.0,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      dashboard.title,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        color: isSelected
-                            ? const Color(AppConstants.accentColor)
-                            : const Color(AppConstants.textPrimary),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      dashboard.instruction,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        color: isSelected
-                            ? const Color(AppConstants.textPrimary)
-                            : const Color(AppConstants.textSecondary),
-                        fontSize: 12,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
+
+          if (selected != null)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(AppConstants.accentColor).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(AppConstants.accentColor),
+                  width: 1.5,
                 ),
               ),
-            );
-          }),
-          const SizedBox(height: 8),
+              child: Column(
+                children: [
+                  Text(
+                    selected.title,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      color: const Color(AppConstants.accentColor),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    selected.instruction,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      color: const Color(AppConstants.textPrimary),
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(AppConstants.bgColor).withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(AppConstants.cardBorder),
+                ),
+              ),
+              child: Text(
+                'No dashboard selected yet',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: const Color(AppConstants.textSecondary),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 16),
+
           Text(
             'Or create your own action',
             style: GoogleFonts.inter(
@@ -236,6 +247,7 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ),
           ),
           const SizedBox(height: 10),
+
           TextField(
             controller: _customController,
             minLines: 2,
@@ -246,7 +258,8 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
               color: const Color(AppConstants.textPrimary),
             ),
             decoration: InputDecoration(
-              hintText: 'Type the action you want to take during the event duration...',
+              hintText:
+                  'Type the action you want to take during the event duration...',
               hintStyle: GoogleFonts.inter(
                 color: const Color(AppConstants.textSecondary),
                 fontSize: 12,
@@ -274,6 +287,7 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ),
           ),
           const SizedBox(height: 10),
+
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -305,6 +319,7 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ),
           ),
           const SizedBox(height: 12),
+
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -345,4 +360,4 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
       ),
     );
   }
-} 
+}

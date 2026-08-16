@@ -130,7 +130,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final showDashboardCard = s != null &&
         s.hasPendingIntervention &&
-        s.interventionPhase == 'awaiting_confirmation';
+        s.interventionPhase == 'awaiting_confirmation' &&
+        !bio.hideDashboardCardUntilNextTrigger;
 
     return Scaffold(
       backgroundColor: const Color(AppConstants.bgColor),
@@ -264,9 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: DashboardSelectionCard(
                           suggestedTitle: s.proposedDashboardTitle,
                           suggestedInstruction: s.proposedDashboardInstruction,
-                          dashboards: bio.dashboards,
-                          selectedDashboardId: bio.selectedDashboardId,
-                          onDashboardSelected: bio.selectDashboard,
+                          selectedDashboard: bio.selectedDashboard,
                           onCustomInstructionChanged:
                               bio.updateCustomDashboardInstruction,
                           onCreateCustomDashboard: () async {

@@ -28,6 +28,9 @@ class BiofeedbackProvider extends ChangeNotifier {
   bool isCreatingDashboard = false;
   bool isConfirmingDashboard = false;
 
+  /// Local UI guard so the confirmation card disappears immediately after confirm.
+  bool hideDashboardCardUntilNextTrigger = false;
+
   Timer? _statusTimer;
 
   void startPolling() {
@@ -79,7 +82,9 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchStatus() async {
+    final previousPending = status?.hasPendingIntervention ?? false;
     final result = await _api.fetchStatus();
+
     if (result != null) {
       final prevInteraction = status?.activeInteraction ?? -1;
       final newInteraction = result.activeInteraction;
@@ -104,13 +109,29 @@ class BiofeedbackProvider extends ChangeNotifier {
         hrHistory.removeAt(0);
       }
 
-      if (result.hasPendingIntervention &&
+      final isNewPendingIntervention =
+          !previousPending && result.hasPendingIntervention;
+
+      if (isNewPendingIntervention &&
           result.interventionPhase == 'awaiting_confirmation') {
+        hideDashboardCardUntilNextTrigger = false;
         selectedDashboardId = result.proposedDashboardId;
+      }
+
+      if (result.hasPendingIntervention &&
+          result.interventionPhase == 'awaiting_confirmation' &&
+          !hideDashboardCardUntilNextTrigger) {
+        selectedDashboardId = result.proposedDashboardId;
+      }
+
+      if (result.interventionPhase == 'confirmed' ||
+          !result.hasPendingIntervention) {
+        hideDashboardCardUntilNextTrigger = true;
       }
     } else {
       isConnected = false;
     }
+
     notifyListeners();
   }
 
@@ -126,6 +147,14 @@ class BiofeedbackProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  DashboardOption? get selectedDashboard {
+    try {
+      return dashboards.firstWhere((d) => d.id == selectedDashboardId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> createCustomDashboard() async {
@@ -187,6 +216,10 @@ class BiofeedbackProvider extends ChangeNotifier {
 
     if (result != null && result['ok'] == true) {
       triggerMessage = '✅ Action confirmed';
+
+      // Hide immediately in UI instead of waiting for poll.
+      hideDashboardCardUntilNextTrigger = true;
+
       await _fetchStatus();
     } else {
       triggerMessage =
@@ -226,6 +259,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     isTriggerLoading = false;
 
     if (result != null && result['ok'] == true) {
+      hideDashboardCardUntilNextTrigger = false;
       triggerMessage = '✅ ${result['name']} selected';
       await _fetchStatus();
       await _fetchDashboards();
@@ -245,6 +279,7 @@ class BiofeedbackProvider extends ChangeNotifier {
   }
 
   Future<void> fireCalendarTrigger(String eventName) async {
+    hideDashboardCardUntilNextTrigger = false;
     await _api.fireCalendarTrigger();
     calendarMessage = '📅 $eventName — interaction selected';
     await _fetchStatus();
