@@ -85,7 +85,7 @@ end
 # Post-hold TD action (non-RL interaction)
 # ─────────────────────────────────────────────────────────────
 # After every hold completes, show this interaction in TD.
-# You said "not 4 but 5" — so we use 5 here.
+# YOU SAID: "not 4 but 5"
 const POST_HOLD_INTERACTION = 5
 
 # Safely resolve interaction names even if RLAgent.ACTION_NAMES
@@ -471,7 +471,13 @@ function main()
     TDBridge.check_connection()
 
     println("\n[INIT] Starting TCN Encoder...")
-    TCNEncoder.init_encoder()
+    try
+        TCNEncoder.init_encoder()
+    catch e
+        @error "[INIT] TCN encoder failed to initialize — continuing with fresh runtime" exception=(e, catch_backtrace())
+        # Optional: if you have a helper to reset runtime, call it here
+        # TCNEncoder.reset_runtime_state!()
+    end
 
     println("\n[INIT] Starting RL Agent...")
     AGENT_INSTANCE[] = RLAgent.init_agent(load_ckpt=true)

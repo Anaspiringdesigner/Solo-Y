@@ -5,6 +5,9 @@
 # - Encoder weights + scaler load from disk
 # - Runtime state (latest + buffer + pretrained flag) persisted
 #   so encoder continuity survives server restarts
+# - Robust runtime persistence:
+#     • Safe load with quarantine on corrupt BSON
+#     • Atomic save (tmp + rename) to prevent partial writes
 # ============================================================
 
 module TCNEncoder
@@ -15,6 +18,7 @@ using Statistics
 using BSON: @save, @load
 using NPZ
 using Random
+using Dates
 
 # ── Config ───────────────────────────────────────────────────
 const WINDOW_SECONDS = 30
@@ -212,35 +216,59 @@ end
 const STATE = EncoderState()
 const BUFFER_MAXSIZE = 1000
 
-# ── Runtime Persistence ───────────────────────────────────────
+# ── Runtime Persistence (Robust) ─────────────────────────────
 # Saves latest encoded item and rolling buffer so a restarted server
 # continues from the previous encoder runtime context instead of starting
 # with an empty latest/buffer state.
+#
+# Improvements:
+#   • load_runtime_state!() quarantines corrupt BSON and starts fresh
+#   • save_runtime_state() writes atomically: tmp + rename
 
 function save_runtime_state()
-    mkpath(MODEL_DIR)
-    runtime = Dict(
-        "latest"           => STATE.latest,
-        "buffer"           => STATE.buffer,
-        "using_pretrained" => STATE.using_pretrained,
-        "encode_count"     => STATE.encode_count,
-    )
-    @save STATE_PATH runtime
-    println("[ENCODER] Runtime state saved | buffer=$(length(STATE.buffer))")
+    try
+        mkpath(MODEL_DIR)
+        runtime = Dict(
+            "latest"           => STATE.latest,
+            "buffer"           => STATE.buffer,
+            "using_pretrained" => STATE.using_pretrained,
+            "encode_count"     => STATE.encode_count,
+        )
+        tmp = STATE_PATH * ".tmp"
+        @save tmp runtime
+        mv(tmp, STATE_PATH; force=true)
+        println("[ENCODER] Runtime state saved (atomic) | buffer=$(length(STATE.buffer))")
+    catch e
+        println("[ENCODER] Runtime state save failed: $e")
+    end
 end
 
 function load_runtime_state!()::Bool
-    isfile(STATE_PATH) || return false
-
-    @load STATE_PATH runtime
-
-    STATE.latest           = get(runtime, "latest", nothing)
-    STATE.buffer           = get(runtime, "buffer", Dict[])
-    STATE.using_pretrained = get(runtime, "using_pretrained", false)
-    STATE.encode_count     = get(runtime, "encode_count", 0)
-
-    println("[ENCODER] Runtime state loaded | buffer=$(length(STATE.buffer))")
-    return true
+    if !isfile(STATE_PATH)
+        return false
+    end
+    try
+        @load STATE_PATH runtime
+        STATE.latest           = get(runtime, "latest", nothing)
+        STATE.buffer           = get(runtime, "buffer", Dict[])
+        STATE.using_pretrained = get(runtime, "using_pretrained", false)
+        STATE.encode_count     = get(runtime, "encode_count", 0)
+        println("[ENCODER] Runtime state loaded | buffer=$(length(STATE.buffer))")
+        return true
+    catch e
+        println("[ENCODER] Runtime load failed: $e — quarantining and starting fresh")
+        try
+            ts = Dates.format(Dates.now(), dateformat"yyyymmdd_HHMMSS")
+            mv(STATE_PATH, STATE_PATH * ".corrupt_" * ts; force=true)
+            println("[ENCODER] Corrupt runtime moved to $(STATE_PATH).corrupt_$(ts)")
+        catch qe
+            println("[ENCODER] Could not quarantine corrupt file: $qe")
+        end
+        STATE.latest       = nothing
+        STATE.buffer       = Dict[]
+        STATE.encode_count = 0
+        return false
+    end
 end
 
 # ── Encode Window ─────────────────────────────────────────────
@@ -319,7 +347,7 @@ function init_encoder()
         STATE.using_pretrained = false
     end
 
-    # Restore runtime continuity if available.
+    # Restore runtime continuity if available (safe load).
     load_runtime_state!()
 
     println("[INIT] Encoder ready | latent_dim=$(LATENT_DIM)")
