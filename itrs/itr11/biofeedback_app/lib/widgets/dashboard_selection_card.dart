@@ -128,23 +128,41 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            widget.suggestedTitle.isEmpty
-                ? 'Suggested dashboard'
-                : widget.suggestedTitle,
-            style: GoogleFonts.inter(
-              color: const Color(AppConstants.textPrimary),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(AppConstants.accentColor).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(AppConstants.accentColor).withValues(alpha: 0.35),
+                width: 1.2,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.suggestedInstruction,
-            style: GoogleFonts.inter(
-              color: const Color(AppConstants.textSecondary),
-              fontSize: 13,
-              height: 1.45,
+            child: Column(
+              children: [
+                Text(
+                  widget.suggestedTitle.isEmpty
+                      ? 'Suggested dashboard'
+                      : widget.suggestedTitle,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: const Color(AppConstants.textPrimary),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  widget.suggestedInstruction,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: const Color(AppConstants.textSecondary),
+                    fontSize: 13,
+                    height: 1.45,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -161,58 +179,46 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             final bool isSelected = dashboard.id == widget.selectedDashboardId;
             return GestureDetector(
               onTap: () => widget.onDashboardSelected(dashboard.id),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
                 width: double.infinity,
                 margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? const Color(AppConstants.accentColor)
-                          .withValues(alpha: 0.10)
+                      ? const Color(AppConstants.accentColor).withValues(alpha: 0.12)
                       : const Color(AppConstants.bgColor).withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: isSelected
                         ? const Color(AppConstants.accentColor)
                         : const Color(AppConstants.cardBorder),
-                    width: isSelected ? 1.4 : 1.0,
+                    width: isSelected ? 1.5 : 1.0,
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
                   children: [
-                    Icon(
-                      isSelected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
-                      color: isSelected
-                          ? const Color(AppConstants.accentColor)
-                          : const Color(AppConstants.textSecondary),
-                      size: 18,
+                    Text(
+                      dashboard.title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: isSelected
+                            ? const Color(AppConstants.accentColor)
+                            : const Color(AppConstants.textPrimary),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            dashboard.title,
-                            style: GoogleFonts.inter(
-                              color: const Color(AppConstants.textPrimary),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            dashboard.instruction,
-                            style: GoogleFonts.inter(
-                              color: const Color(AppConstants.textSecondary),
-                              fontSize: 12,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 6),
+                    Text(
+                      dashboard.instruction,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: isSelected
+                            ? const Color(AppConstants.textPrimary)
+                            : const Color(AppConstants.textSecondary),
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
                   ],
@@ -234,15 +240,13 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
             controller: _customController,
             minLines: 2,
             maxLines: 4,
-            onChanged: (value) {
-              widget.onCustomInstructionChanged(value);
-            },
+            onChanged: widget.onCustomInstructionChanged,
+            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               color: const Color(AppConstants.textPrimary),
             ),
             decoration: InputDecoration(
-              hintText:
-                  'Type the action you want to take during the event duration...',
+              hintText: 'Type the action you want to take during the event duration...',
               hintStyle: GoogleFonts.inter(
                 color: const Color(AppConstants.textSecondary),
                 fontSize: 12,
@@ -251,18 +255,21 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
               fillColor: const Color(AppConstants.bgColor).withValues(alpha: 0.45),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(AppConstants.cardBorder)),
+                borderSide: const BorderSide(
+                  color: Color(AppConstants.cardBorder),
+                ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(AppConstants.cardBorder)),
+                borderSide: const BorderSide(
+                  color: Color(AppConstants.cardBorder),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(AppConstants.accentColor)),
+                borderSide: const BorderSide(
+                  color: Color(AppConstants.accentColor),
+                ),
               ),
             ),
           ),
@@ -338,4 +345,4 @@ class _DashboardSelectionCardState extends State<DashboardSelectionCard> {
       ),
     );
   }
-}
+} 

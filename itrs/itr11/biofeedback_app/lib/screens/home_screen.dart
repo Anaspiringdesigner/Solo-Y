@@ -128,6 +128,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final bio = context.watch<BiofeedbackProvider>();
     final s = bio.status;
 
+    final showDashboardCard = s != null &&
+        s.hasPendingIntervention &&
+        s.interventionPhase == 'awaiting_confirmation';
+
     return Scaffold(
       backgroundColor: const Color(AppConstants.bgColor),
       body: SafeArea(
@@ -253,9 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         holdTimeRemaining: s?.holdTimeRemaining ?? '0:00',
                       ),
                     ),
-                    if (s != null &&
-                        s.hasPendingIntervention &&
-                        s.interventionPhase == 'awaiting_confirmation') ...[
+                    if (showDashboardCard) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
                         duration: const Duration(milliseconds: 750),
@@ -264,12 +266,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           suggestedInstruction: s.proposedDashboardInstruction,
                           dashboards: bio.dashboards,
                           selectedDashboardId: bio.selectedDashboardId,
-                          onDashboardSelected: (id) {
-                            bio.selectDashboard(id);
-                          },
-                          onCustomInstructionChanged: (value) {
-                            bio.updateCustomDashboardInstruction(value);
-                          },
+                          onDashboardSelected: bio.selectDashboard,
+                          onCustomInstructionChanged:
+                              bio.updateCustomDashboardInstruction,
                           onCreateCustomDashboard: () async {
                             await bio.createCustomDashboard();
                             if (!mounted) return;
