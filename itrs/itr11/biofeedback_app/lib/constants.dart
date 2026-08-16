@@ -34,15 +34,16 @@ class AppConstants {
 
   // ── Interaction Names ────────────────────────
   static const List<String> interactionNames = [
-    'Paper Crumpling',
+    'Ray Casting',
     'Noise Crumpling',
     'Noise in Circle',
     'Video Ripples',
     'Flowery Noise',
+    'Progress Made'
   ];
 
   static const List<String> interactionIcons = [
-    '📄', '🌊', '⭕', '📹', '🌸',
+    '🔦', '🌊', '⭕', '📹', '🌸', '🚀',
   ];
 
   // Enable extra verbose debug logging in non-release builds
