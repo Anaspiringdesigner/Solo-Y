@@ -94,7 +94,9 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> fireTrigger({int triggerType = 2}) async {
+  Future<Map<String, dynamic>?> fireTrigger({
+    int triggerType = 2,
+  }) async {
     try {
       final resp = await http
           .post(
@@ -107,8 +109,10 @@ class ApiService {
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
       }
+
       return {'ok': false, 'reason': 'HTTP ${resp.statusCode}'};
     } catch (e) {
+      debugPrint('[API] Trigger error: $e');
       return {'ok': false, 'error': e.toString()};
     }
   }

@@ -30,7 +30,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _bleRunning = false;
   bool _bootstrapped = false;
   String _sensorType = '';
-  bool _confirmingDashboard = false;
 
   @override
   void initState() {
@@ -104,72 +103,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _showSnack('📅 Calendar connected — ${_calendar.scheduledTriggerCount} triggers scheduled today');
     } else {
       _showSnack('❌ Calendar sign in failed');
-    }
-  }
-
-  Future<void> _createCustomDashboard() async {
-    final provider = context.read<BiofeedbackProvider>();
-    final controller = TextEditingController();
-
-    final text = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(AppConstants.surfaceColor),
-        title: Text(
-          'Create Custom Action',
-          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
-        ),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          style: GoogleFonts.inter(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Describe the action you will take during the event...',
-            hintStyle: TextStyle(color: Colors.white54),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-
-    if (text == null || text.trim().isEmpty) return;
-    final result = await provider.createCustomDashboard(text.trim());
-    if (!mounted) return;
-
-    if (result != null && result['ok'] == true) {
-      final dashboard = result['dashboard'] as Map<String, dynamic>?;
-      final id = (dashboard?['id'] ?? -1) as int;
-      provider.selectedDashboardId = id;
-      provider.notifyListeners();
-      _showSnack(result['duplicate'] == true ? 'Existing dashboard selected' : 'Custom dashboard created');
-    } else {
-      _showSnack(result?['reason'] ?? result?['error'] ?? 'Could not create dashboard');
-    }
-  }
-
-  Future<void> _confirmDashboard() async {
-    final provider = context.read<BiofeedbackProvider>();
-    final selected = provider.selectedDashboardId;
-    if (selected == null) return;
-
-    setState(() => _confirmingDashboard = true);
-    final result = await provider.confirmExecutedDashboard(selected);
-    if (!mounted) return;
-    setState(() => _confirmingDashboard = false);
-
-    if (result != null && result['ok'] == true) {
-      _showSnack('✅ Action confirmed');
-    } else {
-      _showSnack(result?['reason'] ?? result?['error'] ?? 'Confirmation failed');
     }
   }
 
@@ -319,25 +252,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 12),
                     if (s != null && s.hasPendingIntervention) ...[
                       FadeInUp(
-                        duration: const Duration(milliseconds: 730),
+                        duration: const Duration(milliseconds: 760),
                         child: DashboardSelectionCard(
-                          title: s.proposedDashboardTitle.isNotEmpty
-                              ? s.proposedDashboardTitle
-                              : 'Suggested Action',
-                          instruction: s.proposedDashboardInstruction.isNotEmpty
-                              ? s.proposedDashboardInstruction
-                              : 'Choose the action you will follow for the next event.',
-                          dashboards: bio.dashboards,
+                          suggestedTitle: s.proposedDashboardTitle,
+                          suggestedInstruction: s.proposedDashboardInstruction,
                           selectedDashboardId: bio.selectedDashboardId ?? s.proposedDashboardId,
-                          timerLabel: bio.dashboardTimerLabel,
-                          timerProgress: bio.dashboardTimerProgress,
-                          onSelectDashboard: (id) {
-                            bio.selectedDashboardId = id;
-                            bio.notifyListeners();
-                          },
-                          onCreateCustom: _createCustomDashboard,
-                          onConfirm: _confirmDashboard,
-                          isBusy: _confirmingDashboard || bio.isDashboardLoading,
+                          dashboards: bio.dashboards,
+                          isCreating: bio.isDashboardLoading,
+                          isConfirming: bio.isConfirmingDashboard,
+                          message: bio.dashboardMessage,
+                          onSelectDashboard: bio.selectDashboard,
+                          onCreateDashboard: (text) => bio.createCustomDashboard(text),
+                          onConfirm: () => bio.confirmSelectedDashboard(),
                         ),
                       ),
                       const SizedBox(height: 12),

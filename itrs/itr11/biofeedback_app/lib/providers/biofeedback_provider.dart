@@ -20,17 +20,19 @@ class BiofeedbackProvider extends ChangeNotifier {
 
   final List<double> hrvHistory = [];
   final List<double> hrHistory = [];
-  final List<DashboardOption> dashboards = [];
 
-  bool isDashboardLoading = false;
-  bool dashboardDialogOpen = false;
+  List<DashboardOption> dashboards = [];
   int? selectedDashboardId;
-  DateTime? dashboardDeadline;
+  bool isDashboardLoading = false;
+  bool isConfirmingDashboard = false;
+  String dashboardMessage = '';
 
   Timer? _statusTimer;
 
   void startPolling() {
     _fetchStatus();
+    _fetchDashboards();
+
     _statusTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.statusPollMs),
       (_) => _fetchStatus(),
@@ -62,31 +64,14 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refreshDashboards() async {
-    isDashboardLoading = true;
-    notifyListeners();
-    final items = await _api.fetchDashboards();
-    dashboards
-      ..clear()
-      ..addAll(items.where((d) => d.active));
-    isDashboardLoading = false;
+  Future<void> _fetchDashboards() async {
+    dashboards = await _api.fetchDashboards();
     notifyListeners();
   }
 
-  Future<Map<String, dynamic>?> createCustomDashboard(String instruction) async {
-    final result = await _api.createDashboard(instruction: instruction);
-    await refreshDashboards();
-    return result;
-  }
-
-  Future<Map<String, dynamic>?> confirmExecutedDashboard(int dashboardId) async {
-    final result = await _api.confirmAction(executedDashboardId: dashboardId);
-    if (result != null && result['ok'] == true) {
-      selectedDashboardId = dashboardId;
-      dashboardDialogOpen = false;
-    }
-    await _fetchStatus();
-    return result;
+  void selectDashboard(int id) {
+    selectedDashboardId = id;
+    notifyListeners();
   }
 
   Future<void> _fetchStatus() async {
@@ -94,10 +79,16 @@ class BiofeedbackProvider extends ChangeNotifier {
     if (result != null) {
       final prevInteraction = status?.activeInteraction ?? -1;
       final newInteraction = result.activeInteraction;
-      final prevPending = status?.hasPendingIntervention ?? false;
+      final hadPending = status?.hasPendingIntervention ?? false;
 
       status = result;
       isConnected = true;
+
+      if (result.hasPendingIntervention) {
+        selectedDashboardId ??= result.proposedDashboardId;
+      } else if (hadPending && !result.hasPendingIntervention) {
+        selectedDashboardId = null;
+      }
 
       if (newInteraction == 3 && prevInteraction != 3) {
         _startCamera();
@@ -107,13 +98,11 @@ class BiofeedbackProvider extends ChangeNotifier {
 
       hrvHistory.add(result.avgHrv);
       hrHistory.add(result.avgHr);
-      if (hrvHistory.length > 60) hrvHistory.removeAt(0);
-      if (hrHistory.length > 60) hrHistory.removeAt(0);
-
-      if (result.hasPendingIntervention && !prevPending) {
-        await refreshDashboards();
-        selectedDashboardId = result.proposedDashboardId;
-        dashboardDeadline = DateTime.now().add(const Duration(minutes: 1));
+      if (hrvHistory.length > 60) {
+        hrvHistory.removeAt(0);
+      }
+      if (hrHistory.length > 60) {
+        hrHistory.removeAt(0);
       }
     } else {
       isConnected = false;
@@ -121,24 +110,62 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Duration get dashboardTimeRemaining {
-    if (dashboardDeadline == null) return Duration.zero;
-    final d = dashboardDeadline!.difference(DateTime.now());
-    return d.isNegative ? Duration.zero : d;
+  Future<void> createCustomDashboard(String instruction) async {
+    final clean = instruction.trim();
+    if (clean.isEmpty) {
+      dashboardMessage = 'Enter an action first';
+      notifyListeners();
+      return;
+    }
+
+    isDashboardLoading = true;
+    dashboardMessage = '';
+    notifyListeners();
+
+    final result = await _api.createDashboard(instruction: clean);
+    isDashboardLoading = false;
+
+    if (result != null && result['ok'] == true) {
+      final dashboard = result['dashboard'] as Map<String, dynamic>?;
+      if (dashboard != null) {
+        final created = DashboardOption.fromJson(dashboard);
+        final idx = dashboards.indexWhere((d) => d.id == created.id);
+        if (idx >= 0) {
+          dashboards[idx] = created;
+        } else {
+          dashboards.add(created);
+          dashboards.sort((a, b) => a.id.compareTo(b.id));
+        }
+        selectedDashboardId = created.id;
+      }
+      dashboardMessage = result['duplicate'] == true
+          ? 'Using existing dashboard'
+          : 'Dashboard created';
+    } else {
+      dashboardMessage = result?['reason'] ?? result?['error'] ?? 'Failed to create dashboard';
+    }
+
+    notifyListeners();
   }
 
-  double get dashboardTimerProgress {
-    if (dashboardDeadline == null) return 0.0;
-    const total = 60;
-    final left = dashboardTimeRemaining.inSeconds.clamp(0, total);
-    return 1.0 - (left / total);
-  }
+  Future<void> confirmSelectedDashboard() async {
+    final id = selectedDashboardId ?? status?.proposedDashboardId;
+    if (id == null) return;
 
-  String get dashboardTimerLabel {
-    final left = dashboardTimeRemaining.inSeconds;
-    final m = left ~/ 60;
-    final s = left % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+    isConfirmingDashboard = true;
+    dashboardMessage = '';
+    notifyListeners();
+
+    final result = await _api.confirmAction(executedDashboardId: id);
+    isConfirmingDashboard = false;
+
+    if (result != null && result['ok'] == true) {
+      dashboardMessage = 'Action confirmed';
+      await _fetchStatus();
+    } else {
+      dashboardMessage = result?['reason'] ?? result?['error'] ?? 'Confirmation failed';
+      notifyListeners();
+    }
   }
 
   Future<void> _startCamera() async {
@@ -169,6 +196,7 @@ class BiofeedbackProvider extends ChangeNotifier {
 
     if (result != null && result['ok'] == true) {
       triggerMessage = '✅ ${result['name']} selected';
+      await _fetchStatus();
     } else if (result != null) {
       final reason = result['reason'] ?? result['error'] ?? 'Unknown error';
       triggerMessage = '⚠️ $reason';
@@ -177,6 +205,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+
     Future.delayed(const Duration(seconds: 5), () {
       triggerMessage = '';
       notifyListeners();
@@ -187,6 +216,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     await _api.fireCalendarTrigger();
     calendarMessage = '📅 $eventName — interaction selected';
     notifyListeners();
+
     Future.delayed(const Duration(seconds: 5), () {
       calendarMessage = '';
       notifyListeners();
