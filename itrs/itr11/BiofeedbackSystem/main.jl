@@ -1,6 +1,22 @@
 # ============================================================
 # main.jl
 # Biofeedback System — Full Pipeline
+#
+# PHASE 1 CHANGES:
+# - Add dashboard registry for app-side intervention dashboards.
+# - Seed 5 initial dashboards.
+# - Max dashboards allowed at any point in time = 8.
+# - Add joint action encoding helpers for:
+#       Action = (TD visual, dashboard)
+# - Expose dashboard metadata and encoded action info in /status.
+# - Add /dashboards endpoint to list dashboard registry.
+#
+# IMPORTANT:
+# - This phase does NOT yet change RL policy selection/training behavior.
+# - RL still behaves as before for now.
+# - We are only laying the data/model foundation for the upcoming phases.
+#
+# Existing behavior preserved:
 # - Robust hold pacing: advance at most once every 5s during holds.
 # - Persist & restore cumulative_reward across restarts.
 # - After every hold completes, send "interaction 5" to TouchDesigner.
@@ -24,9 +40,195 @@ using Dates
 
 const BRAIN_PORT = 8000
 
-# ─────────────────────────────────────────────────────────────
-# Hold pacing: allow one "effective" step every 5 seconds
-# ─────────────────────────────────────────────────────────────
+# ============================================================
+# PHASE 1 — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
+# ============================================================
+
+# RL-selectable TD visuals remain 0..4.
+# TD interaction 5 is still reserved for post-hold / non-RL behavior.
+const RL_VISUAL_IDS = collect(0:4)
+const RL_VISUAL_COUNT = length(RL_VISUAL_IDS)
+
+# Maximum number of dashboards allowed at any point in time.
+# This fixed cap is important so later RL action encoding can stay stable.
+const MAX_DASHBOARDS = 8
+
+# Initial dashboard definitions supplied by you.
+# We keep title + instruction in the registry.
+mutable struct DashboardDef
+    id::Int
+    title::String
+    instruction::String
+    created_by_user::Bool
+    active::Bool
+    created_at_step::Int
+end
+
+# Registry holds up to MAX_DASHBOARDS dashboard identities.
+const DASHBOARD_REGISTRY = Vector{DashboardDef}()
+
+"""
+    seed_initial_dashboards!()
+
+Populate the dashboard registry with the 5 initial dashboard identities.
+
+Dashboard IDs are 0-based so they are easier to use in a flattened action:
+    encoded_action = visual_id * MAX_DASHBOARDS + dashboard_id
+"""
+function seed_initial_dashboards!()
+    empty!(DASHBOARD_REGISTRY)
+
+    push!(DASHBOARD_REGISTRY, DashboardDef(
+        0,
+        "Box Breathing",
+        "Breathe for the event duration. Take a breath for 4 seconds and release it for 4 seconds.",
+        false,
+        true,
+        0
+    ))
+
+    push!(DASHBOARD_REGISTRY, DashboardDef(
+        1,
+        "Controlled Breath Hold",
+        "Breathe for the event duration. Take a breath for 4 seconds, hold for 16 seconds and release it for 8 seconds.",
+        false,
+        true,
+        0
+    ))
+
+    push!(DASHBOARD_REGISTRY, DashboardDef(
+        2,
+        "Stimming Tool",
+        "Pick up a stimming tool of your choice and stimm for the event duration.",
+        false,
+        true,
+        0
+    ))
+
+    push!(DASHBOARD_REGISTRY, DashboardDef(
+        3,
+        "Small Dance / Movement",
+        "Do a small dance or any movement based activity for the event duration.",
+        false,
+        true,
+        0
+    ))
+
+    push!(DASHBOARD_REGISTRY, DashboardDef(
+        4,
+        "Exercise",
+        "Do an exercise or two exercises for the event duration.",
+        false,
+        true,
+        0
+    ))
+end
+
+"""
+    dashboard_exists(id::Int) -> Bool
+
+Return true if the dashboard ID exists in the registry.
+"""
+function dashboard_exists(id::Int)::Bool
+    any(d -> d.id == id, DASHBOARD_REGISTRY)
+end
+
+"""
+    get_dashboard(id::Int) -> Union{DashboardDef, Nothing}
+
+Fetch a dashboard by ID.
+"""
+function get_dashboard(id::Int)
+    for d in DASHBOARD_REGISTRY
+        if d.id == id
+            return d
+        end
+    end
+    return nothing
+end
+
+"""
+    active_dashboards() -> Vector{DashboardDef}
+
+Return only active dashboards.
+"""
+function active_dashboards()::Vector{DashboardDef}
+    [d for d in DASHBOARD_REGISTRY if d.active]
+end
+
+"""
+    active_dashboard_ids() -> Vector{Int}
+
+Return active dashboard IDs.
+"""
+function active_dashboard_ids()::Vector{Int}
+    [d.id for d in DASHBOARD_REGISTRY if d.active]
+end
+
+"""
+    encode_joint_action(visual_id::Int, dashboard_id::Int) -> Int
+
+Flatten a joint action (visual, dashboard) into a single integer.
+
+We use:
+    encoded = visual_id * MAX_DASHBOARDS + dashboard_id
+
+This assumes:
+- visual_id is in 0..4 for RL-controlled visuals
+- dashboard_id is in 0..7 because MAX_DASHBOARDS = 8
+"""
+function encode_joint_action(visual_id::Int, dashboard_id::Int)::Int
+    return visual_id * MAX_DASHBOARDS + dashboard_id
+end
+
+"""
+    decode_joint_action(encoded::Int) -> Tuple{Int, Int}
+
+Decode a flattened action integer into:
+    (visual_id, dashboard_id)
+"""
+function decode_joint_action(encoded::Int)::Tuple{Int, Int}
+    visual_id = encoded ÷ MAX_DASHBOARDS
+    dashboard_id = encoded % MAX_DASHBOARDS
+    return (visual_id, dashboard_id)
+end
+
+"""
+    valid_joint_action(visual_id::Int, dashboard_id::Int) -> Bool
+
+Check whether a visual-dashboard pair is currently valid from a registry standpoint.
+This phase only checks:
+- visual in RL visual range
+- dashboard exists
+- dashboard is active
+"""
+function valid_joint_action(visual_id::Int, dashboard_id::Int)::Bool
+    visual_ok = visual_id in RL_VISUAL_IDS
+    d = get_dashboard(dashboard_id)
+    dashboard_ok = d !== nothing && d.active
+    return visual_ok && dashboard_ok
+end
+
+"""
+    dashboard_to_dict(d::DashboardDef) -> Dict
+
+Serialize dashboard for JSON responses.
+"""
+function dashboard_to_dict(d::DashboardDef)
+    Dict(
+        "id" => d.id,
+        "title" => d.title,
+        "instruction" => d.instruction,
+        "created_by_user" => d.created_by_user,
+        "active" => d.active,
+        "created_at_step" => d.created_at_step
+    )
+end
+
+# ============================================================
+# EXISTING HOLD PACING
+# ============================================================
+
 const HOLD_STEP_PERIOD_MS = 5_000
 const LAST_HOLD_STEP_AT = Ref{Union{Nothing,DateTime}}(nothing)
 
@@ -48,9 +250,10 @@ end
     LAST_HOLD_STEP_AT[] = nothing
 end
 
-# ─────────────────────────────────────────────────────────────
-# Runtime persistence for cumulative_reward
-# ─────────────────────────────────────────────────────────────
+# ============================================================
+# EXISTING RUNTIME PERSISTENCE
+# ============================================================
+
 const RUNTIME_STATE_PATH = normpath(joinpath(@__DIR__, "models", "agent_runtime_state.json"))
 
 function _load_runtime_cumulative_reward()::Union{Nothing,Float32}
@@ -81,15 +284,12 @@ function _save_runtime_cumulative_reward(val::Float32)
     end
 end
 
-# ─────────────────────────────────────────────────────────────
-# Post-hold TD action (non-RL interaction)
-# ─────────────────────────────────────────────────────────────
-# After every hold completes, show this interaction in TD.
-# YOU SAID: "not 4 but 5"
+# ============================================================
+# EXISTING POST-HOLD TD ACTION
+# ============================================================
+
 const POST_HOLD_INTERACTION = 5
 
-# Safely resolve interaction names even if RLAgent.ACTION_NAMES
-# does not contain POST_HOLD_INTERACTION.
 @inline function _interaction_name(idx::Int)
     try
         RLAgent.ACTION_NAMES[idx]
@@ -98,23 +298,64 @@ const POST_HOLD_INTERACTION = 5
     end
 end
 
+# ============================================================
+# APP STATE
+#
+# PHASE 1 additions:
+# - proposed_dashboard_id
+# - executed_dashboard_id
+# - proposed_encoded_action
+# - executed_encoded_action
+#
+# These fields are placeholders/foundations for later phases.
+# They are not yet driving RL behavior.
+# ============================================================
+
 mutable struct AppState
-    avg_hr             :: Float32
-    avg_hrv            :: Float32
-    avg_br             :: Float32
-    active_interaction :: Int
-    last_reward        :: Float32
-    cumulative_reward  :: Float32
-    is_holding         :: Bool
-    hold_steps_left    :: Int
+    avg_hr                  :: Float32
+    avg_hrv                 :: Float32
+    avg_br                  :: Float32
+    active_interaction      :: Int
+    last_reward             :: Float32
+    cumulative_reward       :: Float32
+    is_holding              :: Bool
+    hold_steps_left         :: Int
+
+    # Phase 1 action-foundation fields
+    proposed_dashboard_id   :: Int
+    executed_dashboard_id   :: Int
+    proposed_encoded_action :: Int
+    executed_encoded_action :: Int
 end
 
-AppState() = AppState(0f0, 0f0, 0f0, 0, 0f0, 0f0, false, 0)
+AppState() = AppState(
+    0f0,   # avg_hr
+    0f0,   # avg_hrv
+    0f0,   # avg_br
+    0,     # active_interaction
+    0f0,   # last_reward
+    0f0,   # cumulative_reward
+    false, # is_holding
+    0,     # hold_steps_left
+
+    0,     # proposed_dashboard_id
+    0,     # executed_dashboard_id
+    0,     # proposed_encoded_action
+    0      # executed_encoded_action
+)
 
 const APP_STATE = AppState()
 
 const ENV_INSTANCE = Ref{RLEnvironment.BiofeedbackEnv}(RLEnvironment.BiofeedbackEnv())
 const AGENT_INSTANCE = Ref{RLAgent.DQNAgent}(RLAgent.DQNAgent())
+
+# ============================================================
+# EXISTING INGEST HANDLER
+#
+# PHASE 1 NOTE:
+# We do NOT yet modify RL action selection/training logic.
+# We only initialize placeholder joint action values for status visibility.
+# ============================================================
 
 function handle_ingest(req::HTTP.Request)
     try
@@ -248,13 +489,29 @@ function handle_ingest(req::HTTP.Request)
                     is_holding = true,
                     hold_steps = RLEnvironment.HOLD_STEPS
                 )
+
                 ENV_INSTANCE[].is_terminated = false
                 (ENV_INSTANCE[])(action + 1)
                 APP_STATE.active_interaction = action
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
                 _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
-                # Allow the first hold step to occur without delay.
+                # --------------------------------------------------------
+                # PHASE 1 FOUNDATION ONLY:
+                # We do not yet have true joint RL selection.
+                # For now, we expose a placeholder dashboard pairing:
+                #   visual = current selected TD interaction
+                #   dashboard = 0 by default
+                #
+                # Later phases will replace this with real joint-action logic.
+                # --------------------------------------------------------
+                default_dashboard_id = 0
+                APP_STATE.proposed_dashboard_id = default_dashboard_id
+                APP_STATE.executed_dashboard_id = default_dashboard_id
+                APP_STATE.proposed_encoded_action = encode_joint_action(action, default_dashboard_id)
+                APP_STATE.executed_encoded_action = encode_joint_action(action, default_dashboard_id)
+
+                # Start-of-hold: allow first paced step without delay.
                 _reset_hold_step_clock()
             end
         end
@@ -274,6 +531,13 @@ function handle_ingest(req::HTTP.Request)
             )))
     end
 end
+
+# ============================================================
+# EXISTING TRIGGER HANDLER
+#
+# PHASE 1 NOTE:
+# Same as ingest path: we only initialize placeholder dashboard/action fields.
+# ============================================================
 
 function handle_trigger(req::HTTP.Request)
     try
@@ -313,20 +577,36 @@ function handle_trigger(req::HTTP.Request)
                 is_holding = true,
                 hold_steps = RLEnvironment.HOLD_STEPS
             )
+
             ENV_INSTANCE[].is_terminated = false
             (ENV_INSTANCE[])(action + 1)
             APP_STATE.active_interaction = action
             APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
             _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
+            # --------------------------------------------------------
+            # PHASE 1 FOUNDATION ONLY:
+            # Default dashboard pairing until real joint selection lands.
+            # --------------------------------------------------------
+            default_dashboard_id = 0
+            APP_STATE.proposed_dashboard_id = default_dashboard_id
+            APP_STATE.executed_dashboard_id = default_dashboard_id
+            APP_STATE.proposed_encoded_action = encode_joint_action(action, default_dashboard_id)
+            APP_STATE.executed_encoded_action = encode_joint_action(action, default_dashboard_id)
+
             # Start-of-hold: allow first paced step without delay
             _reset_hold_step_clock()
 
             return HTTP.Response(200,
                 JSON3.write(Dict(
-                    "ok"     => true,
-                    "action" => action,
-                    "name"   => _interaction_name(action)
+                    "ok"               => true,
+                    "action"           => action,
+                    "name"             => _interaction_name(action),
+
+                    # Phase 1 additions
+                    "proposed_visual"  => action,
+                    "proposed_dashboard_id" => APP_STATE.proposed_dashboard_id,
+                    "proposed_encoded_action" => APP_STATE.proposed_encoded_action
                 )))
         end
 
@@ -346,7 +626,44 @@ function handle_trigger(req::HTTP.Request)
     end
 end
 
+# ============================================================
+# NEW — DASHBOARDS ENDPOINT
+# ============================================================
+
+function handle_dashboards(req::HTTP.Request)
+    try
+        dashboards = [dashboard_to_dict(d) for d in DASHBOARD_REGISTRY]
+        active_ids = active_dashboard_ids()
+
+        return HTTP.Response(200,
+            JSON3.write(Dict(
+                "ok" => true,
+                "max_dashboards" => MAX_DASHBOARDS,
+                "active_dashboard_ids" => active_ids,
+                "dashboards" => dashboards
+            )))
+    catch e
+        println("[DASHBOARDS ERROR] $e")
+        return HTTP.Response(500,
+            JSON3.write(Dict(
+                "ok" => false,
+                "error" => string(e)
+            )))
+    end
+end
+
+# ============================================================
+# EXISTING STATUS HANDLER
+#
+# PHASE 1 additions:
+# - dashboard registry summary
+# - proposed/executed dashboard/action placeholders
+# ============================================================
+
 function handle_status(req::HTTP.Request)
+    proposed_dashboard = get_dashboard(APP_STATE.proposed_dashboard_id)
+    executed_dashboard = get_dashboard(APP_STATE.executed_dashboard_id)
+
     HTTP.Response(200, JSON3.write(Dict(
         "ok"                 => true,
         "avg_hr"             => APP_STATE.avg_hr,
@@ -362,6 +679,26 @@ function handle_status(req::HTTP.Request)
         "epsilon"            => AGENT_INSTANCE[].epsilon,
         "step"               => AGENT_INSTANCE[].step,
         "encoder_ready"      => TCNEncoder.STATE.encoder !== nothing,
+
+        # -----------------------------
+        # Phase 1 dashboard/joint-action data
+        # -----------------------------
+        "max_dashboards" => MAX_DASHBOARDS,
+        "active_dashboard_ids" => active_dashboard_ids(),
+        "dashboard_count" => length(DASHBOARD_REGISTRY),
+
+        "proposed_visual_id" => APP_STATE.active_interaction in RL_VISUAL_IDS ? APP_STATE.active_interaction : -1,
+        "proposed_dashboard_id" => APP_STATE.proposed_dashboard_id,
+        "executed_dashboard_id" => APP_STATE.executed_dashboard_id,
+
+        "proposed_encoded_action" => APP_STATE.proposed_encoded_action,
+        "executed_encoded_action" => APP_STATE.executed_encoded_action,
+
+        "proposed_dashboard_title" => proposed_dashboard === nothing ? "" : proposed_dashboard.title,
+        "proposed_dashboard_instruction" => proposed_dashboard === nothing ? "" : proposed_dashboard.instruction,
+
+        "executed_dashboard_title" => executed_dashboard === nothing ? "" : executed_dashboard.title,
+        "executed_dashboard_instruction" => executed_dashboard === nothing ? "" : executed_dashboard.instruction
     )))
 end
 
@@ -402,7 +739,7 @@ function handle_force_interaction(req::HTTP.Request)
         payload     = JSON3.read(req.body)
         interaction = Int(get(payload, "interaction", 0))
 
-        # Allow 0..5 (includes the new post-hold non-RL interaction 5)
+        # Allow 0..5 (includes the post-hold non-RL interaction 5)
         if interaction < 0 || interaction > 5
             return HTTP.Response(400,
                 JSON3.write(Dict(
@@ -444,6 +781,10 @@ function handle_force_interaction(req::HTTP.Request)
     end
 end
 
+# ============================================================
+# ROUTER
+# ============================================================
+
 function router(req::HTTP.Request)
     if req.target == "/ingest" && req.method == "POST"
         return handle_ingest(req)
@@ -457,15 +798,28 @@ function router(req::HTTP.Request)
         return handle_camera(req)
     elseif req.target == "/force_interaction" && req.method == "POST"
         return handle_force_interaction(req)
+    elseif req.target == "/dashboards" && req.method == "GET"
+        return handle_dashboards(req)
     else
         return HTTP.Response(404, "Not found")
     end
 end
 
+# ============================================================
+# MAIN
+# ============================================================
+
 function main()
     println("=" ^ 70)
     println("Biofeedback System — Julia Pipeline")
     println("=" ^ 70)
+
+    println("\n[INIT] Seeding dashboard registry...")
+    seed_initial_dashboards!()
+    println("[INIT] Dashboard registry ready: $(length(DASHBOARD_REGISTRY)) seeded / max $(MAX_DASHBOARDS)")
+    for d in DASHBOARD_REGISTRY
+        println("  - Dashboard $(d.id): $(d.title)")
+    end
 
     println("\n[INIT] Checking TouchDesigner connection...")
     TDBridge.check_connection()
@@ -493,6 +847,12 @@ function main()
 
     # Reflect in app state
     APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
+
+    # Initialize default dashboard placeholders
+    APP_STATE.proposed_dashboard_id = 0
+    APP_STATE.executed_dashboard_id = 0
+    APP_STATE.proposed_encoded_action = encode_joint_action(0, 0)
+    APP_STATE.executed_encoded_action = encode_joint_action(0, 0)
 
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
@@ -528,6 +888,7 @@ function main()
     println("  GET  /latest             ← latest encoded window")
     println("  POST /camera             ← camera stream notification")
     println("  POST /force_interaction  ← force specific interaction")
+    println("  GET  /dashboards         ← dashboard registry")
     println("\n[READY] System running — waiting for data...")
     println("=" ^ 70)
 
