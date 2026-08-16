@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import '../constants.dart';
 import '../models/biofeedback_model.dart';
 import '../models/dashboard_model.dart';
 import '../services/api_service.dart';
 import '../services/data_transfer_service.dart';
-import '../constants.dart';
 import '../services/mjpeg_server.dart';
 
 class BiofeedbackProvider extends ChangeNotifier {
@@ -21,26 +22,39 @@ class BiofeedbackProvider extends ChangeNotifier {
   final List<double> hrvHistory = [];
   final List<double> hrHistory = [];
 
-  List<DashboardOption> dashboards = [];
-  int? selectedDashboardId;
-  bool isDashboardLoading = false;
+  final List<DashboardOption> dashboards = [];
+  int selectedDashboardId = 0;
+  String customDashboardInstruction = '';
+  bool isCreatingDashboard = false;
   bool isConfirmingDashboard = false;
-  String dashboardMessage = '';
 
   Timer? _statusTimer;
 
   void startPolling() {
-    _fetchStatus();
-    _fetchDashboards();
-
+    _pollAll();
     _statusTimer = Timer.periodic(
       const Duration(milliseconds: AppConstants.statusPollMs),
-      (_) => _fetchStatus(),
+      (_) => _pollAll(),
     );
+  }
+
+  Future<void> _pollAll() async {
+    await _fetchStatus();
+    await _fetchDashboards();
   }
 
   void stopPolling() {
     _statusTimer?.cancel();
+  }
+
+  void selectDashboard(int id) {
+    selectedDashboardId = id;
+    notifyListeners();
+  }
+
+  void updateCustomDashboardInstruction(String value) {
+    customDashboardInstruction = value;
+    notifyListeners();
   }
 
   Future<void> startDataTransfer() async {
@@ -64,36 +78,21 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _fetchDashboards() async {
-    dashboards = await _api.fetchDashboards();
-    notifyListeners();
-  }
-
-  void selectDashboard(int id) {
-    selectedDashboardId = id;
-    notifyListeners();
-  }
-
   Future<void> _fetchStatus() async {
     final result = await _api.fetchStatus();
     if (result != null) {
       final prevInteraction = status?.activeInteraction ?? -1;
       final newInteraction = result.activeInteraction;
-      final hadPending = status?.hasPendingIntervention ?? false;
 
       status = result;
       isConnected = true;
 
-      if (result.hasPendingIntervention) {
-        selectedDashboardId ??= result.proposedDashboardId;
-      } else if (hadPending && !result.hasPendingIntervention) {
-        selectedDashboardId = null;
-      }
-
       if (newInteraction == 3 && prevInteraction != 3) {
-        _startCamera();
+        debugPrint('[APP] Interaction 3 active — starting camera');
+        await _startCamera();
       } else if (newInteraction != 3 && prevInteraction == 3) {
-        _stopCamera();
+        debugPrint('[APP] Left interaction 3 — stopping camera');
+        await _stopCamera();
       }
 
       hrvHistory.add(result.avgHrv);
@@ -104,68 +103,97 @@ class BiofeedbackProvider extends ChangeNotifier {
       if (hrHistory.length > 60) {
         hrHistory.removeAt(0);
       }
+
+      if (result.hasPendingIntervention &&
+          result.interventionPhase == 'awaiting_confirmation') {
+        selectedDashboardId = result.proposedDashboardId;
+      }
     } else {
       isConnected = false;
     }
     notifyListeners();
   }
 
-  Future<void> createCustomDashboard(String instruction) async {
-    final clean = instruction.trim();
-    if (clean.isEmpty) {
-      dashboardMessage = 'Enter an action first';
+  Future<void> _fetchDashboards() async {
+    final items = await _api.fetchDashboards();
+    dashboards
+      ..clear()
+      ..addAll(items);
+
+    if (dashboards.isNotEmpty &&
+        !dashboards.any((d) => d.id == selectedDashboardId)) {
+      selectedDashboardId = dashboards.first.id;
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> createCustomDashboard() async {
+    final instruction = customDashboardInstruction.trim();
+    if (instruction.isEmpty) {
+      triggerMessage = '⚠️ Enter a custom action first';
       notifyListeners();
       return;
     }
 
-    isDashboardLoading = true;
-    dashboardMessage = '';
+    isCreatingDashboard = true;
     notifyListeners();
 
-    final result = await _api.createDashboard(instruction: clean);
-    isDashboardLoading = false;
+    final result = await _api.createDashboard(instruction: instruction);
+
+    isCreatingDashboard = false;
 
     if (result != null && result['ok'] == true) {
-      final dashboard = result['dashboard'] as Map<String, dynamic>?;
-      if (dashboard != null) {
-        final created = DashboardOption.fromJson(dashboard);
-        final idx = dashboards.indexWhere((d) => d.id == created.id);
-        if (idx >= 0) {
-          dashboards[idx] = created;
+      final rawDashboard = result['dashboard'];
+      if (rawDashboard is Map) {
+        final created = DashboardOption.fromJson(
+          Map<String, dynamic>.from(rawDashboard),
+        );
+
+        final existingIndex = dashboards.indexWhere((d) => d.id == created.id);
+        if (existingIndex >= 0) {
+          dashboards[existingIndex] = created;
         } else {
           dashboards.add(created);
           dashboards.sort((a, b) => a.id.compareTo(b.id));
         }
+
         selectedDashboardId = created.id;
       }
-      dashboardMessage = result['duplicate'] == true
-          ? 'Using existing dashboard'
-          : 'Dashboard created';
+
+      triggerMessage = result['duplicate'] == true
+          ? 'ℹ️ Existing dashboard selected'
+          : '✅ Custom dashboard created';
+
+      customDashboardInstruction = '';
+      await _fetchDashboards();
     } else {
-      dashboardMessage = result?['reason'] ?? result?['error'] ?? 'Failed to create dashboard';
+      triggerMessage =
+          '❌ ${result?['reason'] ?? result?['error'] ?? 'Failed to create dashboard'}';
     }
 
     notifyListeners();
   }
 
   Future<void> confirmSelectedDashboard() async {
-    final id = selectedDashboardId ?? status?.proposedDashboardId;
-    if (id == null) return;
-
     isConfirmingDashboard = true;
-    dashboardMessage = '';
     notifyListeners();
 
-    final result = await _api.confirmAction(executedDashboardId: id);
+    final result = await _api.confirmAction(
+      executedDashboardId: selectedDashboardId,
+    );
+
     isConfirmingDashboard = false;
 
     if (result != null && result['ok'] == true) {
-      dashboardMessage = 'Action confirmed';
+      triggerMessage = '✅ Action confirmed';
       await _fetchStatus();
     } else {
-      dashboardMessage = result?['reason'] ?? result?['error'] ?? 'Confirmation failed';
-      notifyListeners();
+      triggerMessage =
+          '❌ ${result?['reason'] ?? result?['error'] ?? 'Failed to confirm action'}';
     }
+
+    notifyListeners();
   }
 
   Future<void> _startCamera() async {
@@ -176,6 +204,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     }
     if (!server.isStreaming) {
       await server.startStreaming();
+      debugPrint('[APP] Camera streaming → ${server.streamUrl}');
     }
   }
 
@@ -183,6 +212,7 @@ class BiofeedbackProvider extends ChangeNotifier {
     final server = MjpegServer();
     if (server.isStreaming) {
       await server.stopStreaming();
+      debugPrint('[APP] Camera stopped');
     }
   }
 
@@ -192,11 +222,13 @@ class BiofeedbackProvider extends ChangeNotifier {
     notifyListeners();
 
     final result = await _api.fireTrigger(triggerType: 2);
+
     isTriggerLoading = false;
 
     if (result != null && result['ok'] == true) {
       triggerMessage = '✅ ${result['name']} selected';
       await _fetchStatus();
+      await _fetchDashboards();
     } else if (result != null) {
       final reason = result['reason'] ?? result['error'] ?? 'Unknown error';
       triggerMessage = '⚠️ $reason';
@@ -215,6 +247,7 @@ class BiofeedbackProvider extends ChangeNotifier {
   Future<void> fireCalendarTrigger(String eventName) async {
     await _api.fireCalendarTrigger();
     calendarMessage = '📅 $eventName — interaction selected';
+    await _fetchStatus();
     notifyListeners();
 
     Future.delayed(const Duration(seconds: 5), () {

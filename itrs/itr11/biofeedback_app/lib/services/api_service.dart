@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+
 import '../constants.dart';
 import '../models/biofeedback_model.dart';
 import '../models/dashboard_model.dart';
@@ -41,10 +42,14 @@ class ApiService {
 
       if (resp.statusCode == 200) {
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = (json['dashboards'] ?? []) as List;
-        return list
-            .map((e) => DashboardOption.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final rawList = json['dashboards'];
+        if (rawList is List) {
+          return rawList
+              .map((e) => DashboardOption.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ))
+              .toList();
+        }
       }
     } catch (e) {
       debugPrint('[API] Fetch dashboards error: $e');
@@ -63,12 +68,15 @@ class ApiService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'instruction': instruction,
-              if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+              if (title != null && title.trim().isNotEmpty)
+                'title': title.trim(),
             }),
           )
           .timeout(const Duration(seconds: 15));
 
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+      return Map<String, dynamic>.from(
+        jsonDecode(resp.body) as Map,
+      );
     } catch (e) {
       debugPrint('[API] Create dashboard error: $e');
       return {'ok': false, 'error': e.toString()};
@@ -83,11 +91,15 @@ class ApiService {
           .post(
             Uri.parse('${AppConstants.serverBase}/confirm_action'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'executed_dashboard_id': executedDashboardId}),
+            body: jsonEncode({
+              'executed_dashboard_id': executedDashboardId,
+            }),
           )
           .timeout(const Duration(seconds: 15));
 
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+      return Map<String, dynamic>.from(
+        jsonDecode(resp.body) as Map,
+      );
     } catch (e) {
       debugPrint('[API] Confirm action error: $e');
       return {'ok': false, 'error': e.toString()};
@@ -107,13 +119,21 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
 
       if (resp.statusCode == 200) {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
+        return Map<String, dynamic>.from(
+          jsonDecode(resp.body) as Map,
+        );
       }
 
-      return {'ok': false, 'reason': 'HTTP ${resp.statusCode}'};
+      return {
+        'ok': false,
+        'reason': 'HTTP ${resp.statusCode}',
+      };
     } catch (e) {
       debugPrint('[API] Trigger error: $e');
-      return {'ok': false, 'error': e.toString()};
+      return {
+        'ok': false,
+        'error': e.toString(),
+      };
     }
   }
 

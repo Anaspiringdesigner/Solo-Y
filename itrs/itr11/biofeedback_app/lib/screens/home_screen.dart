@@ -100,7 +100,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _calendar.startDailyPlanning((eventName) {
         context.read<BiofeedbackProvider>().fireCalendarTrigger(eventName);
       });
-      _showSnack('📅 Calendar connected — ${_calendar.scheduledTriggerCount} triggers scheduled today');
+      _showSnack(
+        '📅 Calendar connected — ${_calendar.scheduledTriggerCount} triggers scheduled today',
+      );
     } else {
       _showSnack('❌ Calendar sign in failed');
     }
@@ -192,7 +194,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ? 'Start/Stop BLE ingest'
                             : 'BLE available for ESP32 only',
                         icon: Icon(
-                          _bleRunning ? Icons.bluetooth_connected : Icons.bluetooth,
+                          _bleRunning
+                              ? Icons.bluetooth_connected
+                              : Icons.bluetooth,
                           color: _bleRunning ? Colors.greenAccent : Colors.white,
                         ),
                         onPressed: _toggleBle,
@@ -249,25 +253,43 @@ class _HomeScreenState extends State<HomeScreen> {
                         holdTimeRemaining: s?.holdTimeRemaining ?? '0:00',
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    if (s != null && s.hasPendingIntervention) ...[
+                    if (s != null &&
+                        s.hasPendingIntervention &&
+                        s.interventionPhase == 'awaiting_confirmation') ...[
+                      const SizedBox(height: 12),
                       FadeInUp(
-                        duration: const Duration(milliseconds: 760),
+                        duration: const Duration(milliseconds: 750),
                         child: DashboardSelectionCard(
                           suggestedTitle: s.proposedDashboardTitle,
                           suggestedInstruction: s.proposedDashboardInstruction,
-                          selectedDashboardId: bio.selectedDashboardId ?? s.proposedDashboardId,
                           dashboards: bio.dashboards,
-                          isCreating: bio.isDashboardLoading,
-                          isConfirming: bio.isConfirmingDashboard,
-                          message: bio.dashboardMessage,
-                          onSelectDashboard: bio.selectDashboard,
-                          onCreateDashboard: (text) => bio.createCustomDashboard(text),
-                          onConfirm: () => bio.confirmSelectedDashboard(),
+                          selectedDashboardId: bio.selectedDashboardId,
+                          onDashboardSelected: (id) {
+                            bio.selectDashboard(id);
+                          },
+                          onCustomInstructionChanged: (value) {
+                            bio.updateCustomDashboardInstruction(value);
+                          },
+                          onCreateCustomDashboard: () async {
+                            await bio.createCustomDashboard();
+                            if (!mounted) return;
+                            if (bio.triggerMessage.isNotEmpty) {
+                              _showSnack(bio.triggerMessage);
+                            }
+                          },
+                          onConfirm: () async {
+                            await bio.confirmSelectedDashboard();
+                            if (!mounted) return;
+                            if (bio.triggerMessage.isNotEmpty) {
+                              _showSnack(bio.triggerMessage);
+                            }
+                          },
+                          isCreatingDashboard: bio.isCreatingDashboard,
+                          isSubmitting: bio.isConfirmingDashboard,
                         ),
                       ),
-                      const SizedBox(height: 12),
                     ],
+                    const SizedBox(height: 12),
                     if (s != null && s.activeInteraction == 3) ...[
                       const SizedBox(height: 12),
                       FadeInUp(
@@ -290,10 +312,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           padding: const EdgeInsets.all(12),
                           margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(
-                            color: const Color(AppConstants.accentColor).withValues(alpha: 0.1),
+                            color: const Color(AppConstants.accentColor)
+                                .withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(AppConstants.accentColor).withValues(alpha: 0.3),
+                              color: const Color(AppConstants.accentColor)
+                                  .withValues(alpha: 0.3),
                             ),
                           ),
                           child: Text(
@@ -334,10 +358,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: bio.isTriggerLoading ? null : () => bio.fireManualTrigger(),
+                          onPressed: bio.isTriggerLoading
+                              ? null
+                              : () => bio.fireManualTrigger(),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(AppConstants.accentColor).withValues(alpha: 0.15),
-                            foregroundColor: const Color(AppConstants.accentColor),
+                            backgroundColor: const Color(AppConstants.accentColor)
+                                .withValues(alpha: 0.15),
+                            foregroundColor:
+                                const Color(AppConstants.accentColor),
                             side: const BorderSide(
                               color: Color(AppConstants.accentColor),
                               width: 1,
@@ -373,7 +401,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _calendarSignedIn ? null : _handleCalendarSignIn,
+                          onPressed:
+                              _calendarSignedIn ? null : _handleCalendarSignIn,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _calendarSignedIn
                                 ? Colors.purple.withValues(alpha: 0.05)
@@ -391,7 +420,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           child: Text(
-                            _calendarSignedIn ? '📅  Calendar Connected' : '📅  Connect Calendar',
+                            _calendarSignedIn
+                                ? '📅  Calendar Connected'
+                                : '📅  Connect Calendar',
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -410,11 +441,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             onPressed: () async {
                               await _calendar.refreshToday();
                               if (mounted) {
-                                _showSnack('🔄 Refreshed — ${_calendar.scheduledTriggerCount} triggers scheduled');
+                                _showSnack(
+                                  '🔄 Refreshed — ${_calendar.scheduledTriggerCount} triggers scheduled',
+                                );
                               }
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(AppConstants.textSecondary),
+                              foregroundColor:
+                                  const Color(AppConstants.textSecondary),
                             ),
                             child: Text(
                               '🔄  Refresh Today\'s Schedule',

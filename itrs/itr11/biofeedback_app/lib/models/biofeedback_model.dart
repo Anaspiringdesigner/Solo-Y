@@ -61,6 +61,21 @@ class BiofeedbackStatus {
   });
 
   factory BiofeedbackStatus.fromJson(Map<String, dynamic> json) {
+    final rawIds = json['active_dashboard_ids'];
+    final List<int> parsedDashboardIds = <int>[];
+
+    if (rawIds is List) {
+      for (final item in rawIds) {
+        if (item is int) {
+          parsedDashboardIds.add(item);
+        } else if (item is num) {
+          parsedDashboardIds.add(item.toInt());
+        } else if (item != null) {
+          parsedDashboardIds.add(int.tryParse(item.toString()) ?? 0);
+        }
+      }
+    }
+
     return BiofeedbackStatus(
       avgHr: (json['avg_hr'] ?? 0).toDouble(),
       avgHrv: (json['avg_hrv'] ?? 0).toDouble(),
@@ -76,9 +91,7 @@ class BiofeedbackStatus {
       encoderReady: json['encoder_ready'] ?? false,
       maxDashboards: (json['max_dashboards'] ?? 0).toInt(),
       dashboardCount: (json['dashboard_count'] ?? 0).toInt(),
-      activeDashboardIds: ((json['active_dashboard_ids'] ?? []) as List)
-          .map((e) => (e ?? 0).toInt())
-          .toList(),
+      activeDashboardIds: parsedDashboardIds,
       hasPendingIntervention: json['has_pending_intervention'] ?? false,
       interventionPhase: json['intervention_phase'] ?? 'idle',
       dashboardConfirmedAt: json['dashboard_confirmed_at'] ?? '',
@@ -89,9 +102,11 @@ class BiofeedbackStatus {
       proposedEncodedAction: (json['proposed_encoded_action'] ?? 0).toInt(),
       executedEncodedAction: (json['executed_encoded_action'] ?? 0).toInt(),
       proposedDashboardTitle: json['proposed_dashboard_title'] ?? '',
-      proposedDashboardInstruction: json['proposed_dashboard_instruction'] ?? '',
+      proposedDashboardInstruction:
+          json['proposed_dashboard_instruction'] ?? '',
       executedDashboardTitle: json['executed_dashboard_title'] ?? '',
-      executedDashboardInstruction: json['executed_dashboard_instruction'] ?? '',
+      executedDashboardInstruction:
+          json['executed_dashboard_instruction'] ?? '',
     );
   }
 
