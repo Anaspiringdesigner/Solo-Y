@@ -2,7 +2,7 @@
 # main.jl
 # Biofeedback System — Full Pipeline
 #
-# PHASE 1 + PHASE 2 CHANGES:
+# PHASE 1 + PHASE 2 + PHASE 3 CHANGES:
 #
 # Phase 1:
 # - Add dashboard registry for app-side intervention dashboards.
@@ -21,11 +21,18 @@
 # - Normalize and de-duplicate dashboard text.
 # - Track proposed vs executed joint action placeholders.
 #
+# Phase 3:
+# - Do NOT start the hold/intervention on /trigger immediately.
+# - /trigger now only proposes a pending intervention.
+# - /confirm_action starts the actual hold/intervention.
+# - Keep active_interaction = 5 while waiting for confirmation.
+# - Only switch active_interaction to the RL visual after confirmation.
+# - Fixes the timer beginning before the user confirms the dashboard.
+#
 # IMPORTANT:
-# - This phase still does NOT fully change RL training/action selection.
-# - RL still selects the TD visual as before.
-# - Dashboard selection is now represented and confirmable in backend state.
-# - Later phases will make RL actually learn on executed joint actions.
+# - RL still does NOT yet fully learn on executed joint actions.
+# - RL still proposes the TD visual as before.
+# - Dashboard execution is now lifecycle-correct: propose first, start on confirm.
 #
 # Existing behavior preserved:
 # - Robust hold pacing: advance at most once every 5s during holds.
@@ -52,15 +59,11 @@ using Dates
 const BRAIN_PORT = 8000
 
 # ============================================================
-# PHASE 1 / 2 — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
+# PHASE 1 / 2 / 3 — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
 # ============================================================
 
-# RL-selectable TD visuals remain 0..4.
-# TD interaction 5 is still reserved for post-hold / non-RL behavior.
 const RL_VISUAL_IDS = collect(0:4)
 const RL_VISUAL_COUNT = length(RL_VISUAL_IDS)
-
-# Maximum number of dashboards allowed at any point in time.
 const MAX_DASHBOARDS = 8
 
 mutable struct DashboardDef
@@ -75,15 +78,6 @@ end
 
 const DASHBOARD_REGISTRY = Vector{DashboardDef}()
 
-"""
-    normalize_dashboard_text(s::AbstractString) -> String
-
-Normalize dashboard text so we can detect near-identical duplicates.
-This is intentionally simple and deterministic:
-- strip outer whitespace
-- lowercase
-- collapse internal whitespace to single spaces
-"""
 function normalize_dashboard_text(s::AbstractString)::String
     stripped = strip(String(s))
     lowered = lowercase(stripped)
@@ -91,13 +85,6 @@ function normalize_dashboard_text(s::AbstractString)::String
     return join(parts, " ")
 end
 
-"""
-    infer_dashboard_title(instruction::AbstractString) -> String
-
-Generate a compact title for user-created dashboards if a title is not supplied.
-Using AbstractString here avoids method mismatches when callers pass different
-string-like values returned from JSON libraries.
-"""
 function infer_dashboard_title(instruction::AbstractString)::String
     txt = strip(String(instruction))
     isempty(txt) && return "Custom Action"
@@ -107,12 +94,6 @@ function infer_dashboard_title(instruction::AbstractString)::String
     return txt[1:32] * "..."
 end
 
-"""
-    next_dashboard_id() -> Union{Int, Nothing}
-
-Return the lowest available dashboard id in 0..MAX_DASHBOARDS-1.
-If none is available, return nothing.
-"""
 function next_dashboard_id()
     used = Set(d.id for d in DASHBOARD_REGISTRY)
     for i in 0:(MAX_DASHBOARDS - 1)
@@ -123,13 +104,6 @@ function next_dashboard_id()
     return nothing
 end
 
-"""
-    seed_initial_dashboards!()
-
-Populate the dashboard registry with the 5 initial dashboard identities.
-Dashboard IDs are 0-based so they are easier to use in a flattened action:
-    encoded_action = visual_id * MAX_DASHBOARDS + dashboard_id
-"""
 function seed_initial_dashboards!()
     empty!(DASHBOARD_REGISTRY)
 
@@ -180,9 +154,6 @@ function active_dashboard_ids()::Vector{Int}
     [d.id for d in DASHBOARD_REGISTRY if d.active]
 end
 
-"""
-    find_dashboard_by_normalized_key(key::String) -> Union{DashboardDef, Nothing}
-"""
 function find_dashboard_by_normalized_key(key::String)
     for d in DASHBOARD_REGISTRY
         if d.normalized_key == key
@@ -192,18 +163,6 @@ function find_dashboard_by_normalized_key(key::String)
     return nothing
 end
 
-"""
-    create_dashboard!(instruction::String; title::Union{Nothing,String}=nothing,
-                      created_by_user::Bool=true, active::Bool=true,
-                      created_at_step::Int=0)
-
-Create a new dashboard identity if capacity allows and it is not a duplicate.
-Returns a named tuple:
-- ok::Bool
-- dashboard::Union{DashboardDef,Nothing}
-- reason::String
-- duplicate::Bool
-"""
 function create_dashboard!(instruction::String;
                            title::Union{Nothing,String}=nothing,
                            created_by_user::Bool=true,
@@ -370,13 +329,11 @@ mutable struct AppState
     is_holding              :: Bool
     hold_steps_left         :: Int
 
-    # Proposed/executed dashboard + encoded action
     proposed_dashboard_id   :: Int
     executed_dashboard_id   :: Int
     proposed_encoded_action :: Int
     executed_encoded_action :: Int
 
-    # Phase 2 intervention state
     intervention_phase      :: String
     has_pending_intervention:: Bool
     proposed_visual_id      :: Int
@@ -388,7 +345,7 @@ AppState() = AppState(
     0f0,
     0f0,
     0f0,
-    0,
+    POST_HOLD_INTERACTION,
     0f0,
     0f0,
     false,
@@ -423,6 +380,11 @@ function begin_pending_intervention!(visual_id::Int; proposed_dashboard_id::Int=
     APP_STATE.executed_encoded_action = encode_joint_action(visual_id, proposed_dashboard_id)
 
     APP_STATE.dashboard_confirmed_at = ""
+
+    # Stay on idle / non-live interaction until confirmation.
+    APP_STATE.active_interaction = POST_HOLD_INTERACTION
+    APP_STATE.is_holding = false
+    APP_STATE.hold_steps_left = 0
 end
 
 function confirm_pending_intervention!(executed_dashboard_id::Int)
@@ -439,8 +401,66 @@ function clear_pending_intervention!()
     APP_STATE.dashboard_confirmed_at = ""
 end
 
+function _latest_latent_payload()
+    latest = TCNEncoder.STATE.latest
+    latest === nothing && return nothing
+    return latest
+end
+
+function start_confirmed_intervention!(trigger_type::Int)
+    latest = _latest_latent_payload()
+    latest === nothing && error("No latent available yet for confirmed intervention start")
+
+    visual_id = APP_STATE.proposed_visual_id
+
+    z = Float32.(latest["z"])
+
+    fired = RLEnvironment.fire_external_trigger!(
+        ENV_INSTANCE[],
+        z,
+        Float32(latest["avg_hr"]),
+        Float32(latest["avg_hrv"]),
+        Float32(latest["avg_br"]),
+        trigger_type,
+        String(latest["end_time"])
+    )
+
+    fired || error("Could not start confirmed intervention; hold may already be active")
+
+    ENV_INSTANCE[].is_terminated = false
+
+    # Start the actual intervention only now.
+    (ENV_INSTANCE[])(visual_id + 1)
+
+    APP_STATE.active_interaction = visual_id
+    APP_STATE.is_holding = ENV_INSTANCE[].is_holding
+    APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
+
+    # Explicitly update TD to the live RL visual now.
+    try
+        TDBridge.send_action(
+            visual_id,
+            APP_STATE.avg_hr,
+            APP_STATE.avg_hrv,
+            APP_STATE.avg_br,
+            APP_STATE.last_reward,
+            APP_STATE.cumulative_reward,
+            trigger_type,
+            true,
+            RLEnvironment.HOLD_STEPS
+        )
+        println("[MAIN] TD switched to confirmed visual $visual_id")
+    catch e
+        println("[MAIN] TD visual switch on confirm failed: $e")
+    end
+
+    _reset_hold_step_clock()
+
+    println("[MAIN] Confirmed intervention started → visual=$visual_id dashboard=$(APP_STATE.executed_dashboard_id)")
+end
+
 # ============================================================
-# EXISTING INGEST HANDLER
+# INGEST HANDLER
 # ============================================================
 
 function handle_ingest(req::HTTP.Request)
@@ -564,19 +584,14 @@ function handle_ingest(req::HTTP.Request)
                     ENV_INSTANCE[].avg_hrv,
                     ENV_INSTANCE[].avg_br,
                     ENV_INSTANCE[].trigger_type;
-                    is_holding = true,
-                    hold_steps = RLEnvironment.HOLD_STEPS
+                    is_holding = false,
+                    hold_steps = 0
                 )
 
-                ENV_INSTANCE[].is_terminated = false
-                (ENV_INSTANCE[])(action + 1)
-                APP_STATE.active_interaction = action
-                APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
+                APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
                 _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
                 begin_pending_intervention!(action; proposed_dashboard_id=0)
-
-                _reset_hold_step_clock()
             end
         end
 
@@ -597,7 +612,7 @@ function handle_ingest(req::HTTP.Request)
 end
 
 # ============================================================
-# EXISTING TRIGGER HANDLER
+# TRIGGER HANDLER
 # ============================================================
 
 function handle_trigger(req::HTTP.Request)
@@ -614,58 +629,41 @@ function handle_trigger(req::HTTP.Request)
                 )))
         end
 
-        z = Float32.(latest["z"])
-
-        fired = RLEnvironment.fire_external_trigger!(
-            ENV_INSTANCE[],
-            z,
-            Float32(latest["avg_hr"]),
-            Float32(latest["avg_hrv"]),
-            Float32(latest["avg_br"]),
-            trigger_type,
-            String(latest["end_time"])
-        )
-
-        if fired
-            action = RLAgent.agent_step!(
-                AGENT_INSTANCE[],
-                ENV_INSTANCE[].state,
-                ENV_INSTANCE[].last_reward,
-                ENV_INSTANCE[].avg_hr,
-                ENV_INSTANCE[].avg_hrv,
-                ENV_INSTANCE[].avg_br,
-                trigger_type;
-                is_holding = true,
-                hold_steps = RLEnvironment.HOLD_STEPS
-            )
-
-            ENV_INSTANCE[].is_terminated = false
-            (ENV_INSTANCE[])(action + 1)
-            APP_STATE.active_interaction = action
-            APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
-            _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
-
-            begin_pending_intervention!(action; proposed_dashboard_id=0)
-
-            _reset_hold_step_clock()
-
+        if ENV_INSTANCE[].is_holding || APP_STATE.has_pending_intervention
             return HTTP.Response(200,
                 JSON3.write(Dict(
-                    "ok"               => true,
-                    "action"           => action,
-                    "name"             => _interaction_name(action),
-                    "proposed_visual"  => action,
-                    "proposed_dashboard_id" => APP_STATE.proposed_dashboard_id,
-                    "proposed_encoded_action" => APP_STATE.proposed_encoded_action,
-                    "intervention_phase" => APP_STATE.intervention_phase,
-                    "has_pending_intervention" => APP_STATE.has_pending_intervention
+                    "ok"     => false,
+                    "reason" => "Hold or pending confirmation in progress"
                 )))
         end
 
+        action = RLAgent.agent_step!(
+            AGENT_INSTANCE[],
+            ENV_INSTANCE[].state,
+            ENV_INSTANCE[].last_reward,
+            ENV_INSTANCE[].avg_hr,
+            ENV_INSTANCE[].avg_hrv,
+            ENV_INSTANCE[].avg_br,
+            trigger_type;
+            is_holding = false,
+            hold_steps = 0
+        )
+
+        APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
+        _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
+
+        begin_pending_intervention!(action; proposed_dashboard_id=0)
+
         return HTTP.Response(200,
             JSON3.write(Dict(
-                "ok"     => false,
-                "reason" => "Hold in progress"
+                "ok"               => true,
+                "action"           => action,
+                "name"             => _interaction_name(action),
+                "proposed_visual"  => action,
+                "proposed_dashboard_id" => APP_STATE.proposed_dashboard_id,
+                "proposed_encoded_action" => APP_STATE.proposed_encoded_action,
+                "intervention_phase" => APP_STATE.intervention_phase,
+                "has_pending_intervention" => APP_STATE.has_pending_intervention
             )))
 
     catch e
@@ -795,6 +793,14 @@ function handle_confirm_action(req::HTTP.Request)
 
         confirm_pending_intervention!(executed_dashboard_id)
 
+        trigger_type = try
+            Int(ENV_INSTANCE[].trigger_type)
+        catch
+            2
+        end
+
+        start_confirmed_intervention!(trigger_type)
+
         return HTTP.Response(200,
             JSON3.write(Dict(
                 "ok" => true,
@@ -805,7 +811,10 @@ function handle_confirm_action(req::HTTP.Request)
                 "executed_dashboard_id" => APP_STATE.executed_dashboard_id,
                 "proposed_encoded_action" => APP_STATE.proposed_encoded_action,
                 "executed_encoded_action" => APP_STATE.executed_encoded_action,
-                "dashboard_confirmed_at" => APP_STATE.dashboard_confirmed_at
+                "dashboard_confirmed_at" => APP_STATE.dashboard_confirmed_at,
+                "active_interaction" => APP_STATE.active_interaction,
+                "is_holding" => APP_STATE.is_holding,
+                "hold_steps_left" => APP_STATE.hold_steps_left
             )))
     catch e
         println("[CONFIRM ACTION ERROR] $e")
@@ -818,7 +827,7 @@ function handle_confirm_action(req::HTTP.Request)
 end
 
 # ============================================================
-# EXISTING STATUS HANDLER
+# STATUS
 # ============================================================
 
 function handle_status(req::HTTP.Request)
@@ -1020,6 +1029,9 @@ function main()
     APP_STATE.intervention_phase = PHASE_IDLE
     APP_STATE.has_pending_intervention = false
     APP_STATE.dashboard_confirmed_at = ""
+    APP_STATE.active_interaction = POST_HOLD_INTERACTION
+    APP_STATE.is_holding = false
+    APP_STATE.hold_steps_left = 0
 
     println("\n[INIT] Starting RL Environment...")
     ENV_INSTANCE[] = RLEnvironment.BiofeedbackEnv()
