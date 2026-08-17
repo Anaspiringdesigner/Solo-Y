@@ -2,7 +2,7 @@
 # main.jl
 # Biofeedback System — Full Pipeline
 #
-# PHASE 1 + PHASE 2 + PHASE 3 CHANGES:
+# PHASE 1 + PHASE 2 + PHASE 3 + PHASE 4A CHANGES:
 #
 # Phase 1:
 # - Add dashboard registry for app-side intervention dashboards.
@@ -29,10 +29,19 @@
 # - Only switch active_interaction to the RL visual after confirmation.
 # - Fixes the timer beginning before the user confirms the dashboard.
 #
+# Phase 4A:
+# - Prepare backend for true joint-action RL without changing DQN action count yet.
+# - Make proposed/executed encoded actions first-class runtime state.
+# - Add helper to finalize executed joint action from:
+#       proposed visual + executed dashboard
+# - Preserve lifecycle correctness while making joint-action bookkeeping explicit.
+# - Keep RL agent itself visual-only for now (5 outputs), but backend now treats
+#   the executed encoded action as authoritative intervention metadata.
+#
 # IMPORTANT:
-# - RL still does NOT yet fully learn on executed joint actions.
-# - RL still proposes the TD visual as before.
-# - Dashboard execution is now lifecycle-correct: propose first, start on confirm.
+# - RL still does NOT yet fully select dashboard IDs itself in this phase.
+# - RL still proposes only the TD visual via the existing 5-action DQN.
+# - However, all runtime bookkeeping is now aligned with future true joint RL.
 #
 # Existing behavior preserved:
 # - Robust hold pacing: advance at most once every 5s during holds.
@@ -59,7 +68,7 @@ using Dates
 const BRAIN_PORT = 8000
 
 # ============================================================
-# PHASE 1 / 2 / 3 — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
+# PHASE 1 / 2 / 3 / 4A — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
 # ============================================================
 
 const RL_VISUAL_IDS = collect(0:4)
@@ -390,7 +399,13 @@ end
 function confirm_pending_intervention!(executed_dashboard_id::Int)
     APP_STATE.executed_dashboard_id = executed_dashboard_id
     APP_STATE.executed_visual_id = APP_STATE.proposed_visual_id
-    APP_STATE.executed_encoded_action = encode_joint_action(APP_STATE.executed_visual_id, executed_dashboard_id)
+
+    # Phase 4A: the executed joint action is the authoritative action metadata.
+    APP_STATE.executed_encoded_action = encode_joint_action(
+        APP_STATE.executed_visual_id,
+        executed_dashboard_id
+    )
+
     APP_STATE.intervention_phase = PHASE_CONFIRMED
     APP_STATE.dashboard_confirmed_at = Dates.format(Dates.now(), dateformat"yyyy-mm-ddTHH:MM:SS")
 end
@@ -436,7 +451,6 @@ function start_confirmed_intervention!(trigger_type::Int)
     APP_STATE.is_holding = ENV_INSTANCE[].is_holding
     APP_STATE.hold_steps_left = ENV_INSTANCE[].hold_counter
 
-    # Explicitly update TD to the live RL visual now.
     try
         TDBridge.send_action(
             visual_id,
@@ -456,7 +470,7 @@ function start_confirmed_intervention!(trigger_type::Int)
 
     _reset_hold_step_clock()
 
-    println("[MAIN] Confirmed intervention started → visual=$visual_id dashboard=$(APP_STATE.executed_dashboard_id)")
+    println("[MAIN] Confirmed intervention started → visual=$visual_id dashboard=$(APP_STATE.executed_dashboard_id) encoded=$(APP_STATE.executed_encoded_action)")
 end
 
 # ============================================================
@@ -591,6 +605,10 @@ function handle_ingest(req::HTTP.Request)
                 APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
                 _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
+                # Phase 4A note:
+                # RL still returns a visual-only action here.
+                # We lift it into joint-action bookkeeping by pairing it with
+                # the current proposed dashboard default (0 for now).
                 begin_pending_intervention!(action; proposed_dashboard_id=0)
             end
         end
@@ -652,6 +670,10 @@ function handle_trigger(req::HTTP.Request)
         APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
         _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
+        # Phase 4A note:
+        # RL still returns a visual-only action.
+        # We pair it with dashboard 0 for now, but the backend now treats
+        # the resulting encoded joint action as first-class intervention metadata.
         begin_pending_intervention!(action; proposed_dashboard_id=0)
 
         return HTTP.Response(200,
