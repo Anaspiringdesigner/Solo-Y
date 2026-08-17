@@ -1,16 +1,17 @@
 # ============================================================
 # rl_agent.jl
 # DQN RL Agent
-# PHASE 4B:
-# - Expand action space from 5 TD visuals to 40 joint actions.
-# - Joint action = (visual_id, dashboard_id)
-# - N_ACTIONS = 5 * 8 = 40
-# - Keep agent generic: it now returns an encoded joint action.
-# - Main/backend will decode it and treat executed encoded action as authoritative.
+# PHASE 4C:
+# - 40 joint actions: (visual_id, dashboard_id)
+# - Add ability to rewrite the pending previous action before reward is realized.
+# - This allows backend/main to replace the originally proposed encoded action
+#   with the actually executed encoded action after user confirmation.
 #
-# NOTE:
-# - Old 5-action checkpoints are not compatible with this version.
-# - This file detects incompatible checkpoints and starts fresh if needed.
+# IMPORTANT:
+# - The agent still stores one pending (prev_state, prev_action) pair and
+#   commits it to replay when the next reward arrives.
+# - Phase 4C ensures prev_action can be updated to executed_encoded_action
+#   before that replay commit happens.
 # ============================================================
 
 module RLAgent
@@ -24,19 +25,19 @@ using BSON: @save, @load
 using Dates
 import ..TDBridge
 
-const STATE_DIM     = 36
-const RL_VISUALS    = 5
+const STATE_DIM      = 36
+const RL_VISUALS     = 5
 const MAX_DASHBOARDS = 8
-const N_ACTIONS     = RL_VISUALS * MAX_DASHBOARDS
-const GAMMA         = 0.99f0
-const LR            = 1f-3
-const BATCH_SIZE    = 32
-const REPLAY_SIZE   = 10_000
-const MIN_REPLAY    = 128
-const TARGET_UPDATE = 10
-const EPSILON_START = 1.0f0
-const EPSILON_MIN   = 0.05f0
-const EPSILON_DECAY = 0.995f0
+const N_ACTIONS      = RL_VISUALS * MAX_DASHBOARDS
+const GAMMA          = 0.99f0
+const LR             = 1f-3
+const BATCH_SIZE     = 32
+const REPLAY_SIZE    = 10_000
+const MIN_REPLAY     = 128
+const TARGET_UPDATE  = 10
+const EPSILON_START  = 1.0f0
+const EPSILON_MIN    = 0.05f0
+const EPSILON_DECAY  = 0.995f0
 
 const RUN_DIR      = "rl_runs"
 const CKPT_PATH    = joinpath(RUN_DIR, "dqn_ckpt.bson")
@@ -137,7 +138,7 @@ end
 
 function select_action(agent::DQNAgent, state::Vector{Float32})::Tuple{Int, String}
     if rand(Float32) < agent.epsilon
-        return rand(0:(N_ACTIONS-1)), "explore"
+        return rand(0:(N_ACTIONS - 1)), "explore"
     else
         qvals  = q_values(agent.q_net, state)
         action = argmax(qvals) - 1
@@ -162,7 +163,7 @@ function train_step!(agent::DQNAgent)
 
     loss, gs = Flux.withgradient(agent.q_net) do net
         q_curr  = net(states)
-        q_taken = [q_curr[actions[i]+1, i] for i in 1:BATCH_SIZE]
+        q_taken = [q_curr[actions[i] + 1, i] for i in 1:BATCH_SIZE]
         Flux.mse(q_taken, targets_v)
     end
 
@@ -214,7 +215,6 @@ function load_runtime_state!(agent::DQNAgent)
     agent.prev_state  = runtime["prev_state"]
     agent.prev_action = runtime["prev_action"]
 
-    # If previous action ids are from old incompatible checkpoints, drop them.
     if agent.prev_action !== nothing && !(0 <= agent.prev_action < N_ACTIONS)
         agent.prev_action = nothing
         agent.prev_state = nothing
@@ -336,6 +336,28 @@ function log_step(agent        :: DQNAgent,
     end
 end
 
+"""
+    set_pending_executed_action!(agent, encoded_action) -> Bool
+
+Overwrite the pending previous action with the executed encoded joint action.
+This is the Phase 4C hook that lets main/backend replace the originally
+proposed encoded action with the dashboard the user actually executed.
+"""
+function set_pending_executed_action!(agent::DQNAgent, encoded_action::Int)::Bool
+    if !(0 <= encoded_action < N_ACTIONS)
+        println("[DQN] Rejecting executed encoded action $(encoded_action): out of range")
+        return false
+    end
+    if agent.prev_action === nothing || agent.prev_state === nothing
+        println("[DQN] No pending previous action to rewrite")
+        return false
+    end
+    old = agent.prev_action
+    agent.prev_action = encoded_action
+    println("[DQN] Pending action rewritten: proposed=$(old) -> executed=$(encoded_action)")
+    return true
+end
+
 function agent_step!(agent        :: DQNAgent,
                      state        :: Vector{Float32},
                      reward       :: Float32,
@@ -366,13 +388,9 @@ function agent_step!(agent        :: DQNAgent,
         sync_target!(agent)
     end
 
-    # Decode for logging / TD preview purposes only.
     visual_id    = action ÷ MAX_DASHBOARDS
     dashboard_id = action % MAX_DASHBOARDS
 
-    # IMPORTANT:
-    # In Phase 4B, the agent returns an encoded joint action.
-    # We only send the visual component to TD.
     TDBridge.send_action(
         visual_id,
         avg_hr,

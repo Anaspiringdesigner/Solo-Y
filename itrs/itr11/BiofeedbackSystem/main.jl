@@ -2,48 +2,15 @@
 # main.jl
 # Biofeedback System — Full Pipeline
 #
-# PHASE 1 + PHASE 2 + PHASE 3 + PHASE 4B CHANGES:
+# PHASE 1 + PHASE 2 + PHASE 3 + PHASE 4B + PHASE 4C CHANGES:
 #
-# Phase 1:
-# - Add dashboard registry for app-side intervention dashboards.
-# - Seed 5 initial dashboards.
-# - Max dashboards allowed at any point in time = 8.
-# - Add joint action encoding helpers for:
-#       Action = (TD visual, dashboard)
-# - Expose dashboard metadata and encoded action info in /status.
-# - Add /dashboards endpoint to list dashboard registry.
-#
-# Phase 2:
-# - Add pending intervention state.
-# - Add POST /dashboards to create new dashboard identities.
-# - Add POST /confirm_action to confirm the executed dashboard.
-# - Enforce max dashboard cap = 8.
-# - Normalize and de-duplicate dashboard text.
-# - Track proposed vs executed joint action placeholders.
-#
-# Phase 3:
-# - Do NOT start the hold/intervention on /trigger immediately.
-# - /trigger now only proposes a pending intervention.
-# - /confirm_action starts the actual hold/intervention.
-# - Keep active_interaction = 5 while waiting for confirmation.
-# - Only switch active_interaction to the RL visual after confirmation.
-#
-# Phase 4B:
-# - True joint-action RL:
-#       encoded_action = (visual_id * 8) + dashboard_id
-# - RL agent now returns encoded action in 0..39
-# - Backend decodes encoded action into proposed visual + proposed dashboard
-# - Executed encoded action is recomputed after user dashboard override
-# - Executed encoded action becomes authoritative metadata for the intervention
-#
-# IMPORTANT:
-# - This version expects the RL agent to use 40 actions.
-# - Old 5-action DQN checkpoints are incompatible and should be treated as fresh.
-#
-# Existing behavior preserved:
-# - Robust hold pacing: advance at most once every 5s during holds.
-# - Persist & restore cumulative_reward across restarts.
-# - After every hold completes, send "interaction 5" to TouchDesigner.
+# Phase 4C:
+# - Make the executed encoded joint action authoritative for learning.
+# - After user confirmation, overwrite the agent's pending previous action
+#   with executed_encoded_action.
+# - This ensures replay/training uses:
+#       (proposed visual, executed dashboard)
+#   rather than the originally proposed dashboard if the user overrides it.
 # ============================================================
 
 include("src/data_streamer.jl")
@@ -63,7 +30,6 @@ using Sockets
 using Dates
 
 const BRAIN_PORT = 8000
-
 const RL_VISUAL_IDS = collect(0:4)
 const RL_VISUAL_COUNT = length(RL_VISUAL_IDS)
 const MAX_DASHBOARDS = 8
@@ -392,7 +358,6 @@ function start_confirmed_intervention!(trigger_type::Int)
     latest === nothing && error("No latent available yet for confirmed intervention start")
 
     visual_id = APP_STATE.proposed_visual_id
-
     z = Float32.(latest["z"])
 
     fired = RLEnvironment.fire_external_trigger!(
@@ -751,6 +716,14 @@ function handle_confirm_action(req::HTTP.Request)
         end
 
         confirm_pending_intervention!(executed_dashboard_id)
+
+        # PHASE 4C CORE CHANGE:
+        # Rewrite the agent's pending action from the proposed encoded joint action
+        # to the actually executed encoded joint action before reward arrives later.
+        RLAgent.set_pending_executed_action!(
+            AGENT_INSTANCE[],
+            APP_STATE.executed_encoded_action
+        )
 
         trigger_type = try
             Int(ENV_INSTANCE[].trigger_type)
