@@ -2,7 +2,7 @@
 # main.jl
 # Biofeedback System — Full Pipeline
 #
-# PHASE 1 + PHASE 2 + PHASE 3 + PHASE 4A CHANGES:
+# PHASE 1 + PHASE 2 + PHASE 3 + PHASE 4B CHANGES:
 #
 # Phase 1:
 # - Add dashboard registry for app-side intervention dashboards.
@@ -27,21 +27,18 @@
 # - /confirm_action starts the actual hold/intervention.
 # - Keep active_interaction = 5 while waiting for confirmation.
 # - Only switch active_interaction to the RL visual after confirmation.
-# - Fixes the timer beginning before the user confirms the dashboard.
 #
-# Phase 4A:
-# - Prepare backend for true joint-action RL without changing DQN action count yet.
-# - Make proposed/executed encoded actions first-class runtime state.
-# - Add helper to finalize executed joint action from:
-#       proposed visual + executed dashboard
-# - Preserve lifecycle correctness while making joint-action bookkeeping explicit.
-# - Keep RL agent itself visual-only for now (5 outputs), but backend now treats
-#   the executed encoded action as authoritative intervention metadata.
+# Phase 4B:
+# - True joint-action RL:
+#       encoded_action = (visual_id * 8) + dashboard_id
+# - RL agent now returns encoded action in 0..39
+# - Backend decodes encoded action into proposed visual + proposed dashboard
+# - Executed encoded action is recomputed after user dashboard override
+# - Executed encoded action becomes authoritative metadata for the intervention
 #
 # IMPORTANT:
-# - RL still does NOT yet fully select dashboard IDs itself in this phase.
-# - RL still proposes only the TD visual via the existing 5-action DQN.
-# - However, all runtime bookkeeping is now aligned with future true joint RL.
+# - This version expects the RL agent to use 40 actions.
+# - Old 5-action DQN checkpoints are incompatible and should be treated as fresh.
 #
 # Existing behavior preserved:
 # - Robust hold pacing: advance at most once every 5s during holds.
@@ -66,10 +63,6 @@ using Sockets
 using Dates
 
 const BRAIN_PORT = 8000
-
-# ============================================================
-# PHASE 1 / 2 / 3 / 4A — DASHBOARD REGISTRY + JOINT ACTION FOUNDATIONS
-# ============================================================
 
 const RL_VISUAL_IDS = collect(0:4)
 const RL_VISUAL_COUNT = length(RL_VISUAL_IDS)
@@ -243,10 +236,6 @@ function dashboard_to_dict(d::DashboardDef)
     )
 end
 
-# ============================================================
-# EXISTING HOLD PACING
-# ============================================================
-
 const HOLD_STEP_PERIOD_MS = 5_000
 const LAST_HOLD_STEP_AT = Ref{Union{Nothing,DateTime}}(nothing)
 
@@ -267,10 +256,6 @@ end
 @inline function _reset_hold_step_clock()
     LAST_HOLD_STEP_AT[] = nothing
 end
-
-# ============================================================
-# EXISTING RUNTIME PERSISTENCE
-# ============================================================
 
 const RUNTIME_STATE_PATH = normpath(joinpath(@__DIR__, "models", "agent_runtime_state.json"))
 
@@ -302,10 +287,6 @@ function _save_runtime_cumulative_reward(val::Float32)
     end
 end
 
-# ============================================================
-# EXISTING POST-HOLD TD ACTION
-# ============================================================
-
 const POST_HOLD_INTERACTION = 5
 
 @inline function _interaction_name(idx::Int)
@@ -316,17 +297,9 @@ const POST_HOLD_INTERACTION = 5
     end
 end
 
-# ============================================================
-# INTERVENTION PHASE STATE
-# ============================================================
-
 const PHASE_IDLE = "idle"
 const PHASE_AWAITING_CONFIRMATION = "awaiting_confirmation"
 const PHASE_CONFIRMED = "confirmed"
-
-# ============================================================
-# APP STATE
-# ============================================================
 
 mutable struct AppState
     avg_hr                  :: Float32
@@ -389,8 +362,6 @@ function begin_pending_intervention!(visual_id::Int; proposed_dashboard_id::Int=
     APP_STATE.executed_encoded_action = encode_joint_action(visual_id, proposed_dashboard_id)
 
     APP_STATE.dashboard_confirmed_at = ""
-
-    # Stay on idle / non-live interaction until confirmation.
     APP_STATE.active_interaction = POST_HOLD_INTERACTION
     APP_STATE.is_holding = false
     APP_STATE.hold_steps_left = 0
@@ -399,13 +370,7 @@ end
 function confirm_pending_intervention!(executed_dashboard_id::Int)
     APP_STATE.executed_dashboard_id = executed_dashboard_id
     APP_STATE.executed_visual_id = APP_STATE.proposed_visual_id
-
-    # Phase 4A: the executed joint action is the authoritative action metadata.
-    APP_STATE.executed_encoded_action = encode_joint_action(
-        APP_STATE.executed_visual_id,
-        executed_dashboard_id
-    )
-
+    APP_STATE.executed_encoded_action = encode_joint_action(APP_STATE.executed_visual_id, executed_dashboard_id)
     APP_STATE.intervention_phase = PHASE_CONFIRMED
     APP_STATE.dashboard_confirmed_at = Dates.format(Dates.now(), dateformat"yyyy-mm-ddTHH:MM:SS")
 end
@@ -443,8 +408,6 @@ function start_confirmed_intervention!(trigger_type::Int)
     fired || error("Could not start confirmed intervention; hold may already be active")
 
     ENV_INSTANCE[].is_terminated = false
-
-    # Start the actual intervention only now.
     (ENV_INSTANCE[])(visual_id + 1)
 
     APP_STATE.active_interaction = visual_id
@@ -469,13 +432,8 @@ function start_confirmed_intervention!(trigger_type::Int)
     end
 
     _reset_hold_step_clock()
-
-    println("[MAIN] Confirmed intervention started → visual=$visual_id dashboard=$(APP_STATE.executed_dashboard_id) encoded=$(APP_STATE.executed_encoded_action)")
+    println("[MAIN] Confirmed intervention started → visual=$visual_id dashboard=$(APP_STATE.executed_dashboard_id)")
 end
-
-# ============================================================
-# INGEST HANDLER
-# ============================================================
 
 function handle_ingest(req::HTTP.Request)
     try
@@ -546,7 +504,7 @@ function handle_ingest(req::HTTP.Request)
 
             if ENV_INSTANCE[].is_terminated
                 println("[MAIN] Hold complete — training agent")
-                action = RLAgent.agent_step!(
+                encoded_action = RLAgent.agent_step!(
                     AGENT_INSTANCE[],
                     ENV_INSTANCE[].state,
                     ENV_INSTANCE[].last_reward,
@@ -557,7 +515,7 @@ function handle_ingest(req::HTTP.Request)
                     is_holding = false,
                     hold_steps = 0
                 )
-                APP_STATE.active_interaction = action
+
                 APP_STATE.last_reward        = ENV_INSTANCE[].last_reward
                 APP_STATE.cumulative_reward  = AGENT_INSTANCE[].cumulative_reward
                 _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
@@ -589,8 +547,8 @@ function handle_ingest(req::HTTP.Request)
             end
 
             if fired && !ENV_INSTANCE[].is_holding
-                println("[MAIN] Bio trigger — agent selecting action")
-                action = RLAgent.agent_step!(
+                println("[MAIN] Bio trigger — agent selecting encoded joint action")
+                encoded_action = RLAgent.agent_step!(
                     AGENT_INSTANCE[],
                     ENV_INSTANCE[].state,
                     ENV_INSTANCE[].last_reward,
@@ -602,14 +560,12 @@ function handle_ingest(req::HTTP.Request)
                     hold_steps = 0
                 )
 
+                visual_id, dashboard_id = decode_joint_action(encoded_action)
+
                 APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
                 _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
-                # Phase 4A note:
-                # RL still returns a visual-only action here.
-                # We lift it into joint-action bookkeeping by pairing it with
-                # the current proposed dashboard default (0 for now).
-                begin_pending_intervention!(action; proposed_dashboard_id=0)
+                begin_pending_intervention!(visual_id; proposed_dashboard_id=dashboard_id)
             end
         end
 
@@ -628,10 +584,6 @@ function handle_ingest(req::HTTP.Request)
             )))
     end
 end
-
-# ============================================================
-# TRIGGER HANDLER
-# ============================================================
 
 function handle_trigger(req::HTTP.Request)
     try
@@ -655,7 +607,7 @@ function handle_trigger(req::HTTP.Request)
                 )))
         end
 
-        action = RLAgent.agent_step!(
+        encoded_action = RLAgent.agent_step!(
             AGENT_INSTANCE[],
             ENV_INSTANCE[].state,
             ENV_INSTANCE[].last_reward,
@@ -667,21 +619,18 @@ function handle_trigger(req::HTTP.Request)
             hold_steps = 0
         )
 
+        visual_id, dashboard_id = decode_joint_action(encoded_action)
+
         APP_STATE.cumulative_reward = AGENT_INSTANCE[].cumulative_reward
         _save_runtime_cumulative_reward(APP_STATE.cumulative_reward)
 
-        # Phase 4A note:
-        # RL still returns a visual-only action.
-        # We pair it with dashboard 0 for now, but the backend now treats
-        # the resulting encoded joint action as first-class intervention metadata.
-        begin_pending_intervention!(action; proposed_dashboard_id=0)
+        begin_pending_intervention!(visual_id; proposed_dashboard_id=dashboard_id)
 
         return HTTP.Response(200,
             JSON3.write(Dict(
                 "ok"               => true,
-                "action"           => action,
-                "name"             => _interaction_name(action),
-                "proposed_visual"  => action,
+                "encoded_action"   => encoded_action,
+                "proposed_visual"  => visual_id,
                 "proposed_dashboard_id" => APP_STATE.proposed_dashboard_id,
                 "proposed_encoded_action" => APP_STATE.proposed_encoded_action,
                 "intervention_phase" => APP_STATE.intervention_phase,
@@ -697,10 +646,6 @@ function handle_trigger(req::HTTP.Request)
             )))
     end
 end
-
-# ============================================================
-# GET /dashboards
-# ============================================================
 
 function handle_dashboards(req::HTTP.Request)
     try
@@ -724,10 +669,6 @@ function handle_dashboards(req::HTTP.Request)
             )))
     end
 end
-
-# ============================================================
-# POST /dashboards
-# ============================================================
 
 function handle_create_dashboard(req::HTTP.Request)
     try
@@ -779,10 +720,6 @@ function handle_create_dashboard(req::HTTP.Request)
             )))
     end
 end
-
-# ============================================================
-# POST /confirm_action
-# ============================================================
 
 function handle_confirm_action(req::HTTP.Request)
     try
@@ -847,10 +784,6 @@ function handle_confirm_action(req::HTTP.Request)
             )))
     end
 end
-
-# ============================================================
-# STATUS
-# ============================================================
 
 function handle_status(req::HTTP.Request)
     proposed_dashboard = get_dashboard(APP_STATE.proposed_dashboard_id)
@@ -975,10 +908,6 @@ function handle_force_interaction(req::HTTP.Request)
     end
 end
 
-# ============================================================
-# ROUTER
-# ============================================================
-
 function router(req::HTTP.Request)
     if req.target == "/ingest" && req.method == "POST"
         return handle_ingest(req)
@@ -1002,10 +931,6 @@ function router(req::HTTP.Request)
         return HTTP.Response(404, "Not found")
     end
 end
-
-# ============================================================
-# MAIN
-# ============================================================
 
 function main()
     println("=" ^ 70)
