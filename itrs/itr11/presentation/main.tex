@@ -1,0 +1,140 @@
+%!TEX program = LuaLaTeX
+\documentclass[a4paper,justified,natbib=false]{tufte-book}
+
+% ---------- Engine / typography ----------
+\usepackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont{TeX Gyre Pagella}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{Inconsolata}
+
+% ---------- Core packages ----------
+\usepackage[svgnames]{xcolor}
+\usepackage{hyperref}
+\usepackage{pagecolor}
+\usepackage{setspace}
+\usepackage{ragged2e}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{csquotes}
+
+% ---------- Bibliography ----------
+\usepackage[
+  backend=biber,
+  style=authoryear,
+  citestyle=authoryear,
+  maxcitenames=2,
+  maxbibnames=99,
+  giveninits=true,
+  doi=false,
+  isbn=false,
+  url=true,
+  uniquename=init
+]{biblatex}
+\addbibresource{references.bib}
+
+% ---------- Citation helpers ----------
+\newcommand{\sidecite}[1]{\sidenote{\fullcite{#1}}}
+\newcommand{\citeaside}[1]{\textcite{#1}\sidenote{\fullcite{#1}}}
+
+% ---------- Colours ----------
+\definecolor{forestbg}{HTML}{101918}
+\definecolor{textwhite}{HTML}{F3F7F6}
+\definecolor{accent}{HTML}{7DD3C7}
+\definecolor{softline}{HTML}{2A3A38}
+\definecolor{softtext}{HTML}{C9D6D3}
+\definecolor{quoteaccent}{HTML}{D7FFF8}
+
+% ---------- Hyperref ----------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=textwhite,
+  urlcolor=accent,
+  citecolor=accent
+}
+
+% ---------- Page colour ----------
+\pagecolor{forestbg}
+\color{textwhite}
+
+% ---------- Typography tweaks ----------
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.9em}
+\renewcommand{\normalsize}{\fontsize{14.2}{19.2}\selectfont}
+\renewcommand{\Large}{\fontsize{18.5}{24.5}\selectfont}
+\renewcommand{\LARGE}{\fontsize{22.5}{29}\selectfont}
+\renewcommand{\huge}{\fontsize{31}{37}\selectfont}
+\AtBeginDocument{\normalsize}
+\setstretch{1.08}
+
+\title{0.618: PSTC Revised Documentation Report}
+\author{Vamsi Madhav Tata, 10046192}
+\date{20.08.2026}
+
+\begin{document}
+\maketitle
+
+\chapter*{Introduction}
+\addcontentsline{toc}{chapter}{Introduction}
+
+\vspace*{0.6cm}
+
+{\huge\bfseries 0.618 --- Immediate and Actionable\par}
+\vspace{0.7cm}
+
+{\Large\itshape A tool that helps people identify ADHD-related patterns and design personalised interventions through immediate feedback\par}
+
+\vspace{1.2cm}
+
+{\color{accent}\rule{0.72\textwidth}{0.8pt}\par}
+\vspace{1.1cm}
+
+0.618\sidenote{The name refers to the Golden Ratio. The project is informed by neuroaesthetic ideas: the design explores whether calming, visually pleasing motion can support attention, engagement, and self-regulation during intervention moments.}
+is a \textcolor{accent}{biofeedback-based tool} designed to help people with ADHD build and refine their own \textcolor{accent}{personalised interventions through immediate feedback}. Instead of assuming that one strategy works for everyone, the system treats regulation as something that must be explored in context, compared over time, and adapted to the individual.
+
+The purpose of the application is therefore not simply to track stress or display physiological data. It is to support users during moments when they may be becoming overwhelmed, dysregulated, or cognitively overloaded, and to help them choose or confirm an action that is more likely to be helpful at that moment. In this sense, the application acts as a bridge between \emph{physiological sensing}, \emph{timely prompts}, and \emph{self-designed support strategies}.
+
+ADHD is often described narrowly in terms of inattention or hyperactivity, but in practice it affects a much wider range of everyday experiences, including emotional regulation, sleep, working memory, time management, relationships, and task initiation. That broader reality matters because many of the hardest moments are not moments of simple distraction; they are moments of escalation, overload, paralysis, or difficulty switching state. The system is intended to respond to that practical lived problem rather than to a simplified textbook definition of the condition.\sidecite{mccabe2024howtoadhd}
+
+\vspace{0.6cm}
+
+{\Large\itshape\color{quoteaccent}
+“Research by Dr.~Barkley, a prominent ADHD researcher, suggests that ADHD can have a substantial negative effect on long-term functioning and life outcomes. ADHD does not just make daily life harder; it can shape health, stability, and wellbeing across the lifespan.”\par
+}
+
+\sidecite{barkley2019}
+
+\vspace{1.2cm}
+
+{\color{accent}\rule{0.72\textwidth}{0.8pt}\par}
+\vspace{1.1cm}
+
+The problem this project addresses is that most existing support tools are either too \textbf{passive}, too \textbf{generic}, or too \textbf{badly timed}. Many ask the user to notice their own state, open the app, select a technique, and apply it independently. That model may work when a person is already calm and reflective, but it becomes much less effective when stress is rising quickly or when executive functioning is already compromised.
+
+This project instead shifts the interaction from \textbf{manual self-management} toward \textbf{supported real-time regulation}. A wearable device continuously measures physiological signals associated with arousal and recovery, the mobile application interprets those signals alongside context such as calendar events, and the system proposes an intervention intended to help the user move toward a calmer state. The user can then confirm that recommendation or choose a different action, allowing the system to learn from what was actually used rather than only from what was originally suggested.
+
+\marginnote{\footnotesize
+Useful ideas to expand here:\par
+Who the intended users are\par
+Why timing matters in ADHD support\par
+Why anticipation can be more useful than only reaction\par
+Why wearable sensing adds value beyond self-report
+}
+
+The problem being addressed is therefore not just \emph{stress} in the abstract, but the practical difficulty of recognising, responding to, and regulating dysregulation \textbf{at the right time}. 0.618 aims to reduce that gap by making support more immediate, more personalised, and more embedded in everyday life.
+
+\vfill
+
+{\Large\bfseries Suggested points to complete on this page\par}
+
+\begin{itemize}
+  \item State the intended user group clearly.
+  \item Explain the specific unmet need or daily-life difficulty.
+  \item Clarify why existing tools are too passive, generic, or badly timed.
+  \item Add one short paragraph explaining why this approach is innovative.
+\end{itemize}
+
+\cleardoublepage
+\printbibliography
+
+\end{document}
