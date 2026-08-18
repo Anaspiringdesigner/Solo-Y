@@ -1,0 +1,35 @@
+{
+  "latex-workshop.latex.autoBuild.run": "never",
+
+  "latex-workshop.latex.tools": [
+    {
+      "name": "lualatex",
+      "command": "lualatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "%DOC%"
+      ]
+    },
+    {
+      "name": "bibtex",
+      "command": "bibtex",
+      "args": [
+        "%DOCFILE%"
+      ]
+    }
+  ],
+
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "LuaLaTeX -> BibTeX -> LuaLaTeX*2",
+      "tools": [
+        "lualatex",
+        "bibtex",
+        "lualatex",
+        "lualatex"
+      ]
+    }
+  ]
+}
