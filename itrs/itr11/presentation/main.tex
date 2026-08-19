@@ -1,181 +1,145 @@
 % Load the kaobook class
 \documentclass[
-	fontsize=10pt, % Base font size
-	twoside=false, % Use different layouts for even and odd pages (in particular, if twoside=true, the margin column will be always on the outside)
-	%open=any, % If twoside=true, uncomment this to force new chapters to start on any page, not only on right (odd) pages
-	secnumdepth=1, % How deep to number headings. Defaults to 1 (sections)
+	fontsize=15pt,
+	twoside=false,
+	secnumdepth=1
 ]{kaobook}
 
 % Choose the language
-\usepackage[english]{babel} % Load characters and hyphenation
-\usepackage[english=british]{csquotes}	% English quotes
+\usepackage[english]{babel}
+\usepackage[english=british]{csquotes}
 
 % Load packages for testing
 \usepackage{blindtext}
-%\usepackage{showframe} % Uncomment to show boxes around the text area, margin, header and footer
-%\usepackage{showlabels} % Uncomment to output the content of \label commands to the document where they are used
 
-% Load the bibliography package
+% Load the bibliography package (biblatex+biber via kaobiblio)
 \usepackage{kaobiblio}
-\addbibresource{minimal.bib} % Bibliography file
+\addbibresource{references.bib} % <-- fixed from minimal.bib
 
 % Load mathematical packages for theorems and related environments
+% NOTE: keep this only if you actually use theorem environments.
+% If duplicate theorem counter errors appear again, comment this line.
 \usepackage{kaotheorems}
 
 % Load the package for hyperreferences
 \usepackage{kaorefs}
 
-\graphicspath{{images/}{./}} % Paths where images are looked for
+\graphicspath{{images/}{./}}
 
-\makeindex[columns=3, title=Alphabetical Index, intoc] % Make LaTeX produce the files required to compile the index
-
+\makeindex[columns=3, title=Alphabetical Index, intoc]
 
 \begin{document}
 
-%----------------------------------------------------------------------------------------
-%	BOOK INFORMATION
-%----------------------------------------------------------------------------------------
-
-\titlehead{Document Template}
-\title[Template for the {\normalfont\texttt{kaobook}} Class]{Template for the {\normalfont\texttt{kaobook}} Class}
-\author[JBG]{Johnny B. Goode}
+\titlehead{IDE - RCA/ICL}
+\title[0.618 - PSTC Revised Documentation]{0.618 - PSTC Revised Documentation}
+\author[TVM]{Vamsi Madhav Tata}
 \date{\today}
-\publishers{An Awesome Publisher}
+\publishers{}
 
-%----------------------------------------------------------------------------------------
-
-\frontmatter % Denotes the start of the pre-document content, uses roman numerals
-
-%----------------------------------------------------------------------------------------
-%	COPYRIGHT PAGE
-%----------------------------------------------------------------------------------------
+\frontmatter
 
 \makeatletter
-\uppertitleback{\@titlehead} % Header
-
+\uppertitleback{\@titlehead}
 \lowertitleback{
 	\textbf{Disclaimer} \\
-	You can edit this page to suit your needs. For instance, here we have a no copyright statement, a colophon and some other information. This page is based on the corresponding page of Ken Arroyo Ohori's thesis, with minimal changes.
-	
+	You can edit this page to suit your needs.
+
 	\medskip
-	
+
 	\textbf{No copyright} \\
-	\cczero\ This book is released into the public domain using the CC0 code. To the extent possible under law, I waive all copyright and related or neighbouring rights to this work.
-	
-	To view a copy of the CC0 code, visit: \\\url{http://creativecommons.org/publicdomain/zero/1.0/}
-	
+	\cczero\ This book is released into the public domain using the CC0 code.
+
 	\medskip
-	
+
 	\textbf{Colophon} \\
-	This document was typeset with the help of \href{https://sourceforge.net/projects/koma-script/}{\KOMAScript} and \href{https://www.latex-project.org/}{\LaTeX} using the \href{https://github.com/fmarotta/kaobook/}{kaobook} class.
-	
+	This document was typeset with \KOMAScript\ and \LaTeX\ using the \href{https://github.com/fmarotta/kaobook/}{kaobook} class.
+
 	\medskip
-	
+
 	\textbf{Publisher} \\
 	First printed in May 2019 by \@publishers
 }
 \makeatother
 
-%----------------------------------------------------------------------------------------
-%	DEDICATION
-%----------------------------------------------------------------------------------------
-
 \dedication{
-	The harmony of the world is made manifest in Form and Number, and the heart and soul and all the poetry of Natural Philosophy are embodied in the concept of mathematical beauty.\\
-	\flushright -- D'Arcy Wentworth Thompson
+	The beginning of wisdom is to call things by their right names.\\
+	\flushright -- Confucius
 }
 
-%----------------------------------------------------------------------------------------
-%	OUTPUT TITLE PAGE AND PREVIOUS
-%----------------------------------------------------------------------------------------
-
-% Note that \maketitle outputs the pages before here
 \maketitle
 
-%----------------------------------------------------------------------------------------
-%	PREFACE
-%----------------------------------------------------------------------------------------
+\chapter*{Acknowledgements}
+I Vamsi Madhav Tata would like to thank the assessment panel for giving me a chance bring my project to a meaningful completion. I would like to state that all the work shown in the below pages is my own, and any resemblance to any other work is purely coincidental. I would also like to thank my family and friends for their support and encouragement throughout the project. All external references used in the project are cited in the bibliography section of this document.
 
-\chapter*{Preface}
+\chapter*{Terminology}
+\begin{description}
+  \item[ADHD] - Attention Deficit Hyperactivity Disorder, Neurological disorder that affects both children and adults, characterized by symptoms such as inattention, hyperactivity, and impulsivity.
+  \item[PSTC] - Pass Subject To Corrections
+  \item[IDE] - Innovation Design Engineering, a joint program between the Royal College of Art and Imperial College London.
+  \item[RCA] - Royal College of Art, a public research university in London, England, specializing in art and design.
+  \item[ICL] - Imperial College London, a public research university in London, England, specializing in science, engineering, medicine, and business.
+  \item[Interaction] - The visuals that are used in this project, which are the outcomes of Touch Designer development. Interchangeably used with Visuals
+  \item[Intervention] - The actions that the user is going to take during the 3-minute windows to help calm themselves down. Interchangeably used with Dashboards or Actions.
+  \item[Julia] - Julia is a high-level, high-performance programming language for technical computing, with syntax that is familiar to users of other technical computing environments.
+  \item[Flutter] - Flutter is an open-source UI software development kit created by Google. It is used to develop cross-platform applications for Android, iOS, Linux, Mac, Windows, Google Fuchsia, and the web from a single codebase.
+  \item[RL] - Reinforcement Learning, a type of machine learning where an agent learns to make decisions by taking actions in an environment to maximize some notion of cumulative reward.
+  \item[Reward Function] - A function that maps a state (or state-action pair) to a single number, representing the immediate reward received after transitioning from one state to another due to an action taken by the agent.
+  \item[Action Space] - The set of all possible actions that an agent can take in a given environment. In this project, the action space consists of the different combinations of interventions and interactions that the user can take during the 3-minute windows.
+  \item[TD] - Touch Designer, a node-based visual programming language for real-time interactive multimedia content.
+  \item[TCN Encoder] - Temporal Convolutional Network Encoder, a type of neural network architecture that is designed to handle sequential data and capture temporal dependencies.
+  \item[Polar H10] - Polar H10 is a heart rate monitor that uses electrodes to measure the electrical activity of the heart and provide accurate heart rate data.
+  \item[Max30102] - MAX30102 is an integrated pulse oximetry and heart-rate monitor module that can be used to measure the oxygen saturation level in the blood and heart rate.
+  \item[ESP32] - ESP32 is a low-cost, low-power system on a chip (SoC) microcontroller with integrated Wi-Fi and Bluetooth capabilities, designed for IoT applications.
+  \item[App] - The mobile application that is being developed as part of this project, which will be used by the user to interact with the system and receive interventions.
+  \item[Chop] - In Touch Designer, a CHOP (Channel Operator) is a type of operator that processes and manipulates channels of data, such as audio, motion, or sensor data.
+  \item[Top] - In Touch Designer, a TOP (Texture Operator) is a type of operator that processes and manipulates textures, which are images or video frames used in real-time graphics and visual effects.
+  \item[Pop] - In Touch Designer, a POP (Particle Operator) is a type of operator that processes and manipulates particle systems, which are collections of individual elements that can be animated and simulated.
+  \item[MAT] - In Touch Designer, a MAT (Material Operator) is a type of operator that processes and manipulates materials, which are properties that define the appearance of objects in real-time graphics and visual effects.
+  \item[Component] - In Touch Designer, a Component is a container that can hold other operators and components, allowing for modular and hierarchical organization of the project.
+  \item[DAT] - In Touch Designer, a DAT (Data Operator) is a type of operator that processes and manipulates data, such as text, numbers, or other information.
+  \item[MediaMTX]  - mediaMTX is a on device server to stream data
+  \item[OBS] - Open Broadcaster Software, a free and open-source software for video recording and live-streaming.
+  \item[WebRTC] - Web Real-Time Communication, a free, open-source project that provides web browsers and mobile applications with real-time communication via simple application programming interfaces (APIs).
+  \item[Tailscale] - Tailscale is a secure network tunneling service that allows users to create virtual private networks (VPNs) easily.
+  \item[mjpeg] - Motion JPEG, a video compression format that uses a sequence of JPEG images to represent video frames.  
+\end{description}
 
-\blindtext
-
-%----------------------------------------------------------------------------------------
-%	TABLE OF CONTENTS & LIST OF FIGURES/TABLES
-%----------------------------------------------------------------------------------------
-
-\begingroup % Local scope for the following commands
-
-% Define the style for the TOC, LOF, and LOT
-%\setstretch{1} % Uncomment to modify line spacing in the ToC
-%\hypersetup{linkcolor=blue} % Uncomment to set the colour of links in the ToC
-\setlength{\textheight}{230\vscale} % Manually adjust the height of the ToC pages
-
-% Turn on compatibility mode for the etoc package
-\etocstandarddisplaystyle % "toc display" as if etoc was not loaded
-\etocstandardlines % "toc lines as if etoc was not loaded
-
-\tableofcontents % Output the table of contents
-
-\listoffigures % Output the list of figures
-
-% Comment both of the following lines to have the LOF and the LOT on different pages
+\begingroup
+\setlength{\textheight}{230\vscale}
+\etocclasstocstyle % replaces deprecated \etocstandarddisplaystyle / \etocstandardlines
+\tableofcontents
+\listoffigures
 \let\cleardoublepage\bigskip
 \let\clearpage\bigskip
-
-\listoftables % Output the list of tables
-
+\listoftables
 \endgroup
 
-%----------------------------------------------------------------------------------------
-%	MAIN BODY
-%----------------------------------------------------------------------------------------
+\mainmatter
+\setchapterstyle{kao}
 
-\mainmatter % Denotes the start of the main document content, resets page numbering and uses arabic numbers
-\setchapterstyle{kao} % Choose the default chapter heading style
-
-\chapter{First Chapter}
-
-\blindtext
-
-\pagelayout{wide} % No margins
-\addpart{Title of the Part}
-\pagelayout{margin} % Restore margins
+\pagelayout{wide}
+\addpart{0.618}
+\pagelayout{margin}
+\chapter{0.618 ?}
+0.618 is derived from the golden ratio, also known as the divine proportion. It is an irrational number that has been used in art, architecture, and design for centuries. The golden ratio is approximately equal to 1.6180339887, and it can be found in various natural phenomena, such as the arrangement of leaves on a stem or the spiral patterns of shells. A zero instead of one because it's intended to help people with ADHD find their one in their ADHD Journey
 
 \chapter{Second Chapter}
-
 \blindtext
 
-\appendix % From here onwards, chapters are numbered with letters, as is the appendix convention
-
-\pagelayout{wide} % No margins
+\appendix
+\pagelayout{wide}
 \addpart{Appendix}
-\pagelayout{margin} % Restore margins
+\pagelayout{margin}
 
 \chapter{Some more blindtext}
-
 \blindtext
 
-%----------------------------------------------------------------------------------------
+\backmatter
+\setchapterstyle{plain}
 
-\backmatter % Denotes the end of the main document content
-\setchapterstyle{plain} % Output plain chapters from this point onwards
+\defbibnote{bibnote}{Here are the references in citation order.\par\bigskip}
+\printbibliography[heading=bibintoc, title=Bibliography, prenote=bibnote]
 
-%----------------------------------------------------------------------------------------
-%	BIBLIOGRAPHY
-%----------------------------------------------------------------------------------------
-
-% The bibliography needs to be compiled with biber using your LaTeX editor, or on the command line with 'biber main' from the template directory
-
-\defbibnote{bibnote}{Here are the references in citation order.\par\bigskip} % Prepend this text to the bibliography
-\printbibliography[heading=bibintoc, title=Bibliography, prenote=bibnote] % Add the bibliography heading to the ToC, set the title of the bibliography and output the bibliography note
-
-%----------------------------------------------------------------------------------------
-%	INDEX
-%----------------------------------------------------------------------------------------
-
-% The index needs to be compiled on the command line with 'makeindex main' from the template directory
-
-\printindex % Output the index
+\printindex
 
 \end{document}

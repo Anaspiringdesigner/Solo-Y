@@ -13,8 +13,8 @@
       ]
     },
     {
-      "name": "bibtex",
-      "command": "bibtex",
+      "name": "biber",
+      "command": "biber",
       "args": [
         "%DOCFILE%"
       ]
@@ -23,15 +23,15 @@
 
   "latex-workshop.latex.recipes": [
     {
-      "name": "LuaLaTeX -> BibTeX -> LuaLaTeX -> LuaLaTeX",
+      "name": "LuaLaTeX -> Biber -> LuaLaTeX -> LuaLaTeX",
       "tools": [
         "lualatex",
-        "bibtex",
+        "biber",
         "lualatex",
         "lualatex"
       ]
     }
-  ], 
+  ],
 
   "latex-workshop.latex.recipe.default": "first"
 }
