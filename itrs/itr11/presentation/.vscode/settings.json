@@ -23,7 +23,7 @@
 
   "latex-workshop.latex.recipes": [
     {
-      "name": "LuaLaTeX -> BibTeX -> LuaLaTeX*2",
+      "name": "LuaLaTeX -> BibTeX -> LuaLaTeX -> LuaLaTeX",
       "tools": [
         "lualatex",
         "bibtex",
@@ -31,5 +31,7 @@
         "lualatex"
       ]
     }
-  ]
+  ], 
+
+  "latex-workshop.latex.recipe.default": "first"
 }
