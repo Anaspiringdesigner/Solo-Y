@@ -1,4 +1,4 @@
-This is LuaHBTeX, Version 1.24.0 (TeX Live 2026)  (format=lualatex 2026.8.19)  19 AUG 2026 02:47
+This is LuaHBTeX, Version 1.24.0 (TeX Live 2026)  (format=lualatex 2026.8.19)  20 AUG 2026 15:53
  restricted system commands enabled.
  file:line:error style messages enabled.
 **c:/Projects/itrs/itr11/presentation/main
@@ -2343,6 +2343,35 @@ Package: thm-amsthm 2023/05/04 v0.76
 \c@remark=\count617
 \c@example=\count618
 \c@exercise=\count619
+) (c:/texlive/2026/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tikzlibrarycalc.code.tex
+File: tikzlibrarycalc.code.tex 2026-08-01 v3.1.12 (3.1.12)
+) (c:/texlive/2026/texmf-dist/tex/generic/pgf/libraries/pgflibraryarrows.meta.code.tex
+File: pgflibraryarrows.meta.code.tex 2026-08-01 v3.1.12 (3.1.12)
+\pgfarrowinset=\dimen372
+\pgfarrowlength=\dimen373
+\pgfarrowwidth=\dimen374
+\pgfarrowlinewidth=\dimen375
+) (c:/texlive/2026/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tikzlibraryshapes.geometric.code.tex
+File: tikzlibraryshapes.geometric.code.tex 2026-08-01 v3.1.12 (3.1.12)
+ (c:/texlive/2026/texmf-dist/tex/generic/pgf/libraries/shapes/pgflibraryshapes.geometric.code.tex
+File: pgflibraryshapes.geometric.code.tex 2026-08-01 v3.1.12 (3.1.12)
+)) (c:/texlive/2026/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tikzlibraryfit.code.tex
+File: tikzlibraryfit.code.tex 2026-08-01 v3.1.12 (3.1.12)
+) (c:/texlive/2026/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tikzlibrarydecorations.text.code.tex (c:/texlive/2026/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tikzlibrarydecorations.code.tex (c:/texlive/2026/texmf-dist/tex/generic/pgf/modules/pgfmoduledecorations.code.tex
+\pgfdecoratedcompleteddistance=\dimen376
+\pgfdecoratedremainingdistance=\dimen377
+\pgfdecoratedinputsegmentcompleteddistance=\dimen378
+\pgfdecoratedinputsegmentremainingdistance=\dimen379
+\pgf@decorate@distancetomove=\dimen380
+\pgf@decorate@repeatstate=\count620
+\pgfdecorationsegmentamplitude=\dimen381
+\pgfdecorationsegmentlength=\dimen382
+)
+\tikz@lib@dec@box=\box162
+) (c:/texlive/2026/texmf-dist/tex/generic/pgf/libraries/decorations/pgflibrarydecorations.text.code.tex
+\pgf@lib@dec@text@box=\box163
+)
+\tikz@lib@dec@te@box=\box164
 ) (./kaorefs.sty
 Package: kaorefs 
  (c:/texlive/2026/texmf-dist/tex/latex/cleveref/cleveref.sty
@@ -2391,51 +2420,106 @@ Package csquotes Info: Checking for multilingual support...
 Package csquotes Info: ... found 'babel' package.
 Package csquotes Info: Adjusting default style.
 Package csquotes Info: Redefining alias 'default' -> 'english'.
- (./main.aux)
+ (./main.aux
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image' multiply defined.
+
+
+LaTeX Warning: Label `fig:margin-image@cref' multiply defined.
+
+)
 \openout1 = main.aux
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 31.
-LaTeX Font Info:    ... okay on input line 31.
-Package scrbase Info: activating english \partname on input line 31.
-Package scrbase Info: activating english \chaptername on input line 31.
-Package scrbase Info: activating english \appendixname on input line 31.
-Package scrbase Info: activating english \figurename on input line 31.
-Package scrbase Info: activating english \tablename on input line 31.
-Package scrbase Info: activating english \contentsname on input line 31.
-Package scrbase Info: activating english \listfigurename on input line 31.
-Package scrbase Info: activating english \listtablename on input line 31.
-Package scrbase Info: activating english \bibname on input line 31.
-Package scrbase Info: activating english \indexname on input line 31.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 41.
+LaTeX Font Info:    ... okay on input line 41.
+Package scrbase Info: activating english \partname on input line 41.
+Package scrbase Info: activating english \chaptername on input line 41.
+Package scrbase Info: activating english \appendixname on input line 41.
+Package scrbase Info: activating english \figurename on input line 41.
+Package scrbase Info: activating english \tablename on input line 41.
+Package scrbase Info: activating english \contentsname on input line 41.
+Package scrbase Info: activating english \listfigurename on input line 41.
+Package scrbase Info: activating english \listtablename on input line 41.
+Package scrbase Info: activating english \bibname on input line 41.
+Package scrbase Info: activating english \indexname on input line 41.
  (c:/texlive/2026/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
-\scratchcounter=\count620
-\scratchdimen=\dimen372
-\scratchbox=\box162
-\nofMPsegments=\count621
-\nofMParguments=\count622
+\scratchcounter=\count621
+\scratchdimen=\dimen383
+\scratchbox=\box165
+\nofMPsegments=\count622
+\nofMParguments=\count623
 \everyMPshowfont=\toks77
-\MPscratchCnt=\count623
-\MPscratchDim=\dimen373
-\MPnumerator=\count624
-\makeMPintoPDFobject=\count625
+\MPscratchCnt=\count624
+\MPscratchDim=\dimen384
+\MPnumerator=\count625
+\makeMPintoPDFobject=\count626
 \everyMPtoPDFconversion=\toks78
 ) (c:/texlive/2026/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
 Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
@@ -2509,13 +2593,13 @@ File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-LaTeX Info: Redefining \microtypecontext on input line 31.
-Package microtype Info: Applying patch `item' on input line 31.
-Package microtype Info: Applying patch `toc' on input line 31.
-Package microtype Info: Applying patch `eqnum' on input line 31.
-Package microtype Info: Applying patch `footnote' on input line 31.
-Package microtype Info: Applying patch `verbatim' on input line 31.
-LaTeX Info: Redefining \microtypesetup on input line 31.
+LaTeX Info: Redefining \microtypecontext on input line 41.
+Package microtype Info: Applying patch `item' on input line 41.
+Package microtype Info: Applying patch `toc' on input line 41.
+Package microtype Info: Applying patch `eqnum' on input line 41.
+Package microtype Info: Applying patch `footnote' on input line 41.
+Package microtype Info: Applying patch `verbatim' on input line 41.
+LaTeX Info: Redefining \microtypesetup on input line 41.
 Package microtype Info: Generating PDF output.
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using default protrusion set `alltext'.
@@ -2532,8 +2616,8 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             See the microtype manual for details.
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: changepage package is loaded.
-\caption@adjustwidth@hsize=\dimen374
-\caption@adjustwidth@linewidth=\dimen375
+\caption@adjustwidth@hsize=\dimen385
+\caption@adjustwidth@linewidth=\dimen386
 Package caption Info: float package is loaded.
 Package caption Info: floatrow package is loaded.
 Package caption Info: floatrow package is loaded.
@@ -2548,15 +2632,15 @@ Package caption Info: rotating package is loaded.
 Package caption Info: supertabular package is loaded.
 Package caption Info: End \AtBeginDocument code.
 \@sidenotes@extrawidth=\skip182
-Package hyperref Info: Link coloring ON on input line 31.
+Package hyperref Info: Link coloring ON on input line 41.
  (c:/texlive/2026/texmf-dist/tex/latex/floatrow/fr-longtable.sty
 Package: fr-longtable 2007/11/28 v0.1b (beta) floatrow: additions for longtable
-\flrow@LT@lasthead=\box163
-\flrow@LT@prelastfoot=\box164
-\c@FBLTpage=\count626
+\flrow@LT@lasthead=\box166
+\flrow@LT@prelastfoot=\box167
+\c@FBLTpage=\count627
 )
-\c@lstlisting=\count627
-Package tocbasic Info: setting babel extension for `lol' on input line 31.
+\c@lstlisting=\count628
+Package tocbasic Info: setting babel extension for `lol' on input line 41.
 \Etoc@tf=\read6
  (c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape.sty
 Package: pdflscape 2025-06-23 v0.14 Display of landscape pages in PDF
@@ -2585,8 +2669,8 @@ Package biblatex Info: Automatic encoding selection.
 Package biblatex Info: Trying to load bibliographic data...
 Package biblatex Info: ... file 'main.bbl' found.
  (./main.bbl)
-Package biblatex Info: Reference section=0 on input line 31.
-Package biblatex Info: Reference segment=0 on input line 31.
+Package biblatex Info: Reference section=0 on input line 41.
+Package biblatex Info: Reference segment=0 on input line 41.
 \g__cctab_next_cctab=\catcodetable17
 Package babel Info: Main language set to 'english'.
 *geometry* verbose mode - [ newgeometry ] result:
@@ -2622,25 +2706,25 @@ Package babel Info: Main language set to 'english'.
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
 LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/m/n' will be
-(Font)              scaled to size 15.0pt on input line 70.
+(Font)              scaled to size 15.0pt on input line 80.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LibertinusSans' (encoding: TU).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/b/n' will be
-(Font)              scaled to size 15.0pt on input line 70.
+(Font)              scaled to size 15.0pt on input line 80.
 LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/b/n' will be
-(Font)              scaled to size 31.11008pt on input line 70.
+(Font)              scaled to size 31.11008pt on input line 80.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
-(Font)              scaled to size 22.46388pt on input line 70.
+(Font)              scaled to size 22.46388pt on input line 80.
 
 
 Class scrbook Warning: non empty \uppertitleback ignored by \maketitle
-(scrbook)              in `twoside=false' mode on input line 70.
+(scrbook)              in `twoside=false' mode on input line 80.
 
 
 Class scrbook Warning: non empty \lowertitleback ignored by \maketitle
-(scrbook)              in `twoside=false' mode on input line 70.
+(scrbook)              in `twoside=false' mode on input line 80.
 
 [1
 
@@ -2653,13 +2737,13 @@ Class scrbook Warning: non empty \lowertitleback ignored by \maketitle
 
 ]
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
-(Font)              scaled to size 32.35426pt on input line 71.
+(Font)              scaled to size 32.35426pt on input line 81.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
-(Font)              scaled to size 32.35426pt on input line 71.
+(Font)              scaled to size 32.35426pt on input line 81.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/sl' in size <15> not available
-(Font)              Font shape `TU/LibertinusSerif(0)/m/it' tried instead on input line 74.
+(Font)              Font shape `TU/LibertinusSerif(0)/m/it' tried instead on input line 84.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/it' will be
-(Font)              scaled to size 15.5999pt on input line 74.
+(Font)              scaled to size 15.5999pt on input line 84.
  [3
 
 
@@ -2667,39 +2751,52 @@ LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/it' will be
 
 ]
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
-(Font)              scaled to size 15.5999pt on input line 76.
+(Font)              scaled to size 15.5999pt on input line 86.
  [4
 
 
 ] [5]
+Overfull \hbox (0.9229pt too wide) in paragraph at lines 124--125
+\TU/LibertinusSerif(0)/m/n/15 uses deep learn-ing tech-niques to gen-er-ate human-like text re-sponses
+ []
+
+[6]
 \tf@toc=\write6
 
 \openout6 = main.toc
- [6]
-Package tocbasic Info: character protrusion at toc deactivated on input line 111.
+ [7]
+Package tocbasic Info: character protrusion at toc deactivated on input line 134.
 LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/b/n' will be
-(Font)              scaled to size 17.99995pt on input line 111.
+(Font)              scaled to size 17.99995pt on input line 134.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
-(Font)              scaled to size 18.71982pt on input line 111.
+(Font)              scaled to size 18.71982pt on input line 134.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/sc' will be
-(Font)              scaled to size 18.71982pt on input line 111.
+(Font)              scaled to size 18.71982pt on input line 134.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/sc' will be
-(Font)              scaled to size 18.71982pt on input line 111.
- [7
+(Font)              scaled to size 18.71982pt on input line 134.
+Package microtype Info: Loading generic protrusion settings for font family
+(microtype)             `LibertinusMath' (encoding: TU).
+(microtype)             For optimal results, create family-specific settings.
+(microtype)             See the microtype manual for details.
+ (c:/texlive/2026/texmf-dist/tex/latex/microtype/mt-msa.cfg
+File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
+) (c:/texlive/2026/texmf-dist/tex/latex/microtype/mt-msb.cfg
+File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
+) [8
 
 
-]
-Package tocbasic Info: character protrusion at lof deactivated on input line 111.
+] [9]
+Package tocbasic Info: character protrusion at lof deactivated on input line 134.
  (./main.lof)
 \tf@lof=\write7
 
 \openout7 = main.lof
-Package tocbasic Info: character protrusion at lot deactivated on input line 114.
+Package tocbasic Info: character protrusion at lot deactivated on input line 137.
  (./main.lot)
 \tf@lot=\write8
 
 \openout8 = main.lot
- [8
+ [10
 
 
 ]
@@ -2770,13 +2867,13 @@ Package tocbasic Info: character protrusion at lot deactivated on input line 114
 
 part without number
 LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/b/n' will be
-(Font)              scaled to size 37.3201pt on input line 121.
+(Font)              scaled to size 37.3201pt on input line 144.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
-(Font)              scaled to size 38.81264pt on input line 121.
+(Font)              scaled to size 38.81264pt on input line 144.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/sc' will be
-(Font)              scaled to size 38.81264pt on input line 121.
+(Font)              scaled to size 38.81264pt on input line 144.
 LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/sc' will be
-(Font)              scaled to size 38.81264pt on input line 121.
+(Font)              scaled to size 38.81264pt on input line 144.
 [1
 
 
@@ -2818,16 +2915,850 @@ LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/sc' will be
 
 
 chapter 1.
+LaTeX Font Info:    Font shape `TU/LibertinusSans(0)/b/n' will be
+(Font)              scaled to size 21.60004pt on input line 148.
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
+(Font)              scaled to size 22.46388pt on input line 148.
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
+(Font)              scaled to size 18.71982pt on input line 149.
+
+Underfull \hbox (badness 10000) in paragraph at lines 149--151
+
+ []
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
+(Font)              scaled to size 13.00006pt on input line 151.
+<images/gr.jpg, id=251, 5520.625pt x 5520.625pt>
+File: images/gr.jpg Graphic file (type jpg)
+<use images/gr.jpg>
+Package luatex.def Info: images/gr.jpg  used on input line 152.
+(luatex.def)             Requested size: 135.70717pt x 135.70717pt.
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
+(Font)              scaled to size 13.00006pt on input line 153.
+
+Underfull \hbox (badness 2894) in paragraph at lines 153--153
+[][][]\TU/LibertinusSerif(0)/b/n/12.50015 Fig-ure 1.1.[][]: []\TU/LibertinusSerif(0)/m/n/12.50015 An im-age
+ []
+
+
+LaTeX Warning: Marginpar on page 2 moved.
+
+
+LaTeX Warning: Marginpar on page 2 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 157--158
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 161--162
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 163--164
+
+ []
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/it' will be
+(Font)              scaled to size 13.00006pt on input line 168.
+
+Underfull \hbox (badness 2726) in paragraph at lines 168--168
+[]\TU/LibertinusSerif(0)/m/it/12.50015 The unique con-tri-bu-tion
+ []
+
+
+Underfull \hbox (badness 1783) in paragraph at lines 168--168
+\TU/LibertinusSerif(0)/m/it/12.50015 to im-pair-ment in ma-jor
+ []
+
+Package biblatex Info: Redefining '\kaobiblio@sidecite' on input line 168.
 [2
 
 
 
+<./images/gr.jpg>]
+
+LaTeX Warning: Marginpar on page 3 moved.
+
+
+Underfull \hbox (badness 1810) in paragraph at lines 175--175
+\TU/LibertinusSerif(0)/m/n/12.50015 Con-trol and Pre-ven-tion
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 175--175
+\TU/LibertinusSerif(0)/m/n/12.50015 (2024), []\TU/LibertinusSerif(0)/m/it/12.50015 Treat-ment of
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 175--176
+
+ []
+
+
+LaTeX Warning: Marginpar on page 3 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 177--178
+
+ []
+
+
+Underfull \hbox (badness 5417) in paragraph at lines 180--180
+[][][]\TU/LibertinusSerif(0)/m/n/12.50015 [[][][][]4[][]]: []ADHD UK (2025),
+ []
+
+
+Overfull \hbox (10.39047pt too wide) in paragraph at lines 180--181
+[]\TU/LibertinusSerif(0)/m/n/15 A study of 9 mil-lion GP records showed
+ []
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
+(Font)              scaled to size 12.47992pt on input line 182.
+
+Underfull \hbox (badness 10000) in paragraph at lines 182--182
+\TU/LibertinusSerif(0)/m/n/12.50015 di-men-sional. Along-side
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 182--182
+\TU/LibertinusSerif(0)/m/n/12.50015 med-i-ca-tion, Ther-apy
+ []
+
+
+Underfull \hbox (badness 1014) in paragraph at lines 182--182
+\TU/LibertinusSerif(0)/m/n/12.50015 come af-ter ther-apy and
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 182--183
+
+ []
+
+
+LaTeX Warning: Marginpar on page 3 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 186--186
+[][][]\TU/LibertinusSerif(0)/m/n/12.50015 [[][][][]5[][]]: []Briggs-McCracken
+ []
+
+
+Overfull \hbox (21.20146pt too wide) in paragraph at lines 186--187
+[]\TU/LibertinusSerif(0)/m/n/15 ”Peo-ple with ADHD lack self-awareness”
+ []
+
+
+LaTeX Warning: Marginpar on page 3 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 188--189
+
+ []
+
+
+LaTeX Warning: Marginpar on page 3 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 193--194
+
+ []
+
+[3]
+Overfull \hbox (12.96683pt too wide) in paragraph at lines 204--205
+[][]\TU/LibertinusSerif(0)/m/n/15 ”As some-one from a fam-ily with ADHD,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 207--208
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 210--211
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 212--212
+[]\TU/LibertinusSerif(0)/m/n/12.50015 2: These are all men-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 212--212
+\TU/LibertinusSerif(0)/m/n/12.50015 tioned in the book -
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 212--213
+
+ []
+
+[4]
+*geometry* verbose mode - [ newgeometry ] result:
+* driver: luatex
+* paper: custom
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(0.0pt, 597.50473pt, 0.0pt)
+* v-part:(T,H,B)=(0.0pt, 845.0424pt, 0.0pt)
+* \paperwidth=597.50473pt
+* \paperheight=845.0424pt
+* \textwidth=597.50473pt
+* \textheight=845.0424pt
+* \oddsidemargin=-72.26999pt
+* \evensidemargin=-72.26999pt
+* \topmargin=-126.0678pt
+* \headheight=22.49994pt
+* \headsep=31.29787pt
+* \topskip=15.0pt
+* \footskip=62.99983pt
+* \marginparwidth=0.0pt
+* \marginparsep=0.0pt
+* \columnsep=10.0pt
+* \skip\footins=13.49995pt plus 5.99934pt minus 3.00063pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/b/n' will be
+(Font)              scaled to size 38.81264pt on input line 225.
+ [5
+
+
 ]
+*geometry* verbose mode - [ newgeometry ] result:
+* driver: luatex
+* paper: custom
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(70.56247pt, 304.44289pt, 222.49937pt)
+* v-part:(T,H,B)=(77.96011pt, 689.12218pt, 77.96011pt)
+* \paperwidth=597.50473pt
+* \paperheight=845.0424pt
+* \textwidth=304.44289pt
+* \textheight=689.12218pt
+* \oddsidemargin=-1.70752pt
+* \evensidemargin=-1.70752pt
+* \topmargin=-48.10768pt
+* \headheight=22.49994pt
+* \headsep=31.29787pt
+* \topskip=15.0pt
+* \footskip=62.99983pt
+* \marginparwidth=135.71892pt
+* \marginparsep=17.6406pt
+* \columnsep=10.0pt
+* \skip\footins=13.49995pt plus 5.99934pt minus 3.00063pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+
+Overfull \hbox (39.9104pt too wide) in paragraph at lines 266--267
+ [][] 
+ []
+
+
+LaTeX Warning: Marginpar on page 6 moved.
+
+
+LaTeX Warning: Marginpar on page 6 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 272--273
+
+ []
+
+[6
+
+
+]
+*geometry* verbose mode - [ newgeometry ] result:
+* driver: luatex
+* paper: custom
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(0.0pt, 597.50473pt, 0.0pt)
+* v-part:(T,H,B)=(0.0pt, 845.0424pt, 0.0pt)
+* \paperwidth=597.50473pt
+* \paperheight=845.0424pt
+* \textwidth=597.50473pt
+* \textheight=845.0424pt
+* \oddsidemargin=-72.26999pt
+* \evensidemargin=-72.26999pt
+* \topmargin=-126.0678pt
+* \headheight=22.49994pt
+* \headsep=31.29787pt
+* \topskip=15.0pt
+* \footskip=62.99983pt
+* \marginparwidth=0.0pt
+* \marginparsep=0.0pt
+* \columnsep=10.0pt
+* \skip\footins=13.49995pt plus 5.99934pt minus 3.00063pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+<images/storyboard.jpg, id=305, 1707.2583pt x 1707.2583pt>
+File: images/storyboard.jpg Graphic file (type jpg)
+<use images/storyboard.jpg>
+Package luatex.def Info: images/storyboard.jpg  used on input line 282.
+(luatex.def)             Requested size: 597.49727pt x 597.49727pt.
+ [7<./images/storyboard.jpg>]
+*geometry* verbose mode - [ newgeometry ] result:
+* driver: luatex
+* paper: custom
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(70.56247pt, 304.44289pt, 222.49937pt)
+* v-part:(T,H,B)=(77.96011pt, 689.12218pt, 77.96011pt)
+* \paperwidth=597.50473pt
+* \paperheight=845.0424pt
+* \textwidth=304.44289pt
+* \textheight=689.12218pt
+* \oddsidemargin=-1.70752pt
+* \evensidemargin=-1.70752pt
+* \topmargin=-48.10768pt
+* \headheight=22.49994pt
+* \headsep=31.29787pt
+* \topskip=15.0pt
+* \footskip=62.99983pt
+* \marginparwidth=135.71892pt
+* \marginparsep=17.6406pt
+* \columnsep=10.0pt
+* \skip\footins=13.49995pt plus 5.99934pt minus 3.00063pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+
+Overfull \hbox (7.33852pt too wide) in paragraph at lines 297--298
+[][]\TU/LibertinusSerif(0)/m/n/15 ”Aes-thetic ex-pe-ri-ences can re-cruit neu-
+ []
+
+
+Underfull \hbox (badness 1400) in paragraph at lines 301--301
+[][][]\TU/LibertinusSerif(0)/m/n/12.50015 [[][][][]9[][]]: []Rhein et al. (2015),
+ []
+
+
+Underfull \hbox (badness 1783) in paragraph at lines 301--301
+\TU/LibertinusSerif(0)/m/it/12.50015 and Young Adults With
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 301--301
+\TU/LibertinusSerif(0)/m/it/12.50015 Attention-Deficit/Hy-per-ac-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 304--305
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 306--307
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 308--309
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 310--311
+
+ []
+
+[8
+
+
+
+
+]
+Underfull \hbox (badness 10000) in paragraph at lines 312--313
+
+ []
+
+[9]
 chapter 2.
-[3
+
+Underfull \hbox (badness 10000) in paragraph at lines 319--321
+
+ []
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
+(Font)              scaled to size 8.31995pt on input line 330.
+<images/users.jpg, id=327, 279.29344pt x 280.04625pt>
+File: images/users.jpg Graphic file (type jpg)
+<use images/users.jpg>
+Package luatex.def Info: images/users.jpg  used on input line 333.
+(luatex.def)             Requested size: 139.64638pt x 140.02277pt.
+<images/tool_platform.jpg, id=328, 323.70938pt x 216.81pt>
+File: images/tool_platform.jpg Graphic file (type jpg)
+<use images/tool_platform.jpg>
+Package luatex.def Info: images/tool_platform.jpg  used on input line 339.
+(luatex.def)             Requested size: 323.70859pt x 216.80946pt.
+<images/psl.jpg, id=329, 86.57344pt x 84.315pt>
+File: images/psl.jpg Graphic file (type jpg)
+<use images/psl.jpg>
+Package luatex.def Info: images/psl.jpg  used on input line 345.
+(luatex.def)             Requested size: 43.2866pt x 42.15738pt.
+<images/folder.jpg, id=330, 280.04625pt x 281.55188pt>
+File: images/folder.jpg Graphic file (type jpg)
+<use images/folder.jpg>
+Package luatex.def Info: images/folder.jpg  used on input line 351.
+(luatex.def)             Requested size: 140.02277pt x 140.77559pt.
+
+Underfull \hbox (badness 1205) in paragraph at lines 364--364
+\TU/LibertinusSerif(0)/m/n/12.50015 data col-lec-tion and log-
+ []
+
+
+LaTeX Warning: Marginpar on page 10 moved.
+
+
+LaTeX Warning: Marginpar on page 10 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 368--369
+
+ []
+
+
+Underfull \hbox (badness 1226) in paragraph at lines 371--371
+[][][]\TU/LibertinusSerif(0)/m/n/12.50015 [[][][][]10[][]]: []Rash et al. (2016),
+ []
+
+
+Overfull \hbox (5.37758pt too wide) in paragraph at lines 371--372
+\TU/LibertinusSerif(0)/m/n/15 as-so-ci-ated with al-tered au-to-nomic reg-
+ []
+
+
+LaTeX Warning: Marginpar on page 10 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 374--375
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 376--377
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 378--379
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 380--381
+
+ []
+
+[10
+
+
+<./images/users.jpg><./images/tool_platform.jpg><./images/psl.jpg><./images/folder.jpg>]
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
+(Font)              scaled to size 6.23996pt on input line 462.
+<images/bridge.jpg, id=339, 281.55188pt x 280.04625pt>
+File: images/bridge.jpg Graphic file (type jpg)
+<use images/bridge.jpg>
+Package luatex.def Info: images/bridge.jpg  used on input line 462.
+(luatex.def)             Requested size: 29.87527pt x 29.71552pt.
+<images/rl.jpg, id=340, 280.04625pt x 281.55188pt>
+File: images/rl.jpg Graphic file (type jpg)
+<use images/rl.jpg>
+Package luatex.def Info: images/rl.jpg  used on input line 462.
+(luatex.def)             Requested size: 29.71552pt x 29.87527pt.
+
+Underfull \hbox (badness 10000) in paragraph at lines 465--466
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 467--468
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 470--471
+
+ []
+
+[11<./images/bridge.jpg><./images/rl.jpg>]
+Underfull \hbox (badness 10000) in paragraph at lines 472--473
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 476--477
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 478--479
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 480--481
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 482--483
+
+ []
+
+[12]
+<images/interaction_01.jpg, id=351, 1284.8pt x 1284.8pt>
+File: images/interaction_01.jpg Graphic file (type jpg)
+<use images/interaction_01.jpg>
+Package luatex.def Info: images/interaction_01.jpg  used on input line 554.
+(luatex.def)             Requested size: 13.93875pt x 13.93875pt.
+<images/interaction_02.jpg, id=352, 1284.8pt x 1284.8pt>
+File: images/interaction_02.jpg Graphic file (type jpg)
+<use images/interaction_02.jpg>
+Package luatex.def Info: images/interaction_02.jpg  used on input line 554.
+(luatex.def)             Requested size: 13.93875pt x 13.93875pt.
+<images/interaction_03.jpg, id=353, 1284.8pt x 1284.8pt>
+File: images/interaction_03.jpg Graphic file (type jpg)
+<use images/interaction_03.jpg>
+Package luatex.def Info: images/interaction_03.jpg  used on input line 554.
+(luatex.def)             Requested size: 13.93875pt x 13.93875pt.
+<images/interaction_04.jpg, id=354, 3737.965pt x 2843.62375pt>
+File: images/interaction_04.jpg Graphic file (type jpg)
+<use images/interaction_04.jpg>
+Package luatex.def Info: images/interaction_04.jpg  used on input line 554.
+(luatex.def)             Requested size: 13.91695pt x 10.58719pt.
+<images/interaction_05.jpg, id=355, 1284.8pt x 1284.8pt>
+File: images/interaction_05.jpg Graphic file (type jpg)
+<use images/interaction_05.jpg>
+Package luatex.def Info: images/interaction_05.jpg  used on input line 554.
+(luatex.def)             Requested size: 13.93875pt x 13.93875pt.
+<images/streamer.jpg, id=356, 282.68109pt x 282.30469pt>
+File: images/streamer.jpg Graphic file (type jpg)
+<use images/streamer.jpg>
+Package luatex.def Info: images/streamer.jpg  used on input line 582.
+(luatex.def)             Requested size: 29.02028pt x 28.98164pt.
+<images/server1.jpg, id=357, 279.29344pt x 280.79906pt>
+File: images/server1.jpg Graphic file (type jpg)
+<use images/server1.jpg>
+Package luatex.def Info: images/server1.jpg  used on input line 590.
+(luatex.def)             Requested size: 28.86427pt x 29.01988pt.
+<images/server2.jpg, id=358, 278.54062pt x 280.79906pt>
+File: images/server2.jpg Graphic file (type jpg)
+<use images/server2.jpg>
+Package luatex.def Info: images/server2.jpg  used on input line 598.
+(luatex.def)             Requested size: 28.78647pt x 29.01988pt.
+<images/tailscale.jpeg, id=359, 401.5pt x 401.5pt>
+File: images/tailscale.jpeg Graphic file (type jpg)
+<use images/tailscale.jpeg>
+Package luatex.def Info: images/tailscale.jpeg  used on input line 606.
+(luatex.def)             Requested size: 19.34712pt x 19.34712pt.
+
+
+LaTeX Warning: Marginpar on page 13 moved.
+
+
+LaTeX Warning: Marginpar on page 13 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 625--626
+
+ []
+
+<images/tdinput.jpg, id=360, 654.94687pt x 453.94594pt>
+File: images/tdinput.jpg Graphic file (type jpg)
+<use images/tdinput.jpg>
+Package luatex.def Info: images/tdinput.jpg  used on input line 629.
+(luatex.def)             Requested size: 135.71405pt x 94.06387pt.
+
+Underfull \hbox (badness 2469) in paragraph at lines 630--630
+[][][]\TU/LibertinusSerif(0)/b/n/12.50015 Fig-ure 2.3.[][]: []\TU/LibertinusSerif(0)/m/n/12.50015 The in-put
+ []
+
+
+LaTeX Warning: Marginpar on page 13 moved.
+
+
+LaTeX Warning: Marginpar on page 13 moved.
+
+[13<./images/interaction_01.jpg><./images/interaction_02.jpg><./images/interaction_03.jpg><./images/interaction_04.jpg><./images/interaction_05.jpg><./images/streamer.jpg><./images/server1.jpg><./images/server2.jpg><./images/tailscale.jpeg><./images/tdinput.jpg>]
+Underfull \hbox (badness 3019) in paragraph at lines 644--644
+[]\TU/LibertinusSerif(0)/m/n/12.50015 1: The sen-sor logs the
+ []
+
+
+Underfull \hbox (badness 1515) in paragraph at lines 644--644
+\TU/LibertinusSerif(0)/m/n/12.50015 So only the lat-est data
+ []
+
+
+Overfull \hbox (0.30702pt too wide) in paragraph at lines 644--645
+[]\TU/LibertinusSerif(0)/m/n/15 Each 3 minute trig-ger
+ []
+
+
+Overfull \hbox (16.85878pt too wide) in paragraph at lines 646--647
+[]\TU/LibertinusSerif(0)/m/n/15 This is the sum
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 651--652
+
+ []
+
+<images/hrvuse.jpg, id=365, 1035.87pt x 325.96782pt>
+File: images/hrvuse.jpg Graphic file (type jpg)
+<use images/hrvuse.jpg>
+Package luatex.def Info: images/hrvuse.jpg  used on input line 657.
+(luatex.def)             Requested size: 135.71103pt x 42.70557pt.
+
+LaTeX Warning: Marginpar on page 14 moved.
+
+
+LaTeX Warning: Marginpar on page 14 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 666--667
+
+ []
+
+[14<./images/hrvuse.jpg>]
+Underfull \hbox (badness 10000) in paragraph at lines 668--669
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 674--675
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 676--677
+
+ []
+
+
+Underfull \hbox (badness 1226) in paragraph at lines 678--678
+[][][]\TU/LibertinusSerif(0)/m/n/12.50015 [[][][][]10[][]]: []Rash et al. (2016),
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 678--679
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 680--681
+
+ []
+
+[15]
+Underfull \hbox (badness 10000) in paragraph at lines 686--687
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 688--689
+
+ []
+
+[16]
+chapter 3.
+
+Underfull \hbox (badness 10000) in paragraph at lines 693--694
+
+ []
+
+[17
 
 
 ]
+Underfull \hbox (badness 10000) in paragraph at lines 713--714
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 715--716
+
+ []
+
+<images/i1res.jpg, id=389, 892.83563pt x 449.42906pt>
+File: images/i1res.jpg Graphic file (type jpg)
+<use images/i1res.jpg>
+Package luatex.def Info: images/i1res.jpg  used on input line 720.
+(luatex.def)             Requested size: 135.71786pt x 68.31667pt.
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 725--726
+
+ []
+
+<images/i2res.jpg, id=391, 913.91437pt x 448.67625pt>
+File: images/i2res.jpg Graphic file (type jpg)
+<use images/i2res.jpg>
+Package luatex.def Info: images/i2res.jpg  used on input line 730.
+(luatex.def)             Requested size: 135.7146pt x 66.6276pt.
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 735--736
+
+ []
+
+<images/i3res.jpg, id=393, 922.94812pt x 438.8897pt>
+File: images/i3res.jpg Graphic file (type jpg)
+<use images/i3res.jpg>
+Package luatex.def Info: images/i3res.jpg  used on input line 740.
+(luatex.def)             Requested size: 135.71822pt x 64.5381pt.
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 745--746
+
+ []
+
+<images/i4res.jpg, id=395, 920.68968pt x 440.39531pt>
+File: images/i4res.jpg Graphic file (type jpg)
+<use images/i4res.jpg>
+Package luatex.def Info: images/i4res.jpg  used on input line 750.
+(luatex.def)             Requested size: 135.70923pt x 64.91406pt.
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 756--757
+
+ []
+
+<images/i5res.jpg, id=397, 922.19531pt x 436.63126pt>
+File: images/i5res.jpg Graphic file (type jpg)
+<use images/i5res.jpg>
+Package luatex.def Info: images/i5res.jpg  used on input line 761.
+(luatex.def)             Requested size: 135.70601pt x 64.25264pt.
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+LaTeX Warning: Marginpar on page 18 moved.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 766--770
+
+ []
+
+[18<./images/i1res.jpg><./images/i2res.jpg><./images/i3res.jpg><./images/i4res.jpg><./images/i5res.jpg>]
+Underfull \hbox (badness 10000) in paragraph at lines 770--771
+
+ []
+
+<images/rc.jpg, id=403, 615.0478pt x 517.18219pt>
+File: images/rc.jpg Graphic file (type jpg)
+<use images/rc.jpg>
+Package luatex.def Info: images/rc.jpg  used on input line 775.
+(luatex.def)             Requested size: 135.71448pt x 114.11977pt.
+
+LaTeX Warning: Marginpar on page 19 moved.
+
+
+LaTeX Warning: Marginpar on page 19 moved.
+
+Package biblatex Info: Redefining '\kaobiblio@sidecite' on input line 783.
+
+Overfull \hbox (3.85316pt too wide) in paragraph at lines 783--784
+\TU/LibertinusSerif(0)/m/n/15 over-activation and more vari-able per-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 786--787
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 790--791
+
+ []
+
+[19<./images/rc.jpg>]
+Package biblatex Info: Redefining '\kaobiblio@sidecite' on input line 793.
+
+Underfull \hbox (badness 10000) in paragraph at lines 793--793
+\TU/LibertinusSerif(0)/m/it/12.50015 and con-duct prob-lems
+ []
+
+
+Overfull \hbox (13.17989pt too wide) in paragraph at lines 793--794
+\TU/LibertinusSerif(0)/m/n/15 sub-se-quent pod-cast with ad-hduk, states
+ []
+
+
+Overfull \hbox (33.70847pt too wide) in paragraph at lines 793--794
+\TU/LibertinusSerif(0)/m/n/15 that stress and ADHD have a co-dependent
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 796--797
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 800--802
+
+ []
+
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/n' will be
+(Font)              scaled to size 14.235pt on input line 802.
+LaTeX Font Info:    Calculating math sizes for size <13.68759> on input line 802.
+[20] [21]
 *geometry* verbose mode - [ newgeometry ] result:
 * driver: luatex
 * paper: custom
@@ -2862,7 +3793,7 @@ chapter 2.
 
 
 part without number
-[4
+[22
 
 
 
@@ -2901,11 +3832,11 @@ part without number
 
 
 chapter A.
-[5
+[23
 
 
 
-]
+] [24]
 *geometry* verbose mode - [ newgeometry ] result:
 * driver: luatex
 * paper: custom
@@ -2939,33 +3870,54 @@ chapter A.
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
 
+chapter without number
+LaTeX Font Info:    Font shape `TU/LibertinusSerif(0)/m/sc' will be
+(Font)              scaled to size 15.5999pt on input line 866.
+LaTeX Font Info:    Font shape `TU/LiberationMono(0)/m/n' will be
+(Font)              scaled to size 13.34999pt on input line 866.
+Package microtype Info: Loading generic protrusion settings for font family
+(microtype)             `LiberationMono' (encoding: TU).
+(microtype)             For optimal results, create family-specific settings.
+(microtype)             See the microtype manual for details.
+[25
 
-LaTeX Warning: Empty bibliography on input line 141.
 
-(./main.ind) (./main.aux)
+
+
+
+]
+Overfull \hbox (8.23996pt too wide) in paragraph at lines 866--866
+[][]\TU/LibertinusSerif(0)/m/n/15 Aja Louise Mur-ray, Amanda Rus-sell, and Fran-cisco An-to-nio Calderón
+ []
+
+[26] (./main.ind) (./main.aux)
  ***********
 LaTeX2e <2026-06-01>
 L3 programming layer <2020/03/25>
  ***********
+
+
+LaTeX Warning: There were multiply-defined labels.
+
 Package logreq Info: Writing requests to 'main.run.xml'.
 
 \openout1 = main.run.xml
 )
 
 Here is how much of LuaTeX's memory you used:
- 69096 strings out of 475635
- 100000,3417909 words of node,token memory allocated
- 1811 words of node memory still in use:
-   31 hlist, 2 vlist, 14 rule, 1 local_par, 5 glue, 4 kern, 1 penalty, 3 glyph, 98 attribute, 136 glue_spec, 86 attribute_list, 7 write, 24 pdf_literal, 24 pdf_colorstack nodes
-   avail lists: 1:1,2:790,3:188,4:138,5:434,6:63,7:5491,8:3,9:356,10:14,11:460,12:1
- 90559 multiletter control sequences out of 65536+600000
- 109 fonts using 39524919 bytes
- 129i,17n,154p,11239b,2210s stack positions out of 10000i,1000n,20000p,200000b,200000s
-<c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSerif-Bold.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSans-Bold.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSerif-Regular.otf>
-Output written on main.pdf (13 pages, 39915 bytes).
+ 72057 strings out of 475635
+ 125007,3417909 words of node,token memory allocated
+ 67497 words of node memory still in use:
+   753 hlist, 138 vlist, 72 rule, 256 disc, 71 local_par, 86 dir, 1570 glue, 237 kern, 201 penalty, 77 margin_kern, 2788 glyph, 5526 attribute, 142 glue_spec, 2800 attribute_list, 123 write, 1126 pdf_literal, 16 pdf_start_link, 16 pdf_end_link, 12 pdf_dest, 24 pdf_action, 178 pdf_colorstack, 25 pdf_setmatrix, 25 pdf_save, 25 pdf_restore nodes
+   avail lists: 1:8,2:1614,3:1654,4:211,5:367,6:143,7:4926,8:45,9:790,10:19,11:263,12:1
+ 93309 multiletter control sequences out of 65536+600000
+ 141 fonts using 52178375 bytes
+ 129i,20n,154p,11239b,2775s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<c:/Users/Vamsi Madhav Tata/AppData/Local/Microsoft/Windows/Fonts/LiberationMono-Regular.ttf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusMath-Regular.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSerif-Italic.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSerif-Bold.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSans-Bold.otf><c:/texlive/2026/texmf-dist/fonts/opentype/public/libertinus-fonts/LibertinusSerif-Regular.otf>
+Output written on main.pdf (36 pages, 16142153 bytes).
 
-PDF statistics: 173 PDF objects out of 1000 (max. 8388607)
- 123 compressed objects within 2 object streams
- 28 named destinations out of 1000 (max. 1048576)
- 312 words of extra memory for PDF output out of 10000 (max. 100000000)
+PDF statistics: 584 PDF objects out of 1000 (max. 8388607)
+ 474 compressed objects within 5 object streams
+ 109 named destinations out of 1000 (max. 1048576)
+ 424 words of extra memory for PDF output out of 10000 (max. 100000000)
 

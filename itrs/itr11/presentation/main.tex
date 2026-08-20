@@ -2,7 +2,7 @@
 \documentclass[
 	fontsize=15pt,
 	twoside=false,
-	secnumdepth=1
+	secnumdepth=2
 ]{kaobook}
 
 % Choose the language
@@ -20,6 +20,16 @@
 % NOTE: keep this only if you actually use theorem environments.
 % If duplicate theorem counter errors appear again, comment this line.
 \usepackage{kaotheorems}
+\usepackage{tikz}
+\usetikzlibrary{calc, arrows.meta, positioning, shapes.geometric, fit, decorations.text}
+
+\definecolor{bg}{HTML}{F5F3EF}
+\definecolor{text}{HTML}{111111}
+\definecolor{muted}{HTML}{666666}
+\definecolor{accent}{HTML}{6F5BFF}
+\definecolor{accent2}{HTML}{3CC7B2}
+\definecolor{accent3}{HTML}{FF7A59}
+\definecolor{linec}{HTML}{202020}
 
 % Load the package for hyperreferences
 \usepackage{kaorefs}
@@ -97,11 +107,24 @@ I Vamsi Madhav Tata would like to thank the assessment panel for giving me a cha
   \item[MAT] - In Touch Designer, a MAT (Material Operator) is a type of operator that processes and manipulates materials, which are properties that define the appearance of objects in real-time graphics and visual effects.
   \item[Component] - In Touch Designer, a Component is a container that can hold other operators and components, allowing for modular and hierarchical organization of the project.
   \item[DAT] - In Touch Designer, a DAT (Data Operator) is a type of operator that processes and manipulates data, such as text, numbers, or other information.
-  \item[MediaMTX]  - mediaMTX is a on device server to stream data
+  \item[MediaMTX]  - mediaMTX is an on device server to stream data
   \item[OBS] - Open Broadcaster Software, a free and open-source software for video recording and live-streaming.
   \item[WebRTC] - Web Real-Time Communication, a free, open-source project that provides web browsers and mobile applications with real-time communication via simple application programming interfaces (APIs).
   \item[Tailscale] - Tailscale is a secure network tunneling service that allows users to create virtual private networks (VPNs) easily.
-  \item[mjpeg] - Motion JPEG, a video compression format that uses a sequence of JPEG images to represent video frames.  
+  \item[mjpeg] - Motion JPEG, a video compression format that uses a sequence of JPEG images to represent video frames.
+  \item[React Native] - React Native is an open-source mobile application framework created by Facebook. It allows developers to build mobile apps using JavaScript and React, and it enables the development of cross-platform apps for iOS and Android.
+  \item[HR] - Heart Rate, the number of times a person's heart beats per minute.
+  \item[HRV] - Heart Rate Variability, the variation in time between consecutive heartbeats, which can be used as an indicator of autonomic nervous system activity and overall health.
+  \item[BR] - Breathing Rate, the number of breaths a person takes per minute.
+  \item[TS] - Timestamp of the data received from the sensors, which can be used to synchronize and analyze the data.
+  \item[SDK] - Software Development Kit, a collection of software tools and libraries that developers can use to create applications for specific platforms or frameworks.
+  \item[GitHub] - GitHub is a web-based platform that provides version control and collaboration features for software development projects, allowing developers to host and manage their code repositories.
+  \item[Gitingest] - Gitingest is a tool that allows users to easily ingest and manage data from Git repositories, enabling efficient data analysis and processing. Primarily used for LLM prompting. Can send the entire repository, the structure, the files as a single prompt to an LLM for analysis and processing.
+  \item[ChatGPT] - ChatGPT is an AI language model developed by OpenAI that uses deep learning techniques to generate human-like text responses based on the input it receives. It can be used for various natural language processing tasks, such as conversation, text completion, and question answering.
+  \item[Claude] - Claude is an AI language model developed by Anthropic that uses deep learning techniques to generate human-like text responses based on the input it receives. It can be used for various natural language processing tasks, such as conversation, text completion, and question answering.
+  \item[CCPE] - Center for counselling and psychotherapy education, a center that provides training and education in counseling and psychotherapy, based in Paddington, London, UK.
+  \item[CBT] - Cognitive Behavioral Therapy, a type of psychotherapy that focuses on changing negative thought patterns and behaviors to improve mental health and well-being.
+  \item[DBT] - Dialectical Behavior Therapy, a type of psychotherapy that combines cognitive-behavioral techniques with mindfulness and acceptance strategies to help individuals regulate emotions and improve interpersonal relationships.
 \end{description}
 
 \begingroup
@@ -118,21 +141,723 @@ I Vamsi Madhav Tata would like to thank the assessment panel for giving me a cha
 \setchapterstyle{kao}
 
 \pagelayout{wide}
-\addpart{0.618}
+\addpart{0.618 ?}
 \pagelayout{margin}
-\chapter{0.618 ?}
-0.618 is derived from the golden ratio, also known as the divine proportion. It is an irrational number that has been used in art, architecture, and design for centuries. The golden ratio is approximately equal to 1.6180339887, and it can be found in various natural phenomena, such as the arrangement of leaves on a stem or the spiral patterns of shells. A zero instead of one because it's intended to help people with ADHD find their one in their ADHD Journey
+\chapter{0.618 - Immediate and Actionable}
+\section{Purpose and Problem}
+\subsection{Why 0.618?}
+0.618 is derived from the golden ratio, also known as the divine proportion. It is an irrational number that has been used in art, architecture, and design for centuries. The golden ratio is approximately equal to 1.6180339887, and it can be found in various natural phenomena, such as the arrangement of leaves on a stem or the spiral patterns of shells.\\
+\begin{marginfigure}
+  \centering
+  \includegraphics[width=\linewidth]{images/gr.jpg}
+  \caption{An image showing the golden ratio in nature. Photo by \href{https://unsplash.com/@maanila?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText}{Manila Kumari} on \href{https://unsplash.com/photos/a-white-nautilus-shell-spiral-on-a-light-background-kxb8Pnsot3Q?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText}{Unsplash}}
+  \label{fig:margin-image}
+\end{marginfigure} 
 
-\chapter{Second Chapter}
-\blindtext
+A zero instead of one because it's intended to help people with ADHD find their one in their ADHD Journey. \\ 
+
+\subsection{What Does 0.618 aim to do?}
+
+0.618 is a \textcolor{RoyalPurple}{biofeedback based tool} that people with ADHD can use to build their \textcolor{RoyalPurple}{own personalized interventions through instant feedback.} \\
+
+The project is NOT proposing ONE UNIVERSAL INTERVENTION. Rather it proposes a tool through which interventions can be explored, compared, and personalized.  \\
+
+\subsection{Why ADHD Matters?}
+
+\begin{displayquote}
+\textcolor{Sepia}{"Research by psychologist Dr. Russell Barkley, a prominent ADHD researcher, demonstrates that ADHD has a} \textcolor{RedOrange}{significantly negative impact on life expectancy - by  12.7 years}, on average. \textcolor{RoyalPurple}{ADHD makes our lives harder and Shorter}." \sideparencite{barkley2019}, \sideparencite{mccabe2024howtoadhd}.
+\end{displayquote}
+
+
+\subsection{Why 0.618 Matters?}
+
+\begin{displayquote}
+What works best can depend on the child and family.\sideparencite{cdcadhd}  \\ 
+\end{displayquote}
+\hfill --- Current one size fits all is maladaptive! \\
+
+\begin{displayquote} 
+A study of 9 million GP records showed just 0.32\% had a diagnosis of ADHD - Meaning access to medication! \sideparencite{adhduk_diagnosis_rate_uk}
+\end{displayquote}
+\hfill --- Most of them use Adhoc methods!!! \sidenote{It's not 99.68\% because ADHD treatment is multi dimensional. Alongside medication, Therapy (DBT, CBT), Education of ADHD and the different ways it manifests are recommended treatments in that order. Interventions come after therapy and knowledge.} \\
+
+
+\begin{displayquote} 
+"People with ADHD lack self-awareness" \sideparencite{interview_rosemary_2026}
+\end{displayquote}
+\hfill --- Most of them use Adhoc methods!!! \\
+
+\begin{displayquote} 
+"I built up this tool box over seven years, learning one tool a week..." \sideparencite{mccabe2024howtoadhd}
+\end{displayquote}
+\hfill --- Most of them use Adhoc methods!!! \\
+
+\newpage
+
+\subsection{Context Validation}
+
+\begin{displayquote} 
+\textcolor{RedOrange}{"I was constantly angry when I was taking my medication."} \sidetextcite{interview_user1_2026}
+\end{displayquote}
+
+\begin{displayquote} 
+\textcolor{RoyalPurple}{"As someone from a family with ADHD, I saw my sister get significantly less creative because of the meds. As a design professional, I cannot afford that."} \sidetextcite{interview_user2_2026}
+\end{displayquote}
+
+Even people who have medication refuse to take it for various reasons. This puts the onus of helping people with ADHD on Psychotherapy, Self-awareness inducing education, and personal interventions. \\
+
+
+There are millions of interventions that the community has put together over the years, But each one of them is very specific to the user who created them. One could try some of them, but as we saw earlier, it could take months to years to fully understand the implication of any such undertaking. \\
+
+Moreover, these interventions are very diverse. Someone needs to drink coffee to fall asleep, others need to run, and some others need to do something complete different - A 5 step ritual, which is an ooh moment. \sidenote{These are all mentioned in the book - Reference 2} \\
+
+So the design challenge is ...
+
+\newpage
+
+\clearpage
+\thispagestyle{empty}
+\fullwidthpage % if using kaobook/kao; remove if not available
+
+\vspace*{\fill}
+\begin{center}
+{\Huge\bfseries\color{RoyalPurple}
+How might we quickly test interventions through real-time, immediate biofeedback to enable the user to build personalized, actionable habits.\par
+}
+\end{center}
+\vspace*{\fill}
+
+\clearpage
+\pagelayout{margin} % restore normal kaobook layout
+
+\newpage
+
+\section{Features and Components}
+
+\subsection{What is 0.618?}
+0.618 is a companion app that accompanies a wearable that can collect Heart Rate and Autonomous Nervous system (Heart Rate Variance) data.
+
+The current iteration of the prototype is compatible with Polar H10 chest strap and a Max30102 + ESP32 ring. It has the potential to be compatible with a lot more sensors. A full list of compatible sensors is provided in Appendix A
+
+\begin{marginfigure}
+\centering
+\begin{tikzpicture}[
+    every node/.style={font=\footnotesize, align=center},
+    line/.style={draw, line width=0.5pt}
+]
+
+% --- sizes ---
+\def\Rbig{0.95}    % radius for big circles (equal)
+\def\Rsmall{0.62}  % radius for small circles (equal)
+
+% --- top row ---
+\node[draw, circle, minimum size={2*\Rbig cm}] (sensor) at (0,2) {Sensor};
+\node at (1.55,2) {\large +};
+\node[draw, circle, minimum size={2*\Rbig cm}] (app) at (3.2,2) {App};
+
+% --- bottom row ---
+\node[draw, circle, minimum size={2*\Rsmall cm}] (visuals) at (2.15,-0.5) {Visuals};
+\node[draw, circle, minimum size={2*\Rsmall cm}] (actions) at (4.25,-0.5) {Actions};
+
+% --- branches from App ---
+\draw[line] (app.south) -- (visuals.north);
+\draw[line] (app.south) -- (actions.north);
+
+\end{tikzpicture}
+\caption{Sensor + App leading to Visuals and Actions.}
+\end{marginfigure}
+
+\subsection{A Day in the life with 0.618}
+
+Now that we know that Alex is wearing a wearable let's see how 0.618 interacts with him in his life. \\
+
+Slice of life, coming up ..
+
+\clearpage
+\thispagestyle{empty}
+\fullwidthpage % kaobook command from kao.sty
+
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=\paperwidth,keepaspectratio]{images/storyboard.jpg}
+\end{figure}
+
+\clearpage
+\pagelayout{margin} % restore normal layout
+
+\subsection{Demo}
+
+Click \href{https://youtu.be/mOSiiyTelDY}{here} to watch the demo video!
+
+\section{Design Decisions}
+
+\subsection{Why the interactions?}
+
+\begin{displayquote}
+\textcolor{Sepia}{"Aesthetic experiences can recruit neural systems involved in reward and valuation, so aesthetically pleasing stimuli are processed as rewarding or pleasurable in the brain."}. \sideparencite{Chatterjee2014Neuroaesthetics}.
+\end{displayquote}
+
+\begin{displayquote}
+\textcolor{Sepia}{"This would suggest that participants with ADHD might be hypersensitive to reward because they experience receiving a reward relative to no reward as more pleasurable than control participants.”}. \sideparencite{vonRhein2015RewardADHD}.
+\end{displayquote}
+
+Combining these two research studies, An ADHD brain perceives aesthetically pleasing things as a stronger reward than its neurotypical cousin. \\
+
+This meant that the output should have a very visually stimulating form. This is why Touch Designer has been choses to program visually stimulating interactions.  \\
+
+During the event/trigger period, the user is trying to relax. Watching the HRV to relax would prove to be stressful. The visuals soften the stress of achieving a goal by gamifying it a little. \\
+
+Instead of focusing on the number and stressing out, the user can look at the visual and try to control it with the intervention/action that they are going to perform during this 3-minute window. \\
+
+Lastly, the visuals themselves act as a reward for someone with ADHD. \\
+
+
+\chapter{Flutter, Julia, and Touch Designer Programming.}
+
+\section{Physiological Data}
+
+The sensors collect the Heart Rate, Heart Rate Variance, and Breathing rate. \\ 
+\begin{marginfigure}
+\centering
+\begin{tikzpicture}[x=2cm,y=2cm]
+
+% Global text style for all TikZ nodes
+\tikzset{every node/.style={font=\fontsize{8}{10}\selectfont}}
+\tikzset{ann/.style={font=\fontsize{8}{10}\selectfont,align=center,text width=2.1cm}}
+
+% Fill the available margin width as much as practical
+% Circle chain centered in the margin figure
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=2.68cm,inner sep=0pt] (l1) at (0,0) {};
+\begin{scope}
+  \clip (l1.center) circle (1.34cm);
+  \IfFileExists{images/users.jpg}{\node at (l1.center){\includegraphics[scale=0.5]{images/users.jpg}}; }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=2.68cm,inner sep=0pt] (l2) at (0,-2.05) {};
+\begin{scope}
+  \clip (l2.center) circle (1.34cm);
+  \IfFileExists{images/tool_platform.jpg}{\node at (l2.center){\includegraphics[scale=1]{images/tool_platform.jpg}}; }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=2.68cm,inner sep=0pt] (l3) at (0,-4.10) {};
+\begin{scope}
+  \clip (l3.center) circle (1.34cm);
+  \IfFileExists{images/psl.jpg}{\node at (l3.center){\includegraphics[scale=0.5]{images/psl.jpg}}; }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.8pt,circle,minimum size=2.68cm,inner sep=0pt] (l4) at (0,-6.15) {};
+\begin{scope}
+  \clip (l4.center) circle (1.34cm);
+  \IfFileExists{images/folder.jpg}{\node at (l4.center){\includegraphics[scale=0.5]{images/folder.jpg}}; }{}
+\end{scope}
+
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l1) -- (l2);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70,dashed] (l2) -- (l3);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70] (l3) -- (l4);
+
+% Left column labels
+\node[ann] at ($(l1.east)+(0.05cm,-1.80cm)$) {Physiology};
+\node[ann] at ($(l2.east)+(0.35cm,-1.80cm)$) {(9 streams of data)};
+\node[ann] at ($(l3.east)+(0.45cm,-1.85cm)$) {HR, HRV, BR and\\TS get logged};
+
+\end{tikzpicture}
+\caption{This is the data collection and logging via the sensor to the mobile phone.}
+\label{Figure 2.1.:}
+\end{marginfigure}
+
+The data is transmitted to the application via BLE - Bluetooth Low Energy. In case of Polar H10, the Polar Sensor Logger logs the data as shown in the figure 2.1 \\
+
+\begin{displayquote}
+\textcolor{Sepia}{"Prior work suggests that ADHD is associated with altered autonomic regulation, including reduced cardiac vagal control and, in several studies, higher resting heart rate and lower heart rate variability relative to controls."} \sideparencite{Rash2016ADHDCardiacVagalControl}.
+\end{displayquote}
+
+The heart rate is chosen because of this study. \\
+
+The Heart Rate Variance is the most widely used parameter in the wellbeing industry due to its connection to the Autonomic Nervous System. \\
+
+The Breathing rate was a parameter that was used because in actions that calm down the user, Breathing works very consistently across the spectrum. \\
+
+The data stream is a little different for Max30102. We don't need an third party app for data logging. Our app logs the data directly in the case of the Esp32-Max30102 setup.\\
+
+\section{Julia Backend + RL Model}
+
+The app then reads this log and sends it to the julia backend. 
+
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.78\textwidth}{!}{%
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+% Global text style for all TikZ nodes
+\tikzset{every node/.style={font=\fontsize{6}{7}\selectfont}}
+\tikzset{
+  ann/.style={font=\fontsize{6}{7}\selectfont,text=text,align=center},
+  annmuted/.style={font=\fontsize{6}{7}\selectfont,text=muted,align=center}
+}
+
+% Layout preserving horizontal relationships from the original center panel
+\coordinate (cA) at (0,0);
+
+% Top-left block: Pre-trainer
+\node[
+  draw=linec!60, line width=0.7pt, rounded corners=8pt,
+  minimum width=2.1cm, minimum height=0.55cm, fill=none
+] (pretrainer) at ($(cA)+(1.05,-0.40)$) {};
+\node at (pretrainer.center) {Pre-trainer};
+
+% Top-right circle: Bridge
+\node[
+  draw=linec!60, line width=0.7pt, circle,
+  minimum size=1.05cm, inner sep=0pt
+] (bridge) at ($(cA)+(3.30,-0.78)$) {};
+\begin{scope}
+  \clip (bridge.center) circle (0.525cm);
+  \IfFileExists{images/bridge.jpg}{%
+    \node at (bridge.center) {\includegraphics[width=1.05cm,height=1.05cm]{images/bridge.jpg}};
+  }{}
+\end{scope}
+
+% Middle-left circle: RL
+\node[
+  draw=linec!60, line width=0.7pt, circle,
+  minimum size=1.05cm, inner sep=0pt
+] (rl) at ($(cA)+(1.78,-1.58)$) {};
+\begin{scope}
+  \clip (rl.center) circle (0.525cm);
+  \IfFileExists{images/rl.jpg}{%
+    \node at (rl.center) {\includegraphics[width=1.05cm,height=1.05cm]{images/rl.jpg}};
+  }{}
+\end{scope}
+
+% Middle-right block: RL Environment
+\node[
+  draw=linec!60, line width=0.7pt, rounded corners=6pt,
+  minimum width=1.60cm, minimum height=0.86cm, fill=none
+] (rlenv) at ($(cA)+(3.20,-1.98)$) {};
+\node[align=center] at (rlenv.center) {RL\\Environment};
+
+% Bottom-center block: TCN Encoder
+\node[
+  draw=linec!60, line width=0.7pt, rounded corners=8pt,
+  minimum width=2.35cm, minimum height=0.60cm, fill=none
+] (tcn) at ($(cA)+(2.05,-3.02)$) {};
+\node at (tcn.center) {TCN Encoder};
+
+% Arrows preserving original horizontal structure
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70]
+([xshift=-0.38cm]pretrainer.south) -- ++(0,-0.08) |- (tcn.west);
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] ([xshift=-0.20cm]tcn.north) -- (rl.south);
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] (rl) -- (bridge);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70]
+([xshift=0.34cm]rlenv.south) -- ++(0,-0.10) |- (tcn.east);
+\draw[->,>=Stealth,line width=0.7pt,color=linec!70]
+([xshift=0.52cm]tcn.north) -- ([xshift=-0.34cm]rlenv.south);
+
+% Labels
+\node[annmuted,rotate=90] at ($(pretrainer.west)+(0.54cm,-1.35cm)$) {Data Training};
+\node[annmuted,rotate=90] at ($(rl.south)+(-0.20cm,-0.34cm)$) {Data};
+\node[annmuted] at ($(rlenv.south)+(-0.05cm,-0.20cm)$) {Trigger};
+
+\end{tikzpicture}%
+}
+\end{figure}
+
+The data that the app streams is TS, HR, HRV, BR. TS stands for Time stamp. This data goes into the TCN encoder. What this encoder is doing is that it is trying to understand the stress patterns aginst time. So after a certain point of time, The RL will start predicting upcoming stress patterns and then it will pre-trigger an event asking the user to relax. \\
+
+This encoder is what brings the real-time feedback down the line to the project. \\
+
+
+Then the data is being sent to the RL for it to make a decision and understand the world policy. Decision is the action that RL agent takes. In this case the suggestion the RL model is giving to the user by selecting a visual and an action card is the action that the RL agent is taking. \\
+
+Once an action has been taken, the relevant data will be sent to Touch designer via the touch design bridge. It is a specific module of the project that handles all communication with the touch designer.\\
+
+
+\subsection{RL Action Space}
+The RL action space consists of 2 different sets of things. One is the 5 touch designer interactions, and the other is the set of 8 dashboards - actions that the user can do during the 3-minute window. \\ 
+
+So the RL action space will have a total of 5 x 8 = 40 discrete actions. So, when an event is triggered, the RL will pick one Interaction, and One Intervention to suggest the user. This combination of one visual + one action is one step of the RL model. The model takes a step every time an event is triggerd. \\
+
+Out of the 8 dashboards, 5 of them are pre-loaded. Remaining 3 are user defined. Dashboards are pruned if not user even once for 15 consecutive steps. 15 Consecutive steps roughly comes around to 3-4 days in terms of real life. \\
+
+RL personalization the personalization feature of the project. \\
+
+
+
+\section{Touch Designer}
+
+Touch Designer has been chosen for its capability to create outstanding visuals, that captivate the user.
+\begin{marginfigure}
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+% Global text style for all TikZ nodes
+\tikzset{every node/.style={font=\fontsize{6}{7}\selectfont}}
+\tikzset{
+  ann/.style={font=\fontsize{6}{7}\selectfont,align=center,text width=2.35cm},
+  annmuted/.style={font=\fontsize{6}{7}\selectfont,align=center,text width=2.55cm,text=muted}
+}
+
+% Margin-filling layout
+\def\fullw{3.15}
+
+% Top block: OSCIN CHOP
+\node[
+  draw=linec!60,line width=0.7pt,rounded corners=6pt,
+  minimum width=\fullw cm,minimum height=0.50cm,fill=none
+] (oscin) at (0,-0.25) {};
+\node at (oscin.center) {OSCIN CHOP};
+
+% Second block: select chop
+\node[
+  draw=linec!60,line width=0.7pt,rounded corners=6pt,
+  minimum width=\fullw cm,minimum height=0.50cm,fill=none
+] (selchop) at (0,-1.02) {};
+\node at (selchop.center) {select chop};
+
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] (oscin.south) -- (selchop.north);
+
+% Five squares spanning nearly full margin width
+\def\sq{0.49}
+\def\gap{0.08}
+\pgfmathsetmacro{\rowW}{5*\sq + 4*\gap}
+\coordinate (rowC) at (0,-2.00);
+\coordinate (rowL) at ($(rowC)+(-0.5*\rowW cm,0)$);
+
+\def\imgone{images/interaction_01.jpg}
+\def\imgtwo{images/interaction_02.jpg}
+\def\imgthree{images/interaction_03.jpg}
+\def\imgfour{images/interaction_04.jpg}
+\def\imgfive{images/interaction_05.jpg}
+
+\foreach \i/\img [count=\k from 0] in {
+  1/\imgone,
+  2/\imgtwo,
+  3/\imgthree,
+  4/\imgfour,
+  5/\imgfive
+}{
+  \pgfmathsetmacro{\xshiftval}{\k*(\sq+\gap)}
+  \node[
+    draw=linec!60,line width=0.7pt,rounded corners=2pt,
+    minimum width=\sq cm,minimum height=\sq cm,inner sep=0pt
+  ] (sq\i) at ($(rowL)+(\xshiftval cm,0)$) {};
+
+  \begin{scope}
+    \clip ([xshift=-0.5*\sq cm,yshift=-0.5*\sq cm]sq\i.center) rectangle
+          ([xshift= 0.5*\sq cm,yshift= 0.5*\sq cm]sq\i.center);
+    \IfFileExists{\img}{%
+      \node at (sq\i.center){\includegraphics[width=\sq cm,height=\sq cm]{\img}};
+    }{}
+  \end{scope}
+
+  \draw[->,>=Stealth,line width=0.6pt,color=linec!70] (selchop.south) -- (sq\i.north);
+}
+
+% Select block
+\node[
+  draw=linec!60,line width=0.7pt,rounded corners=4pt,
+  minimum width=2.25cm,minimum height=0.48cm,fill=none
+] (selectblk) at (0,-3.02) {};
+\node at (selectblk.center) {Select};
+
+\foreach \i in {1,...,5}{
+  \draw[->,>=Stealth,line width=0.6pt,color=linec!70] (sq\i.south) -- (selectblk.north);
+}
+
+% Spout out block
+\node[
+  draw=linec!60,line width=0.7pt,rounded corners=4pt,
+  minimum width=2.40cm,minimum height=0.48cm,fill=none
+] (spout) at (0,-3.70) {};
+\node at (spout.center) {Spout Out};
+
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] (selectblk.south) -- (spout.north);
+
+% Lower circles expanded across margin width
+\node[draw=linec!60,line width=0.7pt,circle,minimum size=1.02cm,inner sep=0pt] (rmid) at (0.68,-5.08) {};
+\begin{scope}
+  \clip (rmid.center) circle (0.51cm);
+  \IfFileExists{images/streamer.jpg}{%
+    \node at (rmid.center){\includegraphics[width=1.02cm,height=1.02cm]{images/streamer.jpg}};
+  }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.7pt,circle,minimum size=1.02cm,inner sep=0pt] (rs1) at (-1.12,-5.08) {};
+\begin{scope}
+  \clip (rs1.center) circle (0.51cm);
+  \IfFileExists{images/server1.jpg}{%
+    \node at (rs1.center){\includegraphics[width=1.02cm,height=1.02cm]{images/server1.jpg}};
+  }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.7pt,circle,minimum size=1.02cm,inner sep=0pt] (rs2) at (-0.25,-6.48) {};
+\begin{scope}
+  \clip (rs2.center) circle (0.51cm);
+  \IfFileExists{images/server2.jpg}{%
+    \node at (rs2.center){\includegraphics[width=1.02cm,height=1.02cm]{images/server2.jpg}};
+  }{}
+\end{scope}
+
+\node[draw=linec!60,line width=0.7pt,circle,minimum size=0.68cm,inner sep=0pt] (rs3) at (1.52,-6.30) {};
+\begin{scope}
+  \clip (rs3.center) circle (0.34cm);
+  \IfFileExists{images/tailscale.jpeg}{%
+    \node at (rs3.center){\includegraphics[width=0.68cm,height=0.68cm]{images/tailscale.jpeg}};
+  }{}
+\end{scope}
+
+% Connections on lower half
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] (spout.south) -- (rmid.north);
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70] (rmid) -- (rs1);
+\draw[->,>=Stealth,line width=0.65pt,color=linec!70,dashed] (rs1) -- (rs2);
+
+% Lower annotation
+\node[annmuted] at (0.5,-7.38)
+{Tailscale private VPN for communication between server devices};
+
+\end{tikzpicture}
+\caption{The TD and post TD architecture.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+\subsection{Data That comes to TD}
+
+The TD receives the data, and it executes the data that was received and renders the visual. The visual is taken out of touch designer to OBS studio, which is then streamed by OBS studio to the mediamtx server on the device. This is done because the current touch designer license is free tier. If it were commercial tier, TD can directly stream the visual to the app. Tailscale is a vpn to ensure that the connection between the app and the server doesn't break when the app connects to a different network. \\
+
+\begin{marginfigure}
+  \centering
+  \includegraphics[width=\linewidth]{images/tdinput.jpg}
+  \caption{The input data that TD receives from the RL}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+Some of the notable data that comes to TD, of course apart from the vitals involves the following. 
+\begin{description}
+  \item[biofeedback/ping] It ensures that the TD is connected to the server and is running. 
+  \item[biofeedback/hr] The heart rate
+  \item[biofeedback/hrv] The heart rate variance
+  \item[biofeedback/br] The breathing rate
+  \item[biofeedback/interaction] This is the decision that the RL makes. Right now it is 5, showing the progress/growth visual. The visuals 0-4 are the ones in the RL action space. Visual 5 is not in the RL action space and is default before and after the 3-minute event widow. 
+  \item[biofeedback/reward] This is the reward for the last interaction. 
+  \item[biofeedback/trigger] This is the type of trigger. 1 is calendar, 2 is manual trigger showed in the demo, and 3 is internal stress based trigger. 
+  \item[biofeedback/holding] This is either 1 or 0. It is 1 when an event is live.  
+  \item[biofeedback/hold\_steps] Each 3 minute trigger is divided into 36 steps. 5 seconds per step. This is to ensure that the TD receives a data point every 5 seconds. \sidenote{The sensor logs the data as per its sampling rate. For example if sampling rate is 1hz, it logs 1 data line per second. we need all this data for encoding but we don't need it for the touch designer and the interaction itself. So only the latest data point is sent to TD every 5 seconds.}
+  \item[biofeedback/hold\_progress] This is either 0 or 1. 1 if the hold is successful complete and 0 when it's live.
+  \item[biofeedback/cumulative reward] This is the sum of all the rewards for all the actions taken so far. This is to show the progress/growth visual to keep the user engaged.    
+\end{description}
+
+\subsection{How is the HR, HRV, and BR data used?}
+
+The data that is in the main area is sent into the individual subcomponents called base comps of TD. The chops in these base comps will receive the data and then, subsequent math chop and lag chop will normalize the data between a range, and it will be sent into the smoothing chop to reduce spikes. \\
+
+That smooth hrv is then hooked up with various parameters in the Tops and pops that make up each visual. 
+
+\begin{marginfigure}
+  \centering
+  \includegraphics[width=\linewidth]{images/hrvuse.jpg}
+  \caption{HRV processing inside each individual visual}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+The exact same process is applied for hr, br, and cumulative reward as well. 
+
+\subsection{The Reward}
+
+The reward is what enables the RL to learn the world policy, which is the user physiological state and their preferred actions that will improve their physiological state.\\
+
+In English the reward for our RL model that I designed can be summarized as  \\
+
+\begin{displayquote}
+\textcolor{Sepia}{"Maximize the increase of HRV and reduce of HR in a 4:1 ratio"}. 
+\end{displayquote}
+
+The HRV has 4 times the weightage as heart rate. This is empirical for now. The idea is to calibrate this for each user. The weightage starts at 4:1 right now because of a general use of the 80-20 rule. \\
+
+The current market heavily uses HRV as an indicator of stress and well-being. That's reason why HRV is a part of the reward function and is being used at a higher weightage. \\
+
+As per\sideparencite{Rash2016ADHDCardiacVagalControl}, Heart rate has also been made part of the reward function. \\
+
+The components of the reward function have been validated as per the above said reasons, but the ratio itself needs more data and advanced user testing and resarch to finalize. As stated earlier the ratio is meant to be a starting point and will be calibrated specific to the user with time and data. \\
+
+\subsection{Link to Code}
+
+Click \href{https://github.com/Anaspiringdesigner/Solo-Y}{here} to see the repository.
+
+The current iteration is itr11. The iteration presented in June is itr9. The fundamental process of the project did not change. This can be verified by comparing itr9 and itr11. \\
+
+The demo video above clarifies most of the arising points that are not verbally clarified here in this section. \\
+
+\chapter{Validation}
+\section{Reward Function}
+
+As mentioned earlier, the terms included in the reward function has been validated. The starting weights of the reward function have been taken in accordance to the general 80-20 rule. These weights will be calibrated specific to the user with data and time. \\
+
+\section{Expert Evaluation}
+
+\begin{displayquote}
+\textcolor{Sepia}{"This is a really exciting project with lots of potential. It helps the user understand themselves better and experiment with ways to reduce their physiological responses to stress. I really like that you can collect data on yourself, test hypotheses and figure out what works for you at a granular level, not only in response to overt stress, but also to unconscious stressors, like when the lowest level in your hierarchy of needs isn't being met - sleeping, eating, sufficient hydration, a comfortable living environment, for example. If neglected, each of these basic needs might subconsciously increase the sympathetic nervous system response and the immediate feedback you get through the device and app helps you figure out which of your needs should be met in order to help you enter the “rest and digest” state."}
+\end{displayquote}
+\begin{flushright}
+--- Rebecca Hafenrichter, trainee psychologist, CCPE.
+\end{flushright}
+
+\begin{displayquote}
+\textcolor{Sepia}{"We would like use this app in our studio setting"}
+\end{displayquote}
+\begin{flushright} 
+  --- Natalie Schuuman, Founder of GroundtoFlow, A psychology consultancy.
+\end{flushright}
+
+\section{User Feedback}
+
+The users have been asked to fill a form after watching the visuals to answer which state of ADHD does the visual appeal to them. All the 5 visuals have received feedback, with two of them receiving negative feedback, with many saying it doesn't appeal to them at all. \\
+
+Click \href{https://youtube.com/shorts/5UkeXsRt00U?si=e5X-5A83XlS6Nf1g}{here} to see the first visual. \\
+
+\begin{marginfigure}
+  \vspace{-24cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/i1res.jpg}
+  \caption{Interaction 1 response was mostly negative. People did not relate to this visual.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+Click \href{https://youtube.com/shorts/5k91m4qy3Mk?si=9T_cDPyFJ2G8V8-_}{here} to see the Second visual. \\
+
+\begin{marginfigure}
+  \vspace{-18cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/i2res.jpg}
+  \caption{Interaction 2 response was good.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+Click \href{https://youtube.com/shorts/dWGxuvYkzWU?si=C4ZFgmTFwYmEmDOW}{here} to see the third visual. \\
+
+\begin{marginfigure}
+  \vspace{-12cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/i3res.jpg}
+  \caption{Interaction 3 response was average.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+Click \href{https://youtube.com/shorts/h4oVFWCPRlw?si=YqWQbWoQ0uF6jocT}{here} to see the fourth visual. \\
+
+\begin{marginfigure}
+  \vspace{-6cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/i4res.jpg}
+  \caption{Interaction 4 response was bad as well. Most people did not relate with it.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+
+Click \href{https://youtube.com/shorts/7OASaehT58c?si=BYuH5ia6oVpe55kE}{here} to see the fifth visual. \\
+
+\begin{marginfigure}
+  \vspace{-2cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/i5res.jpg}
+  \caption{Interaction 5 response was good. Everyone related with it.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+Red is Hyper Arousal - Hyper activity\\
+Blue is Hypo Arousal - Inattention\\
+Orange is none - Not relevant \\
+\subsection{Insights}
+Users related with visuals that are complex and have a rich motion, which are the common traits of interactions 2 and 5. To replace the poorly relatable visuals, A two new visuals are proposed to be added in the future. One is Ray casting and the other is Video to particles. Here's a glimpse of raycasting. \\
+
+\begin{marginfigure}
+  \vspace{-2cm}
+  \centering
+  \includegraphics[width=\linewidth]{images/rc.jpg}
+  \caption{Ray Castings where light and shadows dance.}
+  \label{fig:margin-image}
+\end{marginfigure}
+
+\section{Why Hyper and Hypo Arousal?}
+
+\begin{displayquote}
+\textcolor{Sepia}{"According to state regulation theory, performance problems in ADHD arise partly because individuals have difficulty regulating activation, effort, and arousal in response to changing task demands, leading to under- or over-activation and more variable performance"} \sideparencite{vanDerMeere2005StateRegulationADHD}
+\end{displayquote}
+
+This theory hypothesizes that people with ADHD are in a constant flux of two states. Hyper Arousal and Hypo Arousal. This is the reason why the two states of hypo and hyper arousal were used in the design of the visuals. \\
+
+\section{Why this solution?}
+
+On a general higher level, what 0.618 is trying to do is, it is trying to inject little 3-minute packages of relaxation into the user's daily life. The reason for this is as follows \\
+
+\begin{displayquote}
+\textcolor{Sepia}{"Aja L Murray in her paper and her subsequent podcast with adhduk, states that stress and ADHD have a co-dependent relationship. A stressful event will worsen the ADHD symptoms down the line, and vice versa."} \sideparencite{Murray2025EmotionRegulationADHD}
+\end{displayquote}
+
+So we are trying to use this research to do the opposite. Inject positive events in the user's life to reduce the ADHD symptoms down the line. This is a positive reinforcement cycle. It feeds of itself. 0.618 is giving a platform to start this cycle. \\
+
+\section{Validation Study}
+
+To completely validate the project, we need to conduct a significant user study. The users should use the app for a couple of weeks to see the imapact of the app. The following are the ones that will be particularly investigated. \\
+\begin{itemize}
+  \item The relationship between the user positive reward and the user mental state after the 3-minute interaction. Does a positive reward (the number in the model) really correlate with a positive outcome for the user? It should as High HRV means positive stress-free state. We just need to confirm that in this study for our app.
+  \item The assumptions made - the number of dashboards, the visuals, the interaction trigger (both calendar and stress based.)
+\end{itemize}
+
 
 \appendix
 \pagelayout{wide}
 \addpart{Appendix}
 \pagelayout{margin}
 
-\chapter{Some more blindtext}
-\blindtext
+\chapter{Compatible Sensors}
+\begin{itemize}
+  \item \textbf{Raw/direct Data Access}
+  \begin{itemize}
+    \item Polar H10
+    \item Polar H9
+    \item Polar Verity Sense
+    \item Polar OH1
+    \item Polar 360
+    \item Polar Ignite 3
+    \item Polar Pacer
+    \item Polar Pacer Pro
+    \item Polar Vantage V3
+    \item Polar Vantage M3
+    \item Polar Grit X2 Pro
+    \item Polar Grit X2
+    \item Movesense HR+
+    \item Movesense HR2
+    \item Movesense MD
+    \item Shimmer3 ECG / ECG-Respiration
+    \item Hexoskin smart shirts
+    \item JCVital V8 ECG
+    \item JCVital V5 AI
+    \item JCVital 2208A
+    \item JCVital V4 Sport
+    \item JCVital V6 4G
+    \item JCRing X1
+    \item JCRing X3
+    \item JCRing X6
+  \end{itemize}
+
+  \item \textbf{API/platform HR and HRV Data Access}
+  \begin{itemize}
+    \item WHOOP
+    \item Apple Watch
+    \item Fitbit
+    \item Garmin
+    \item Oura Ring
+    \item Samsung Galaxy Watch
+    \item Suunto
+    \item COROS
+    \item Amazfit / Zepp
+    \item Huawei
+    \item Withings
+    \item RingConn
+    \item Circular
+    \item Ultrahuman
+  \end{itemize}
+\end{itemize}
 
 \backmatter
 \setchapterstyle{plain}

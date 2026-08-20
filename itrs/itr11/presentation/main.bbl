@@ -16,5 +16,503 @@
   {}
 \endgroup
 
+
+\refsection{0}
+  \datalist[entry]{none/global//global/global/global}
+    \entry{barkley2019}{article}{}{3}
+      \name{author}{2}{}{%
+        {{hash=addfa6adc2ac0b128c6eadf0beb7838c}{%
+           family={Barkley},
+           familyi={B\bibinitperiod},
+           given={Russell\bibnamedelima A.},
+           giveni={R\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+        {{hash=9a4ac08146f9b6bcfd7d7d82faf4baad}{%
+           family={Fischer},
+           familyi={F\bibinitperiod},
+           given={Mariellen},
+           giveni={M\bibinitperiod}}}%
+      }
+      \strng{namehash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{fullhash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{fullhashraw}{c45b0ed179444dacca35c26ebda44226}
+      \strng{bibnamehash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{authorbibnamehash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{authornamehash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{authorfullhash}{c45b0ed179444dacca35c26ebda44226}
+      \strng{authorfullhashraw}{c45b0ed179444dacca35c26ebda44226}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Journal of the American Academy of Child and Adolescent Psychiatry}
+      \field{number}{5}
+      \field{title}{The unique contribution of emotional impulsiveness to impairment in major life activities in hyperactive children as adults}
+      \field{volume}{49}
+      \field{year}{2010}
+      \field{pages}{503\bibrangedash 513}
+      \range{pages}{11}
+    \endentry
+    \entry{mccabe2024howtoadhd}{book}{}{6}
+      \name{author}{1}{}{%
+        {{hash=519200872f11aa2ea2381a295d980462}{%
+           family={McCabe},
+           familyi={M\bibinitperiod},
+           given={Jessica},
+           giveni={J\bibinitperiod}}}%
+      }
+      \list{location}{1}{%
+        {New York}%
+      }
+      \list{publisher}{1}{%
+        {Rodale Books}%
+      }
+      \strng{namehash}{519200872f11aa2ea2381a295d980462}
+      \strng{fullhash}{519200872f11aa2ea2381a295d980462}
+      \strng{fullhashraw}{519200872f11aa2ea2381a295d980462}
+      \strng{bibnamehash}{519200872f11aa2ea2381a295d980462}
+      \strng{authorbibnamehash}{519200872f11aa2ea2381a295d980462}
+      \strng{authornamehash}{519200872f11aa2ea2381a295d980462}
+      \strng{authorfullhash}{519200872f11aa2ea2381a295d980462}
+      \strng{authorfullhashraw}{519200872f11aa2ea2381a295d980462}
+      \field{sortinit}{6}
+      \field{sortinithash}{b33bc299efb3c36abec520a4c896a66d}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{day}{2}
+      \field{isbn}{9780593578957}
+      \field{month}{1}
+      \field{title}{How to ADHD: An Insider's Guide to Working with Your Brain (Not Against It)}
+      \field{year}{2024}
+      \field{dateera}{ce}
+      \field{pages}{464}
+      \range{pages}{1}
+    \endentry
+    \entry{cdcadhd}{online}{}{3}
+      \name{author}{1}{}{%
+        {{hash=3b242b66dfe956017e7e4b5d73d0c164}{%
+           family={{Centers for Disease Control and Prevention}},
+           familyi={C\bibinitperiod}}}%
+      }
+      \strng{namehash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{fullhash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{fullhashraw}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{bibnamehash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{authorbibnamehash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{authornamehash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{authorfullhash}{3b242b66dfe956017e7e4b5d73d0c164}
+      \strng{authorfullhashraw}{3b242b66dfe956017e7e4b5d73d0c164}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-06-15}
+      \field{title}{Treatment of ADHD}
+      \field{year}{2024}
+      \verb{urlraw}
+      \verb https://www.cdc.gov/adhd/treatment/index.html
+      \endverb
+      \verb{url}
+      \verb https://www.cdc.gov/adhd/treatment/index.html
+      \endverb
+    \endentry
+    \entry{adhduk_diagnosis_rate_uk}{online}{}{3}
+      \name{author}{1}{}{%
+        {{hash=849f9533f0162dc06f28c794cf6425d4}{%
+           family={{ADHD UK}},
+           familyi={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{fullhash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{fullhashraw}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{bibnamehash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{authorbibnamehash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{authornamehash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{authorfullhash}{849f9533f0162dc06f28c794cf6425d4}
+      \strng{authorfullhashraw}{849f9533f0162dc06f28c794cf6425d4}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed 2026-06-15}
+      \field{title}{ADHD Diagnosis Rates in the UK}
+      \field{urlday}{15}
+      \field{urlmonth}{6}
+      \field{urlyear}{2026}
+      \field{year}{2025}
+      \field{urldateera}{ce}
+      \verb{urlraw}
+      \verb https://adhduk.co.uk/adhd-diagnosis-rate-uk/
+      \endverb
+      \verb{url}
+      \verb https://adhduk.co.uk/adhd-diagnosis-rate-uk/
+      \endverb
+    \endentry
+    \entry{interview_rosemary_2026}{misc}{}{3}
+      \name{author}{1}{}{%
+        {{hash=63503d571e5dd27e2347d396e8c810ab}{%
+           family={Briggs-McCracken},
+           familyi={B\bibinithyphendelim M\bibinitperiod},
+           given={Rosemary},
+           giveni={R\bibinitperiod}}}%
+      }
+      \strng{namehash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{fullhash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{fullhashraw}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{bibnamehash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{authorbibnamehash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{authornamehash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{authorfullhash}{63503d571e5dd27e2347d396e8c810ab}
+      \strng{authorfullhashraw}{63503d571e5dd27e2347d396e8c810ab}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Personal interview}
+      \field{month}{1}
+      \field{note}{Conducted on 21 January 2026}
+      \field{title}{Interview by Vamsi Madhav Tata}
+      \field{year}{2026}
+    \endentry
+    \entry{interview_user1_2026}{misc}{}{3}
+      \name{author}{1}{}{%
+        {{hash=952799619a4338af74da91de4a55684c}{%
+           family={User},
+           familyi={U\bibinitperiod},
+           given={Anonymous},
+           giveni={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{952799619a4338af74da91de4a55684c}
+      \strng{fullhash}{952799619a4338af74da91de4a55684c}
+      \strng{fullhashraw}{952799619a4338af74da91de4a55684c}
+      \strng{bibnamehash}{952799619a4338af74da91de4a55684c}
+      \strng{authorbibnamehash}{952799619a4338af74da91de4a55684c}
+      \strng{authornamehash}{952799619a4338af74da91de4a55684c}
+      \strng{authorfullhash}{952799619a4338af74da91de4a55684c}
+      \strng{authorfullhashraw}{952799619a4338af74da91de4a55684c}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Personal interview}
+      \field{month}{3}
+      \field{note}{Conducted on 05 March 2026}
+      \field{title}{Interview by Vamsi Madhav Tata}
+      \field{year}{2026}
+    \endentry
+    \entry{interview_user2_2026}{misc}{}{3}
+      \name{author}{1}{}{%
+        {{hash=91df54cd88f958a905479fc9715c0b41}{%
+           family={2},
+           familyi={2\bibinitperiod},
+           given={Anonymous\bibnamedelima User},
+           giveni={A\bibinitperiod\bibinitdelim U\bibinitperiod}}}%
+      }
+      \strng{namehash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{fullhash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{fullhashraw}{91df54cd88f958a905479fc9715c0b41}
+      \strng{bibnamehash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{authorbibnamehash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{authornamehash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{authorfullhash}{91df54cd88f958a905479fc9715c0b41}
+      \strng{authorfullhashraw}{91df54cd88f958a905479fc9715c0b41}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Personal interview}
+      \field{month}{3}
+      \field{note}{Conducted on 05 March 2026}
+      \field{title}{Interview by Vamsi Madhav Tata}
+      \field{year}{2026}
+    \endentry
+    \entry{Chatterjee2014Neuroaesthetics}{article}{}{3}
+      \name{author}{2}{}{%
+        {{hash=e285d80749ac7e3ef5f09f97ce0cef96}{%
+           family={Chatterjee},
+           familyi={C\bibinitperiod},
+           given={Anjan},
+           giveni={A\bibinitperiod}}}%
+        {{hash=f03e1355a0fe6bb39af0afab870c620f}{%
+           family={Vartanian},
+           familyi={V\bibinitperiod},
+           given={Oshin},
+           giveni={O\bibinitperiod}}}%
+      }
+      \strng{namehash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{fullhash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{fullhashraw}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{bibnamehash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{authorbibnamehash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{authornamehash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{authorfullhash}{c500b153fc30755e9d765a13cf30c4db}
+      \strng{authorfullhashraw}{c500b153fc30755e9d765a13cf30c4db}
+      \field{sortinit}{4}
+      \field{sortinithash}{9381316451d1b9788675a07e972a12a7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Trends in Cognitive Sciences}
+      \field{month}{7}
+      \field{number}{7}
+      \field{title}{Neuroaesthetics}
+      \field{volume}{18}
+      \field{year}{2014}
+      \field{pages}{370\bibrangedash 375}
+      \range{pages}{6}
+      \verb{doi}
+      \verb 10.1016/j.tics.2014.03.003
+      \endverb
+    \endentry
+    \entry{vonRhein2015RewardADHD}{article}{}{3}
+      \name{author}{16}{}{%
+        {{hash=6d90cf6f2d1143cd4294835b4bab5d89}{%
+           family={Rhein},
+           familyi={R\bibinitperiod},
+           given={Daniel},
+           giveni={D\bibinitperiod},
+           prefix={von},
+           prefixi={v\bibinitperiod}}}%
+        {{hash=fc3e10f0e92cd03d8def8845cf631b9f}{%
+           family={Cools},
+           familyi={C\bibinitperiod},
+           given={Roshan},
+           giveni={R\bibinitperiod}}}%
+        {{hash=eceba3bc000eba206b055a72150c148c}{%
+           family={Zwiers},
+           familyi={Z\bibinitperiod},
+           given={Marcel\bibnamedelima P.},
+           giveni={M\bibinitperiod\bibinitdelim P\bibinitperiod}}}%
+        {{hash=6436abb5bcf930341787c09805908c33}{%
+           family={Schaaf},
+           familyi={S\bibinitperiod},
+           given={Marieke},
+           giveni={M\bibinitperiod},
+           prefix={van\bibnamedelima der},
+           prefixi={v\bibinitperiod\bibinitdelim d\bibinitperiod}}}%
+        {{hash=5d89b62911a87f31ada07ea2654b6ef3}{%
+           family={Franke},
+           familyi={F\bibinitperiod},
+           given={Barbara},
+           giveni={B\bibinitperiod}}}%
+        {{hash=0eed94b8e9a3f4a269afdc14e77b1d01}{%
+           family={Luman},
+           familyi={L\bibinitperiod},
+           given={Marjolein},
+           giveni={M\bibinitperiod}}}%
+        {{hash=c89a99f83dd66d83c488287a26e4ffd2}{%
+           family={Oosterlaan},
+           familyi={O\bibinitperiod},
+           given={Jaap},
+           giveni={J\bibinitperiod}}}%
+        {{hash=15296a4bc568720be9e20bdd182800ab}{%
+           family={Heslenfeld},
+           familyi={H\bibinitperiod},
+           given={Dirk\bibnamedelima J.},
+           giveni={D\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=53c28fbbc736d3b77f1484a546fe1ad5}{%
+           family={Hoekstra},
+           familyi={H\bibinitperiod},
+           given={Pieter\bibnamedelima J.},
+           giveni={P\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=11aad0f4a6ff769a0640a311e5018691}{%
+           family={Hartman},
+           familyi={H\bibinitperiod},
+           given={Catharina\bibnamedelima A.},
+           giveni={C\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+        {{hash=d4261e3bd0fd9acedae1f6504abab822}{%
+           family={Faraone},
+           familyi={F\bibinitperiod},
+           given={Stephen\bibnamedelima V.},
+           giveni={S\bibinitperiod\bibinitdelim V\bibinitperiod}}}%
+        {{hash=000870c9251297110a4089f88b58d36e}{%
+           family={Rooij},
+           familyi={R\bibinitperiod},
+           given={Daan},
+           giveni={D\bibinitperiod},
+           prefix={van},
+           prefixi={v\bibinitperiod}}}%
+        {{hash=121c3e2b6967e77c049afc44b871d093}{%
+           family={Dongen},
+           familyi={D\bibinitperiod},
+           given={Eelco\bibnamedelima V.},
+           giveni={E\bibinitperiod\bibinitdelim V\bibinitperiod},
+           prefix={van},
+           prefixi={v\bibinitperiod}}}%
+        {{hash=c5808c3efeb1150dddb6036ea5c57c5c}{%
+           family={Lojowska},
+           familyi={L\bibinitperiod},
+           given={Maria},
+           giveni={M\bibinitperiod}}}%
+        {{hash=727319ed20d18481d0edd695f13e2e3e}{%
+           family={Mennes},
+           familyi={M\bibinitperiod},
+           given={Maarten},
+           giveni={M\bibinitperiod}}}%
+        {{hash=606c949586ca7f43a060c1bbb5849289}{%
+           family={Buitelaar},
+           familyi={B\bibinitperiod},
+           given={Jan\bibnamedelima K.},
+           giveni={J\bibinitperiod\bibinitdelim K\bibinitperiod}}}%
+      }
+      \strng{namehash}{a23cc11359bb23a20175b5dcf9abb63c}
+      \strng{fullhash}{65528a1ca3c2518e6cbb5ea7de63bb00}
+      \strng{fullhashraw}{65528a1ca3c2518e6cbb5ea7de63bb00}
+      \strng{bibnamehash}{a23cc11359bb23a20175b5dcf9abb63c}
+      \strng{authorbibnamehash}{a23cc11359bb23a20175b5dcf9abb63c}
+      \strng{authornamehash}{a23cc11359bb23a20175b5dcf9abb63c}
+      \strng{authorfullhash}{65528a1ca3c2518e6cbb5ea7de63bb00}
+      \strng{authorfullhashraw}{65528a1ca3c2518e6cbb5ea7de63bb00}
+      \field{sortinit}{4}
+      \field{sortinithash}{9381316451d1b9788675a07e972a12a7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Journal of the American Academy of Child and Adolescent Psychiatry}
+      \field{title}{Increased Neural Responses to Reward in Adolescents and Young Adults With Attention-Deficit/Hyperactivity Disorder and Their Unaffected Siblings}
+      \field{volume}{54}
+      \field{year}{2015}
+      \field{pages}{394\bibrangedash 402}
+      \range{pages}{9}
+      \verb{doi}
+      \verb 10.1016/j.jaac.2015.02.012
+      \endverb
+    \endentry
+    \entry{Rash2016ADHDCardiacVagalControl}{article}{}{6}
+      \name{author}{3}{}{%
+        {{hash=947bbdf59568c54b7f6fb946d959f9a6}{%
+           family={Rash},
+           familyi={R\bibinitperiod},
+           given={Jennifer\bibnamedelima A.},
+           giveni={J\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+        {{hash=308f849572dfd4fc2b49b0cf1810fa9f}{%
+           family={Aguirre-Camacho},
+           familyi={A\bibinithyphendelim C\bibinitperiod},
+           given={Adalberto},
+           giveni={A\bibinitperiod}}}%
+        {{hash=1d31826df382fb35343f476e8186c653}{%
+           family={Campbell},
+           familyi={C\bibinitperiod},
+           given={Tavis\bibnamedelima S.},
+           giveni={T\bibinitperiod\bibinitdelim S\bibinitperiod}}}%
+      }
+      \strng{namehash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{fullhash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{fullhashraw}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{bibnamehash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{authorbibnamehash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{authornamehash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{authorfullhash}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \strng{authorfullhashraw}{4f5d21fc3dd62d7a9b65f97d833982cc}
+      \field{sortinit}{5}
+      \field{sortinithash}{20e9b4b0b173788c5dace24730f47d8c}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{ADHD Attention Deficit and Hyperactivity Disorders}
+      \field{number}{3}
+      \field{title}{Attention-deficit hyperactivity disorder and cardiac vagal control: a systematic review}
+      \field{volume}{8}
+      \field{year}{2016}
+      \field{pages}{167\bibrangedash 176}
+      \range{pages}{10}
+      \verb{doi}
+      \verb 10.1007/s12402-016-0198-6
+      \endverb
+    \endentry
+    \entry{vanDerMeere2005StateRegulationADHD}{incollection}{}{3}
+      \name{author}{1}{}{%
+        {{hash=2c1f53a9d80ca86159fac2f321de25d7}{%
+           family={Meere},
+           familyi={M\bibinitperiod},
+           given={Jaap},
+           giveni={J\bibinitperiod},
+           prefix={van\bibnamedelima der},
+           prefixi={v\bibinitperiod\bibinitdelim d\bibinitperiod}}}%
+      }
+      \name{editor}{2}{}{%
+        {{hash=d68e4e31cccd718061e40a97bad807ac}{%
+           family={Gozal},
+           familyi={G\bibinitperiod},
+           given={David},
+           giveni={D\bibinitperiod}}}%
+        {{hash=43bc2027aa22cc6c001bcd1504fd69a3}{%
+           family={Molfese},
+           familyi={M\bibinitperiod},
+           given={Dennis\bibnamedelima L.},
+           giveni={D\bibinitperiod\bibinitdelim L\bibinitperiod}}}%
+      }
+      \list{location}{1}{%
+        {Totowa, NJ}%
+      }
+      \list{publisher}{1}{%
+        {Humana Press}%
+      }
+      \strng{namehash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{fullhash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{fullhashraw}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{bibnamehash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{authorbibnamehash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{authornamehash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{authorfullhash}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{authorfullhashraw}{2c1f53a9d80ca86159fac2f321de25d7}
+      \strng{editorbibnamehash}{c285704f77abf6389248bd613d4fd56f}
+      \strng{editornamehash}{c285704f77abf6389248bd613d4fd56f}
+      \strng{editorfullhash}{c285704f77abf6389248bd613d4fd56f}
+      \strng{editorfullhashraw}{c285704f77abf6389248bd613d4fd56f}
+      \field{sortinit}{6}
+      \field{sortinithash}{b33bc299efb3c36abec520a4c896a66d}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{booktitle}{Attention Deficit Hyperactivity Disorder}
+      \field{isbn}{978-1-58829-312-1}
+      \field{series}{Contemporary Clinical Neuroscience}
+      \field{title}{State Regulation and Attention Deficit Hyperactivity Disorder}
+      \field{year}{2005}
+      \field{pages}{413\bibrangedash 433}
+      \range{pages}{21}
+      \verb{doi}
+      \verb 10.1385/1-59259-891-9:413
+      \endverb
+    \endentry
+    \entry{Murray2025EmotionRegulationADHD}{article}{}{3}
+      \name{author}{3}{}{%
+        {{hash=4a1878b156c4e1999a97c9e074e9f3c0}{%
+           family={Murray},
+           familyi={M\bibinitperiod},
+           given={Aja\bibnamedelima Louise},
+           giveni={A\bibinitperiod\bibinitdelim L\bibinitperiod}}}%
+        {{hash=a094cf167454989a6c302eb61a3341c2}{%
+           family={Russell},
+           familyi={R\bibinitperiod},
+           given={Amanda},
+           giveni={A\bibinitperiod}}}%
+        {{hash=8a75de0f304cf8767a82c6df3ab4625e}{%
+           family={Calderón\bibnamedelima Alfaro},
+           familyi={C\bibinitperiod\bibinitdelim A\bibinitperiod},
+           given={Francisco\bibnamedelima Antonio},
+           giveni={F\bibinitperiod\bibinitdelim A\bibinitperiod}}}%
+      }
+      \strng{namehash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{fullhash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{fullhashraw}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{bibnamehash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{authorbibnamehash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{authornamehash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{authorfullhash}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \strng{authorfullhashraw}{b282ef9a7ce26fb17345f1cd9e17c959}
+      \field{sortinit}{6}
+      \field{sortinithash}{b33bc299efb3c36abec520a4c896a66d}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Development and Psychopathology}
+      \field{number}{3}
+      \field{title}{Early emotion regulation developmental trajectories and ADHD, internalizing, and conduct problems symptoms in childhood}
+      \field{volume}{37}
+      \field{year}{2025}
+      \field{pages}{1474\bibrangedash 1481}
+      \range{pages}{8}
+      \verb{doi}
+      \verb 10.1017/S0954579424001263
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
 \endinput
 
